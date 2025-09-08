@@ -67,6 +67,7 @@ struct HyprIso {
 extern HyprIso *hypriso;
 
 void rect(Hyprutils::Math::CBox box, CHyprColor color, float round = 0.0, float roundingPower = 2.0, bool blur = true, float blurA = 1.0);
+void border(Hyprutils::Math::CBox box, CHyprColor color, float size, float round = 0.0, float roundingPower = 2.0, bool blur = true, float blurA = 1.0);
 
 static long get_current_time_in_ms() {
     using namespace std::chrono;
@@ -83,6 +84,11 @@ std::string title_name(ThinClient *w);
 
 // ThinMonitor props
 Hyprutils::Math::CBox bounds(ThinMonitor *m);
+
+int current_rendering_monitor();
+int current_rendering_window();
+
+float scale(int id);
 
 void notify(std::string text);
 

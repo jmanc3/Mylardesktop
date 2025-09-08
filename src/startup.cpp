@@ -8,13 +8,37 @@
 #include <hyprland/src/render/OpenGL.hpp>
 
 #include <format>
+#include <cassert>
 
-static Container *root = new Container;
+static std::vector<Container *> roots; // monitors
+
+struct RootData : UserData {
+    int id = 0;
+    int stage = 0;
+    int active_id = 0;
+    
+    RootData(int id) : id(id) {
+       ; 
+    }
+};
+
+struct ClientData : UserData {
+    int id = 0;
+    
+    ClientData(int id) : id(id) {
+       ; 
+    }
+};
+
+CBox tobox(Container *c) {
+   return {c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h}; 
+}
 
 // returning true means consume the event
 bool on_mouse_move(int id, float x, float y) {
     Event event(x, y);
-    move_event(root, event);
+    for (auto root : roots)
+        move_event(root, event);
     return false;
 }
 
@@ -28,14 +52,62 @@ bool on_scrolled(int id, int source, int axis, int direction, double delta, int 
     return false; 
 }
 
+ThinMonitor *m_from_id(int id) {
+    for (auto m : hypriso->monitors)
+        if (m->id == id)
+            return m;
+    return nullptr; 
+}
+
+ThinClient *c_from_id(int id) {
+    for (auto w : hypriso->windows)
+        if (w->id == id)
+            return w;
+    return nullptr; 
+}
+
+void layout_every_single_root() {
+    for (auto r : roots) {
+        auto rdata = (RootData *) r->user_data;
+        auto rid = rdata->id;
+        auto s = scale(rid);
+        if (auto m = m_from_id(rid)) {
+            auto b = bounds(m);
+            b.scale(s);
+            r->real_bounds = Bounds(b.x, b.y, b.w, b.h);
+        }
+
+        for (auto c : r->children) {
+            auto cdata = (ClientData *) c->user_data;
+            auto cid = cdata->id;
+            if (auto cm = c_from_id(cid)) {
+                auto b = bounds(cm);            
+                b.scale(s);
+                c->real_bounds = Bounds(b.x, b.y, b.w, b.h);
+            }
+        } 
+    }    
+}
+
+
 // i think this is being called once per monitor
 void on_render(int id, int stage) {
-    if (stage == (int) STAGE::RENDER_LAST_MOMENT) {
-        auto m = g_pHyprOpenGL->m_renderData.pMonitor;
-        auto l = m->logicalBox();
-        l.scale(m->m_scale);
-        ::layout(root, root, {l.x, l.y, l.w, l.h});
+    if (stage == (int) STAGE::RENDER_BEGIN) {
+         layout_every_single_root();
+    }
+    
+    int current_monitor = current_rendering_monitor();
+    int current_window = current_rendering_window();
+    int active_id = current_window == -1 ? current_monitor : current_window;
+ 
+    for (auto root : roots) {
+        auto rdata = (RootData *) root->user_data;
+        rdata->stage = stage;
+        rdata->active_id = active_id;
         paint_root(root);
+    }
+    
+    if (stage == (int) STAGE::RENDER_LAST_MOMENT) {
         request_refresh();
     }
 }
@@ -43,9 +115,15 @@ void on_render(int id, int stage) {
 // returning true means consume the event
 bool on_mouse_press(int id, int button, int state, float x, float y) {
     Event event(x, y, button, state);
-    mouse_event(root, event);
+    for (auto root : roots)
+        mouse_event(root, event);
 
     return false;
+}
+
+int monitor_overlapping(int id) {
+    
+    return -1;
 }
 
 void on_window_open(int id) {
@@ -53,31 +131,100 @@ void on_window_open(int id) {
     auto tc = new ThinClient(id);
     hypriso->windows.push_back(tc);
     hypriso->reserve_titlebar(tc, 32);
+
+    int monitor = monitor_overlapping(id);
+    if (monitor == -1) {
+        for (auto r : roots) {
+            auto data = (RootData *) r->user_data;
+            monitor = data->id;
+            break;
+        }
+    }
+
+   //notify(std::to_string(monitor));
+
+    // TODO: We should put these windows in a limbo vector until a monitor opens and then move them over
+    //assert(monitor != -1 && "window opened and there were no monitors avaialable (Mylardesktop bug!)");
+
+    for (auto r : roots) {
+        auto data = (RootData *) r->user_data;
+        if (data->id == monitor) {
+            auto c = r->child(::hbox, FILL_SPACE, FILL_SPACE); // the sizes are set later by layout code
+            /*c->pre_layout = [](Container *root, Container *c, const Bounds &b) {
+                // set the wanted bounds x y, w h based on the data of the actual client
+                auto data = (ClientData *) c->user_data;
+                for (auto t : hypriso->windows) {
+                    if (t->id == data->id) {
+                        auto b = bounds(t);
+                        c->wanted_bounds.x = b.x;
+                        c->wanted_bounds.y = b.y;
+                        c->wanted_bounds.w = b.w;
+                        c->wanted_bounds.h = b.h;
+                        break;
+                    }
+                }
+            };*/
+        	c->when_paint = [](Container *root, Container *c) {
+                auto data = (ClientData *) c->user_data;
+                auto rdata = (RootData *) root->user_data;
+                if (data->id == rdata->active_id) {
+                    border(tobox(c), {1, 1, 0, 1}, 2);
+                }
+        	};
+            c->user_data = new ClientData(id);            
+            
+            break;
+        }
+    }
 }
 
 void on_window_closed(int id) {
     for (int i = 0; i < hypriso->windows.size(); i++) {
         auto w = hypriso->windows[i];
-        if (w->id == id)
+        if (w->id == id) {
+            delete w;
             hypriso->windows.erase(hypriso->windows.begin() + i); 
+        }
+    }
+
+    for (auto r : roots) {
+        for (int i = 0; i < r->children.size(); i++) {
+            auto data = (ClientData *) r->children[i]->user_data;
+            if (data->id == id) {
+                delete r->children[i];
+                r->children.erase(r->children.begin() + i);
+            }
+        } 
     }
 }
 
 void on_monitor_open(int id) {
     auto tm = new ThinMonitor(id);
     hypriso->monitors.push_back(tm);
+
+    auto c = new Container(layout_type::absolute, FILL_SPACE, FILL_SPACE);
+    c->user_data = new RootData(id);
+    c->when_paint = [](Container *root, Container *c) {
+       //rect({0, 0, 100, 100}, {1, 1, 0, 1});
+    };
+    roots.push_back(c);
 }
 
 void on_monitor_closed(int id) {
     for (int i = 0; i < hypriso->monitors.size(); i++) {
         auto m = hypriso->monitors[i];
-        if (m->id == id)
+        if (m->id == id) {
+            delete m;
             hypriso->monitors.erase(hypriso->monitors.begin() + i); 
+        }
     } 
-}
-
-CBox tobox(Container *c) {
-   return {c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h}; 
+    for (int i = 0; i < roots.size(); i++) {
+        auto data = (RootData *) roots[i]->user_data;
+        if (data->id == id) {
+            delete roots[i];
+            roots.erase(roots.begin() + i);
+        }
+    } 
 }
 
 void startup::begin() {
@@ -98,14 +245,16 @@ void startup::begin() {
     // hooks need to be created last because otherwise we miss initial loading of all windows with on_window_open
 	hypriso->create_hooks_and_callbacks(); 
 
-	auto b = root->child(::vbox, 200, 200);
+	/*auto b = root->child(::vbox, 200, 200);
 	b->when_paint = [](Container *root, Container *c) {
     	if (c->state.mouse_pressing) {
             rect(tobox(c), {1, 1, 0, 1});	
     	} else {
-            rect(tobox(c), {1, 1, 1, 1});	
+            //rect(tobox(c), {1, 1, 1, 1});	
+            border(tobox(c), {1, 1, 1, 1}, 10.0f);
     	}
 	};
+	*/
 }
 
 void startup::end() {

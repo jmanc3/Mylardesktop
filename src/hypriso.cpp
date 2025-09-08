@@ -188,11 +188,11 @@ void HyprIso::create_hooks_and_callbacks() {
         }
     });
 
-    for (auto w : g_pCompositor->m_windows) {
-        on_open_window(w);
-    }
     for (auto m : g_pCompositor->m_monitors) {
         on_open_monitor(m);
+    }
+    for (auto w : g_pCompositor->m_windows) {
+        on_open_window(w);
     }
 }
 
@@ -206,6 +206,18 @@ void rect(Hyprutils::Math::CBox box, CHyprColor color, float round, float roundi
     rectdata.roundingPower = roundingPower;
     rectdata.clipBox       = box;
     g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(rectdata));
+}
+
+void border(Hyprutils::Math::CBox box, CHyprColor color, float size, float round, float roundingPower, bool blur, float blurA) {
+    CBorderPassElement::SBorderData rectdata;
+    rectdata.grad1         = color;
+    rectdata.grad2         = color;
+    rectdata.box           = box;
+    rectdata.round         = round;
+    rectdata.outerRound    = round;
+    rectdata.borderSize    = size;
+    rectdata.roundingPower = roundingPower;
+    g_pHyprRenderer->m_renderPass.add(makeUnique<CBorderPassElement>(rectdata));
 }
 
 struct MylarBar : public IHyprWindowDecoration {
@@ -310,3 +322,39 @@ void notify(std::string text) {
     HyprlandAPI::addNotification(globals->api, text, {1, 1, 1, 1}, 4000);
 }
 
+int current_rendering_monitor() {
+    if (auto m = g_pHyprOpenGL->m_renderData.pMonitor.lock()) {
+        for (auto hyprmonitor : hyprmonitors) {
+            if (hyprmonitor->m == m) {
+                return hyprmonitor->id;
+            }
+        } 
+    }
+    return -1;
+}
+
+int current_rendering_window() {
+    if (auto c = g_pHyprOpenGL->m_renderData.currentWindow.lock()) {
+        for (auto hyprwindow : hyprwindows) {
+            if (hyprwindow->w == c) {
+                return hyprwindow->id; 
+            }
+        }         
+    }
+    return -1;
+}
+
+float scale(int id) {
+    for (auto hyprmonitor : hyprmonitors) {
+        if (hyprmonitor->id == id) {
+            return hyprmonitor->m->m_scale;
+        }
+    }
+    return 1.0;
+}
+
+
+
+
+     
+ 

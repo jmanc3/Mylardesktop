@@ -58,6 +58,8 @@ enum layout_type {
     newscroll = 1 << 12,
 
     editable_label = 1 << 13,
+
+    absolute = 1 << 14,
 };
 
 enum container_alignment {

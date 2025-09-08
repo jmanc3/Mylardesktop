@@ -127,6 +127,21 @@ static void modify_all(Container* container, double x_change, double y_change) {
     container->real_bounds.y += y_change;
 }
 
+
+void layout_absolute(Container* root, Container* container, const Bounds& bounds) {
+    for (auto child : container->children) {
+        if (child && child->pre_layout) {
+            child->pre_layout(root, child, bounds);
+        }
+    }
+    for (auto child : container->children) {
+        if (child && child->exists) {
+            layout(root, child, Bounds(child->wanted_bounds.x, child->wanted_bounds.y, child->wanted_bounds.w, child->wanted_bounds.h));
+        }
+    }
+}
+
+
 void layout_vbox(Container* root, Container* container, const Bounds& bounds) {
     for (auto child : container->children) {
         if (child && child->pre_layout) {
@@ -716,6 +731,8 @@ void layout(Container* root, Container* container, const Bounds& bounds) {
     } else if (container->type & layout_type::newscroll) {
         layout_newscrollpane(root, (ScrollContainer*)container, container->children_bounds);
     } else if (container->type & layout_type::editable_label) {
+    } else if (container->type & layout_type::absolute) {
+        layout_absolute(root, container, container->children_bounds);
     }
 
     // TODO: this only covers the first layer and not all of them
