@@ -1,0 +1,10 @@
+#!/bin/bash
+
+set -e
+
+#make
+#hyprctl plugin load $HOME/Mylardesktop/build/libMylardesktop.so
+#hyprctl plugin load $HOME/HyprWithMylar/plugin/Mylardesktop/mylar-desktop.so
+
+hyprctl plugin load $PWD/mylar-desktop.so
+

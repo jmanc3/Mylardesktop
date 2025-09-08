@@ -1,0 +1,405 @@
+#ifndef CONTAINER_HEADER
+#define CONTAINER_HEADER
+
+#include <memory>
+#include <string>
+#include <vector>
+
+#define explicit dont_use_cxx_explicit
+#include <cairo.h>
+#include <xcb/xcb_keysyms.h>
+#include <xcb/xkb.h>
+#include <xkbcommon/xkbcommon-x11.h>
+#include <xkbcommon/xkbcommon.h>
+#undef explicit
+
+static int FILL_SPACE     = -1;
+static int USE_CHILD_SIZE = -2;
+static int DYNAMIC        = -3;
+
+struct Bounds {
+    double x = 0;
+    double y = 0;
+    double w = 0;
+    double h = 0;
+
+    Bounds();
+
+    Bounds(double x, double y, double w, double h);
+
+    Bounds(const Bounds& b);
+
+    bool non_zero();
+
+    void shrink(double amount);
+
+    void grow(double amount);
+};
+
+enum layout_type {
+    hbox = 1 << 0,
+
+    vbox = 1 << 1,
+
+    stack = 1 << 2,
+
+    scrollpane             = 1 << 3,
+    scrollpane_inline_r    = 1 << 4, // optional flag for scrollpane to inline the right thumb
+    scrollpane_inline_b    = 1 << 4, // optional flag for scrollpane to inline the bottom thumb
+    scrollpane_r_always    = 1 << 5,
+    scrollpane_r_sometimes = 1 << 6,
+    scrollpane_r_never     = 1 << 7,
+    scrollpane_b_always    = 1 << 8,
+    scrollpane_b_sometimes = 1 << 9,
+    scrollpane_b_never     = 1 << 10,
+
+    transition = 1 << 11,
+
+    newscroll = 1 << 12,
+
+    editable_label = 1 << 13,
+};
+
+enum container_alignment {
+    ALIGN_NONE                       = 0,
+    ALIGN_GLOBAL_CENTER_HORIZONTALLY = 1 << 0,
+    ALIGN_CENTER_HORIZONTALLY        = 1 << 1,
+    ALIGN_CENTER                     = 1 << 2,
+    ALIGN_LEFT                       = 1 << 3,
+    ALIGN_BOTTOM                     = 1 << 4,
+    ALIGN_RIGHT                      = 1 << 5,
+    ALIGN_TOP                        = 1 << 6,
+};
+
+struct UserData {
+    virtual ~UserData() {};
+
+    void destroy() {
+        delete this;
+    }
+};
+
+struct AppClient {};
+
+struct MouseState {
+    // This variables is used so that we minimize the amount of containers we are
+    // dealing with when having to figure out what container gets what event
+    bool concerned = false;
+
+    // If the mouse is ____STRICTLY____ inside this container this VERY EXACT
+    // moment
+    bool mouse_hovering = false;
+
+    // TODO: this data structure for pressing wont be able to correctly handle the
+    // case where one mouse button is pressed on the container then another and
+    // then a release
+
+    // If this container was pressed by the mouse and its currently being held
+    // down irregardless if the mouse is still inside this container
+    bool mouse_pressing = false;
+
+    // If after a mouse_down there was motion irregardless of current mouse
+    // position
+    bool mouse_dragging = false;
+
+    // This variable will only be valid if mouse_pressing is true
+    // it will be set to the events e->detail so test it against
+    // XCB_BUTTON_INDEX_[0-9] left XCB_BUTTON_INDEX_1 = 1,
+    //
+    // middle
+    // XCB_BUTTON_INDEX_2 = 2,
+    //
+    // right
+    // XCB_BUTTON_INDEX_3 = 3,
+    int  mouse_button_pressed = 0;
+
+    void reset() {
+        this->concerned            = false;
+        this->mouse_hovering       = false;
+        this->mouse_pressing       = false;
+        this->mouse_dragging       = false;
+        this->mouse_button_pressed = 0;
+    }
+};
+
+struct Container;
+struct ScrollContainer;
+struct ScrollPaneSettings;
+
+struct Container {
+    // The parent of this container which must be set by the user whenever a
+    // relationship is added
+    Container* parent;
+
+    // A user settable name that can be used for retrival
+    std::string name;
+
+    // List of this containers children;
+    std::vector<Container*> children;
+
+    // The way children are laid out
+    int type = vbox;
+
+    // Unique id for this container
+    std::string uuid;
+
+    // A higher z_index will mean it will be rendered above everything else
+    int z_index = 0;
+
+    // Spacing between children when laying them out
+    double spacing = 0;
+
+    // Where you are placed inside the parent
+    int alignment = 0;
+
+    // These numbers are usually going to be negative
+    // The underlying real scrolling offset along an axis
+    double                scroll_v_real = 0;
+    double                scroll_h_real = 0;
+
+    std::shared_ptr<bool> lifetime        = std::make_shared<bool>();
+    double                scroll_v_visual = 0;
+    double                scroll_h_visual = 0;
+
+    bool                  left_mouse_down = false;
+    int                   previous_x      = -1;
+    int                   previous_y      = -1;
+    int                   mouse_current_x = -1;
+    int                   mouse_current_y = -1;
+    int                   mouse_initial_x = -1;
+    int                   mouse_initial_y = -1;
+
+    // State of the mouse used by application.cpp to determine when to call this
+    // containers when_* functions
+    MouseState state;
+
+    // User settable target bounds
+    Bounds wanted_bounds;
+
+    // User settable target padding for children of this container
+    Bounds wanted_pad;
+
+    // real_bounds is generated after calling layout on the root container and is
+    // the bounds of this container
+    Bounds real_bounds;
+
+    // children_bounds is generated after calling layout on the root container and
+    // is the bounds of the children since remember you can set a wanted_pad
+    // amount
+    Bounds children_bounds;
+
+    // This variable can be set by layout parent to determine if it should be
+    // rendered
+    bool exists = true;
+
+    // Variable meaning if we should layout the children whenever layout is called
+    // on this container
+    bool should_layout_children = true;
+
+    // This doesn't actually do clipping on children to the parent containers
+    // bounds when rendering, instead it tells us if we should call the render
+    // function of non visible children containers
+    bool clip_children = true;
+
+    bool clip = false;
+
+    bool interactable = true;
+
+    bool draggable = true;
+
+    // If set to true, after layout of children, will check if there was overflow,
+    // if so, will distribute one pixel at a time
+    bool distribute_overflow_to_children = false;
+
+    // Is set to true when the container is the active last interacted with
+    bool active = false;
+
+    // If we should call when_clicked if this container was dragged
+    bool when_drag_end_is_click = true;
+
+    // How many pixels does a container need to be moved before dragging starts
+    int minimum_x_distance_to_move_before_drag_begins = 0;
+    int minimum_y_distance_to_move_before_drag_begins = 0;
+
+    // If the container should receive events through a single container above it
+    // (children)
+    bool receive_events_even_if_obstructed_by_one = false;
+
+    // If the container should receive events through other containers above it
+    // (children)
+    bool receive_events_even_if_obstructed = false;
+
+    // Do children get painted
+    bool  automatically_paint_children = true;
+
+    void* user_data = nullptr;
+
+    // Called when client needs to repaint itself
+    void (*when_paint)(Container* root, Container* self) = nullptr;
+
+    // Called after all children painted
+    void (*after_paint)(Container* root, Container* self) = nullptr;
+
+    // Called once when the mouse enters the container for the first time
+    void (*when_mouse_enters_container)(Container* root, Container* self) = nullptr;
+
+    // Called every time the mouse moves and its inside the container unless if
+    // its being dragged
+    void (*when_mouse_motion)(Container* root, Container* self) = nullptr;
+
+    // Called once when the mouse is no longer inside the container, or if
+    // mouse_down happend, will be called when mouse_up happens
+    void (*when_mouse_leaves_container)(Container* root, Container* self) = nullptr;
+
+    // Called once if left_mouse, middle_mouse, or right_mouse is pressed down
+    // inside this container
+    void (*when_mouse_down)(Container* root, Container* self) = nullptr;
+
+    // TODO: is this really the behaviour we want????
+    // Called once when the mouse_down is released regardless if the mouse is
+    // actually inside the container it initially mouse_downed on
+    void (*when_mouse_up)(Container* root, Container* self) = nullptr;
+
+    // Called when this container was mouse_downed and then mouse_upped regardless
+    // of any motion the mouse did in between those two events
+    void (*when_clicked)(Container* root, Container* self) = nullptr;
+
+    // Called when the containers status is changed
+    void (*when_active_status_changed)(Container* root, Container* self) = nullptr;
+
+    // Called when this container was scrolled on
+    void (*when_scrolled)(Container* root, Container* self, int scroll_x, int scroll_y) = nullptr;
+
+    // Called when this container was scrolled on
+    void (*when_fine_scrolled)(Container* root, Container* self, int scroll_x, int scroll_y, bool came_from_touchpad) = nullptr;
+
+    // Called once when after mouse_downing a container, there was a mouse_motion
+    // event
+    void (*when_drag_start)(Container* root, Container* self) = nullptr;
+
+    // Called everytime when after mouse_downing a container, there where mouse
+    // motion events until a mouse_up
+    void (*when_drag)(Container* root, Container* self) = nullptr;
+
+    // Called once when after dragging a container the mouse_up happens
+    void (*when_drag_end)(Container* root, Container* self) = nullptr;
+
+    // If this function is set, it'll be called to determine if the container is
+    // pierced
+    bool (*handles_pierced)(Container* container, int mouse_x, int mouse_y) = nullptr;
+
+    void (*before_layout)(Container* root, Container* self, const Bounds& bounds, double* target_w, double* target_h) = nullptr;
+
+    // Gives you the opportunity to set wanted bounds before layout
+    void (*pre_layout)(Container* root, Container* self, const Bounds& bounds) = nullptr;
+
+    // When layout is called on this container and generate_event is true on that
+    // call
+    void (*when_layout)(Container* root, Container* self, const Bounds& bounds, double* target_w, double* target_h) = nullptr;
+
+    void (*when_key_event)(Container* root, Container* self, bool is_string, xkb_keysym_t keysym, char string[64], uint16_t mods, xkb_key_direction direction) = nullptr;
+
+    Container* child(int wanted_width, int wanted_height);
+
+    Container* child(int type, int wanted_width, int wanted_height);
+
+    Container();
+
+    Container(layout_type type, double wanted_width, double wanted_height);
+
+    Container(double wanted_width, double wanted_height);
+
+    Container(const Container& c);
+
+    bool skip_delete = false;
+
+    virtual ~Container();
+
+    ScrollContainer* scrollchild(const ScrollPaneSettings& scroll_pane_settings);
+};
+
+enum ScrollShow {
+    SAlways,
+    SWhenNeeded,
+    SNever
+};
+
+class ScrollPaneSettings : public UserData {
+  public:
+    ScrollPaneSettings(float scale);
+
+    int  right_width        = 12;
+    int  right_arrow_height = 12;
+
+    int  bottom_height      = 12;
+    int  bottom_arrow_width = 12;
+
+    bool right_inline_track  = false;
+    bool bottom_inline_track = false;
+
+    // 0 is always show, 1 is when needed, 2 is never show
+    int  right_show_amount  = ScrollShow::SWhenNeeded;
+    int  bottom_show_amount = ScrollShow::SWhenNeeded;
+
+    bool make_content = false;
+
+    bool start_at_end = false;
+
+    // paint functions
+    bool paint_minimal = false;
+};
+
+struct Timeout {};
+
+struct ScrollContainer : public Container {
+    Container*         content                = nullptr;
+    Container*         right                  = nullptr;
+    Container*         bottom                 = nullptr;
+    long               previous_time_scrolled = 0;
+    long               previous_delta_diff    = -1;
+    int                scroll_count           = 0;
+    ScrollPaneSettings settings;
+    double             scrollbar_openess     = 1;
+    double             scrollbar_visible     = 1;
+    Timeout*           openess_delay_timeout = nullptr;
+
+    explicit ScrollContainer(ScrollPaneSettings settings) : settings(std::move(settings)) {
+        type            = ::newscroll;
+        wanted_bounds.w = FILL_SPACE;
+        wanted_bounds.h = FILL_SPACE;
+    }
+
+    ~ScrollContainer() {
+        delete content;
+        delete right;
+        delete bottom;
+    }
+};
+
+Bounds     scroll_bounds(Container* container);
+
+void       layout(Container* root, Container* container, const Bounds& bounds);
+
+Container* container_by_name(std::string name, Container* root);
+
+Container* container_by_container(Container* target, Container* root);
+
+bool       overlaps(Bounds a, Bounds b);
+
+bool       bounds_contains(const Bounds& bounds, int x, int y);
+
+double     reserved_width(Container* box);
+
+double     reserved_height(Container* box);
+
+double     true_height(Container* box);
+
+double     true_width(Container* box);
+
+double     actual_true_height(Container* box);
+
+double     actual_true_width(Container* box);
+
+void       clamp_scroll(ScrollContainer* scrollpane);
+
+#endif
