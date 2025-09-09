@@ -90,6 +90,9 @@ int current_rendering_window();
 
 float scale(int id);
 
+std::vector<int> get_window_stacking_order();
+
 void notify(std::string text);
+
 
 #endif // hypriso_h_INCLUDED

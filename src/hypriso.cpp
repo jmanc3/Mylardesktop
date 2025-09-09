@@ -95,11 +95,11 @@ void on_close_monitor(PHLMONITOR m) {
 void HyprIso::create_hooks_and_callbacks() {
     static auto mouseMove = HyprlandAPI::registerCallbackDynamic(globals->api, "mouseMove", 
         [](void* self, SCallbackInfo& info, std::any data) {
-            auto  mouse = g_pInputManager->getMouseCoordsInternal();
             auto consume = false;
             if (hypriso->on_mouse_move) {
-                auto  mouse = g_pInputManager->getMouseCoordsInternal();
-                consume = hypriso->on_mouse_move(0, mouse.x, mouse.y);
+                auto mouse = g_pInputManager->getMouseCoordsInternal();
+                auto m = g_pCompositor->getMonitorFromCursor();
+                consume = hypriso->on_mouse_move(0, mouse.x * m->m_scale, mouse.y * m->m_scale);
             }
             info.cancelled = consume;
         });
@@ -109,7 +109,7 @@ void HyprIso::create_hooks_and_callbacks() {
             auto e = std::any_cast<IPointer::SButtonEvent>(data);
             auto consume = false;
             if (hypriso->on_mouse_press) {
-                auto  mouse = g_pInputManager->getMouseCoordsInternal();
+                auto mouse = g_pInputManager->getMouseCoordsInternal();
                 auto s = g_pCompositor->getMonitorFromCursor()->m_scale;
                 consume = hypriso->on_mouse_press(e.mouse, e.button, e.state, mouse.x * s, mouse.y * s);
             }
@@ -354,6 +354,18 @@ float scale(int id) {
 }
 
 
+std::vector<int> get_window_stacking_order() {
+    std::vector<int> vec;
+    for (auto w : g_pCompositor->m_windows) {
+        for (auto hyprwindow : hyprwindows) {
+            if (hyprwindow->w == w) {
+                vec.push_back(hyprwindow->id);
+            }
+        }        
+    }
+    
+    return vec;
+}
 
 
      

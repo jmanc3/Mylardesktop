@@ -24,6 +24,7 @@ struct RootData : UserData {
 
 struct ClientData : UserData {
     int id = 0;
+    int index = 0; // for reordering based on the stacking order
     
     ClientData(int id) : id(id) {
        ; 
@@ -34,9 +35,12 @@ CBox tobox(Container *c) {
    return {c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h}; 
 }
 
+void layout_every_single_root();
+
 // returning true means consume the event
 bool on_mouse_move(int id, float x, float y) {
     Event event(x, y);
+    layout_every_single_root();
     for (auto root : roots)
         move_event(root, event);
     return false;
@@ -67,6 +71,25 @@ ThinClient *c_from_id(int id) {
 }
 
 void layout_every_single_root() {
+    // reorder based on stacking
+    std::vector<int> order = get_window_stacking_order();
+    for (auto r : roots) {
+        // update the index based on the stacking order
+        for (auto c : r->children) {
+            auto cdata = (ClientData *) c->user_data;
+            for (int i = 0; i < order.size(); i++)
+                if (order[i] == cdata->id)
+                    cdata->index = i;
+        }
+        // sort the children based on index
+        std::sort(r->children.begin(), r->children.end(), [](Container *a, Container *b) {
+            auto adata = (ClientData *) a->user_data; 
+            auto bdata = (ClientData *) b->user_data; 
+            return adata->index > bdata->index; 
+        });
+    }    
+    
+    // set bounds of containers 
     for (auto r : roots) {
         auto rdata = (RootData *) r->user_data;
         auto rid = rdata->id;
@@ -115,6 +138,7 @@ void on_render(int id, int stage) {
 // returning true means consume the event
 bool on_mouse_press(int id, int button, int state, float x, float y) {
     Event event(x, y, button, state);
+    layout_every_single_root();
     for (auto root : roots)
         mouse_event(root, event);
 
@@ -168,7 +192,13 @@ void on_window_open(int id) {
                 auto data = (ClientData *) c->user_data;
                 auto rdata = (RootData *) root->user_data;
                 if (data->id == rdata->active_id) {
-                    border(tobox(c), {1, 1, 0, 1}, 2);
+                    if (c->state.mouse_pressing) {
+                        border(tobox(c), {0, 1, 0, 1}, 2);
+                    } else if (c->state.mouse_hovering) {
+                        border(tobox(c), {1, 1, 0, 1}, 2);
+                    } else {
+                        border(tobox(c), {1, 0, 0, 1}, 2);
+                    }
                 }
         	};
             c->user_data = new ClientData(id);            
