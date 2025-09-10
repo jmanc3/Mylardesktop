@@ -79,6 +79,7 @@ void request_refresh();
 
 // ThinClient props
 Hyprutils::Math::CBox bounds(ThinClient *w);
+Hyprutils::Math::CBox bounds_full(ThinClient *w);
 std::string class_name(ThinClient *w);
 std::string title_name(ThinClient *w);
 
@@ -91,6 +92,8 @@ int current_rendering_window();
 float scale(int id);
 
 std::vector<int> get_window_stacking_order();
+
+void move(int id, int x, int y);
 
 void notify(std::string text);
 

@@ -11,6 +11,7 @@
 #include <cassert>
 
 static std::vector<Container *> roots; // monitors
+static int titlebar_h = 29;
 
 struct RootData : UserData {
     int id = 0;
@@ -25,6 +26,9 @@ struct RootData : UserData {
 struct ClientData : UserData {
     int id = 0;
     int index = 0; // for reordering based on the stacking order
+
+    int initial_x = 0;
+    int initial_y = 0;
     
     ClientData(int id) : id(id) {
        ; 
@@ -106,7 +110,13 @@ void layout_every_single_root() {
             if (auto cm = c_from_id(cid)) {
                 auto b = bounds(cm);            
                 b.scale(s);
-                c->real_bounds = Bounds(b.x, b.y, b.w, b.h);
+                c->real_bounds = Bounds(
+                    b.x, 
+                    b.y - titlebar_h * s, 
+                    b.w, 
+                    b.h + titlebar_h * s
+                );
+                ::layout(c, c, c->real_bounds);
             }
         } 
     }    
@@ -154,7 +164,7 @@ void on_window_open(int id) {
     // add a child to root which will rep the window titlebar
     auto tc = new ThinClient(id);
     hypriso->windows.push_back(tc);
-    hypriso->reserve_titlebar(tc, 32);
+    hypriso->reserve_titlebar(tc, titlebar_h);
 
     int monitor = monitor_overlapping(id);
     if (monitor == -1) {
@@ -173,23 +183,32 @@ void on_window_open(int id) {
     for (auto r : roots) {
         auto data = (RootData *) r->user_data;
         if (data->id == monitor) {
-            auto c = r->child(::hbox, FILL_SPACE, FILL_SPACE); // the sizes are set later by layout code
-            /*c->pre_layout = [](Container *root, Container *c, const Bounds &b) {
-                // set the wanted bounds x y, w h based on the data of the actual client
-                auto data = (ClientData *) c->user_data;
-                for (auto t : hypriso->windows) {
-                    if (t->id == data->id) {
-                        auto b = bounds(t);
-                        c->wanted_bounds.x = b.x;
-                        c->wanted_bounds.y = b.y;
-                        c->wanted_bounds.w = b.w;
-                        c->wanted_bounds.h = b.h;
-                        break;
-                    }
-                }
-            };*/
-        	c->when_paint = [](Container *root, Container *c) {
-                auto data = (ClientData *) c->user_data;
+            auto c = r->child(::vbox, FILL_SPACE, FILL_SPACE); // the sizes are set later by layout code
+            c->user_data = new ClientData(id);            
+            auto s = scale(((RootData *) r->user_data)->id);
+            auto title = c->child(::hbox, FILL_SPACE, titlebar_h * s);
+            auto content = c->child(::hbox, FILL_SPACE, FILL_SPACE);
+            title->when_drag_start = [](Container *root, Container *c) {
+                auto data = (ClientData *) c->parent->user_data;
+                auto rdata = (RootData *) root->user_data;
+                auto s = scale(rdata->id);
+                auto b = bounds(c_from_id(data->id));
+                data->initial_x = b.x * s;
+                data->initial_y = b.y * s;
+            };
+            title->when_drag = [](Container *root, Container *c) {
+                auto data = (ClientData *) c->parent->user_data;
+                auto rdata = (RootData *) root->user_data;
+                auto newx = data->initial_x + (root->mouse_current_x - root->mouse_initial_x);
+                auto newy = data->initial_y + (root->mouse_current_y - root->mouse_initial_y);
+                move(data->id, newx, newy);
+            };
+            title->when_drag_end = [](Container *root, Container *c) {
+                auto data = (ClientData *) c->parent->user_data;
+                auto rdata = (RootData *) root->user_data;
+            };
+        	title->when_paint = [](Container *root, Container *c) {
+                auto data = (ClientData *) c->parent->user_data;
                 auto rdata = (RootData *) root->user_data;
                 if (data->id == rdata->active_id) {
                     if (c->state.mouse_pressing) {
@@ -201,7 +220,6 @@ void on_window_open(int id) {
                     }
                 }
         	};
-            c->user_data = new ClientData(id);            
             
             break;
         }

@@ -271,11 +271,23 @@ void request_refresh() {
     }
 }
 
-Hyprutils::Math::CBox bounds(ThinClient *w) {
+Hyprutils::Math::CBox bounds_full(ThinClient *w) {
     for (auto hyprwindow : hyprwindows) {
         if (hyprwindow->id == w->id) {
             if (auto w = hyprwindow->w.get()) {
                 return w->getFullWindowBoundingBox();
+            }
+        }
+    }    
+    return {0, 0, 0, 0};
+}
+
+Hyprutils::Math::CBox bounds(ThinClient *w) {
+    for (auto hyprwindow : hyprwindows) {
+        if (hyprwindow->id == w->id) {
+            if (auto w = hyprwindow->w.get()) {
+                //return w->getFullWindowBoundingBox();
+                return w->getWindowMainSurfaceBox();
             }
         }
     }    
@@ -367,6 +379,16 @@ std::vector<int> get_window_stacking_order() {
     return vec;
 }
 
+void move(int id, int x, int y) {
+    auto m = g_pCompositor->getMonitorFromCursor();
+    for (auto c : hyprwindows) {
+        if (c->id == id) {
+            float xs = x * (1.0 / m->m_scale);
+            float ys = y * (1.0 / m->m_scale);
+            c->w->m_realPosition->setValueAndWarp({xs, ys});
+        }
+    }
+}
 
      
  
