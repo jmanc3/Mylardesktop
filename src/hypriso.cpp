@@ -10,11 +10,18 @@
 
 #include "first.h"
 
+#include <hyprland/src/helpers/Color.hpp>
+
+#define private public
+#include <hyprland/src/render/pass/SurfacePassElement.hpp>
+#undef private
+
 #include <any>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/devices/IPointer.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/Compositor.hpp>
+#include <hyprland/src/render/pass/TexPassElement.hpp>
 #include <hyprland/src/render/pass/RectPassElement.hpp>
 #include <hyprland/src/render/pass/BorderPassElement.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
@@ -23,6 +30,9 @@
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/decorations/DecorationPositioner.hpp>
 #include <hyprland/src/render/decorations/IHyprWindowDecoration.hpp>
+#include <librsvg/rsvg.h>
+
+
 
 HyprIso *hypriso = new HyprIso;
 
@@ -31,6 +41,7 @@ static int unique_id = 0;
 struct HyprWindow {
     int id;  
     PHLWINDOW w;
+    int cornermask = 0; // when rendering the surface, what corners should be rounded
 };
 
 static std::vector<HyprWindow *> hyprwindows;
@@ -41,6 +52,85 @@ struct HyprMonitor {
 };
 
 static std::vector<HyprMonitor *> hyprmonitors;
+
+struct Texture {
+    SP<CTexture> texture;
+    TextureInfo info;
+};
+
+static std::vector<Texture *> hyprtextures;
+
+class AnyPass : public IPassElement {
+public:
+    struct AnyData {
+        std::function<void(AnyPass*)> draw = nullptr;
+        //void (*draw)(AnyPass *pass) = nullptr;
+    };
+
+    AnyPass(const AnyData& data) {
+        m_data       = new AnyData;
+        m_data->draw = data.draw;
+    }
+    virtual ~AnyPass() {
+        delete m_data;
+    }
+
+    virtual void draw(const CRegion& damage) {
+        // here we can draw anything
+        if (m_data->draw) {
+            m_data->draw(this);
+        }
+    }
+    virtual bool needsLiveBlur() {
+        return false;
+    }
+    virtual bool needsPrecomputeBlur() {
+        return false;
+    }
+    virtual std::optional<CBox> boundingBox() {
+        return {};
+    }
+    virtual CRegion opaqueRegion() {
+        return {};
+    }
+    virtual const char* passName() {
+        return "CAnyPassElement";
+    }
+
+    AnyData* m_data = nullptr;
+};
+
+void set_rounding(int mask) {
+    // todo set shader mask to 3, and then to 0 afterwards
+    g_pHyprOpenGL->useProgram(g_pHyprOpenGL->m_shaders->m_shQUAD.program);
+    GLint loc = glGetUniformLocation(g_pHyprOpenGL->m_shaders->m_shQUAD.program, "cornerDisableMask");
+    glUniform1i(loc, mask);
+    GLint value;
+
+    g_pHyprOpenGL->useProgram(g_pHyprOpenGL->m_shaders->m_shRGBA.program);
+    loc = glGetUniformLocation(g_pHyprOpenGL->m_shaders->m_shRGBA.program, "cornerDisableMask");
+    glUniform1i(loc, mask);
+
+    g_pHyprOpenGL->useProgram(g_pHyprOpenGL->m_shaders->m_shRGBX.program);
+    loc = glGetUniformLocation(g_pHyprOpenGL->m_shaders->m_shRGBX.program, "cornerDisableMask");
+    glUniform1i(loc, mask);
+
+    g_pHyprOpenGL->useProgram(g_pHyprOpenGL->m_shaders->m_shEXT.program);
+    loc = glGetUniformLocation(g_pHyprOpenGL->m_shaders->m_shEXT.program, "cornerDisableMask");
+    glUniform1i(loc, mask);
+
+    g_pHyprOpenGL->useProgram(g_pHyprOpenGL->m_shaders->m_shCM.program);
+    loc = glGetUniformLocation(g_pHyprOpenGL->m_shaders->m_shCM.program, "cornerDisableMask");
+    glUniform1i(loc, mask);
+
+    g_pHyprOpenGL->useProgram(g_pHyprOpenGL->m_shaders->m_shPASSTHRURGBA.program);
+    loc = glGetUniformLocation(g_pHyprOpenGL->m_shaders->m_shPASSTHRURGBA.program, "cornerDisableMask");
+    glUniform1i(loc, mask);
+
+    g_pHyprOpenGL->useProgram(g_pHyprOpenGL->m_shaders->m_shBORDER1.program);
+    loc = glGetUniformLocation(g_pHyprOpenGL->m_shaders->m_shBORDER1.program, "cornerDisableMask");
+    glUniform1i(loc, mask);
+}
 
 void on_open_window(PHLWINDOW w) {
     auto hw = new HyprWindow;
@@ -90,6 +180,36 @@ void on_close_monitor(PHLMONITOR m) {
         hypriso->on_monitor_closed(hm->id);
         hyprmonitors.erase(hyprmonitors.begin() + target_index);
     }
+}
+
+inline CFunctionHook* g_pOnSurfacePassDraw = nullptr;
+typedef void (*origSurfacePassDraw)(void*, const CRegion& damage);
+void hook_onSurfacePassDraw(void* thisptr, const CRegion& damage) {
+    auto  spe = (CSurfacePassElement *) thisptr;
+    auto window = spe->m_data.pWindow;
+    int cornermask = 0;
+    for (auto hw: hyprwindows)
+        if (hw->w == window)
+            cornermask = hw->cornermask;
+    set_rounding(cornermask); // only top rounding
+    (*(origSurfacePassDraw)g_pOnSurfacePassDraw->m_original)(thisptr, damage);
+    set_rounding(0);
+}
+
+void fix_window_corner_rendering() {
+    static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "draw");
+    for (auto m : METHODS) {
+        if (m.signature.find("SurfacePassElement") != std::string::npos) {
+            g_pOnSurfacePassDraw = HyprlandAPI::createFunctionHook(globals->api, m.address, (void*)&hook_onSurfacePassDraw);
+            g_pOnSurfacePassDraw->hook();
+        }
+    }
+}
+
+void set_window_corner_mask(int id, int cornermask) {
+    for (auto hw: hyprwindows)
+        if (hw->id == id)
+            hw->cornermask = cornermask;
 }
 
 void HyprIso::create_hooks_and_callbacks() {
@@ -194,24 +314,34 @@ void HyprIso::create_hooks_and_callbacks() {
     for (auto w : g_pCompositor->m_windows) {
         on_open_window(w);
     }
+
+    fix_window_corner_rendering();
 }
 
-void rect(Hyprutils::Math::CBox box, CHyprColor color, float round, float roundingPower, bool blur, float blurA) {
-    CRectPassElement::SRectData rectdata;
-    rectdata.color         = color;
-    rectdata.box           = box;
-    rectdata.blur          = blur;
-    rectdata.blurA         = blurA;
-    rectdata.round         = round;
-    rectdata.roundingPower = roundingPower;
-    rectdata.clipBox       = box;
-    g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(rectdata));
+void HyprIso::end() {
+    g_pHyprRenderer->m_renderPass.removeAllOfType("CRectPassElement");
+    g_pHyprRenderer->m_renderPass.removeAllOfType("CTexPassElement");
+    g_pHyprRenderer->m_renderPass.removeAllOfType("CAnyPassElement");
 }
 
-void border(Hyprutils::Math::CBox box, CHyprColor color, float size, float round, float roundingPower, bool blur, float blurA) {
+void rect(Hyprutils::Math::CBox box, RGBA color, int cornermask, float round, float roundingPower, bool blur, float blurA) {
+    AnyPass::AnyData anydata([box, color, cornermask, round, roundingPower, blur, blurA](AnyPass* pass) {
+        set_rounding(cornermask); // only top side
+        CHyprOpenGLImpl::SRectRenderData rectdata;
+        rectdata.blur          = blur;
+        rectdata.blurA         = blurA;
+        rectdata.round         = std::round(round);
+        rectdata.roundingPower = roundingPower;
+        g_pHyprOpenGL->renderRect(box, CHyprColor(color.r, color.g, color.b, color.a), rectdata);
+        set_rounding(0);
+    });
+    g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
+}
+
+void border(Hyprutils::Math::CBox box, RGBA color, float size, int cornermask, float round, float roundingPower, bool blur, float blurA) {
     CBorderPassElement::SBorderData rectdata;
-    rectdata.grad1         = color;
-    rectdata.grad2         = color;
+    rectdata.grad1         = CHyprColor(color.r, color.g, color.b, color.a);
+    rectdata.grad2         = CHyprColor(color.r, color.g, color.b, color.a);
     rectdata.box           = box;
     rectdata.round         = round;
     rectdata.outerRound    = round;
@@ -390,5 +520,344 @@ void move(int id, int x, int y) {
     }
 }
 
+
+bool paint_svg_to_surface(cairo_surface_t* surface, std::string path, int target_size) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    GFile* gfile = g_file_new_for_path(path.c_str());
+    if (gfile == nullptr)
+        return false;
+    RsvgHandle* handle = rsvg_handle_new_from_gfile_sync(gfile, RSVG_HANDLE_FLAGS_NONE, NULL, NULL);
+
+    // TODO: is this correct?
+    if (handle == nullptr)
+        return false;
+
+    auto* temp_context = cairo_create(surface);
+    cairo_save(temp_context);
+    cairo_set_operator(temp_context, CAIRO_OPERATOR_CLEAR);
+    cairo_paint(temp_context);
+    cairo_restore(temp_context);
+
+    cairo_save(temp_context);
+    const RsvgRectangle viewport{0, 0, (double)target_size, (double)target_size};
+    rsvg_handle_render_layer(handle, temp_context, NULL, &viewport, nullptr);
+    cairo_restore(temp_context);
+    cairo_destroy(temp_context);
+
+    g_object_unref(gfile);
+    g_object_unref(handle);
+
+    return true;
+}
+
+bool paint_png_to_surface(cairo_surface_t* surface, std::string path, int target_size) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    auto* png_surface = cairo_image_surface_create_from_png(path.c_str());
+
+    if (cairo_surface_status(png_surface) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(png_surface);
+        return false;
+    }
+
+    auto* temp_context = cairo_create(surface);
+    int   w            = cairo_image_surface_get_width(png_surface);
+    int   h            = cairo_image_surface_get_height(png_surface);
+
+    cairo_save(temp_context);
+    cairo_set_operator(temp_context, CAIRO_OPERATOR_CLEAR);
+    cairo_paint(temp_context);
+    cairo_restore(temp_context);
+
+    cairo_save(temp_context);
+    if (target_size != w) {
+        double scale = ((double)target_size) / ((double)w);
+        cairo_scale(temp_context, scale, scale);
+    }
+    cairo_set_source_surface(temp_context, png_surface, 0, 0);
+    cairo_paint(temp_context);
+    cairo_restore(temp_context);
+    cairo_destroy(temp_context);
+    cairo_surface_destroy(png_surface);
+
+    return true;
+}
+
+cairo_surface_t* cairo_image_surface_create_from_xpm(const std::string& path) {
+    std::ifstream file(path);
+    if (!file) {
+        std::cerr << "Failed to open XPM file: " << path << std::endl;
+        return nullptr;
+    }
+
+    std::string              line;
+    std::vector<std::string> lines;
+
+    // Read lines into a buffer
+    while (std::getline(file, line)) {
+        size_t start = line.find('"');
+        size_t end   = line.rfind('"');
+        if (start != std::string::npos && end != std::string::npos && end > start) {
+            lines.push_back(line.substr(start + 1, end - start - 1));
+        }
+    }
+
+    if (lines.empty())
+        return nullptr;
+
+    // Parse header
+    std::istringstream header(lines[0]);
+    int                width, height, num_colors, chars_per_pixel;
+    header >> width >> height >> num_colors >> chars_per_pixel;
+
+    // Parse color map
+    std::unordered_map<std::string, uint32_t> color_map;
+    for (int i = 1; i <= num_colors; ++i) {
+        std::string entry     = lines[i];
+        std::string key       = entry.substr(0, chars_per_pixel);
+        std::string color_str = entry.substr(entry.find("c ") + 2);
+
+        uint32_t    color = 0x00000000; // Default to transparent
+
+        if (color_str == "None") {
+            color = 0x00000000;
+        } else if (color_str[0] == '#') {
+            // Parse hex color
+            color_str      = color_str.substr(1); // skip '#'
+            unsigned int r = 0, g = 0, b = 0;
+
+            if (color_str.length() == 6) {
+                std::istringstream(color_str.substr(0, 2)) >> std::hex >> r;
+                std::istringstream(color_str.substr(2, 2)) >> std::hex >> g;
+                std::istringstream(color_str.substr(4, 2)) >> std::hex >> b;
+            }
+
+            color = (0xFF << 24) | (r << 16) | (g << 8) | b; // ARGB
+        }
+
+        color_map[key] = color;
+    }
+
+    // Create surface
+    cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
+    unsigned char*   data    = cairo_image_surface_get_data(surface);
+    int              stride  = cairo_image_surface_get_stride(surface);
+
+    // Parse pixels
+    for (int y = 0; y < height; ++y) {
+        const std::string& row = lines[y + 1 + num_colors];
+        for (int x = 0; x < width; ++x) {
+            std::string    key   = row.substr(x * chars_per_pixel, chars_per_pixel);
+            uint32_t       color = color_map.count(key) ? color_map[key] : 0x00000000;
+
+            unsigned char* pixel = data + y * stride + x * 4;
+            pixel[0]             = (color >> 0) & 0xFF;  // B
+            pixel[1]             = (color >> 8) & 0xFF;  // G
+            pixel[2]             = (color >> 16) & 0xFF; // R
+            pixel[3]             = (color >> 24) & 0xFF; // A
+        }
+    }
+
+    cairo_surface_mark_dirty(surface);
+    return surface;
+}
+
+bool paint_xpm_to_surface(cairo_surface_t* surface, std::string path, int target_size) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    auto* xpm_surface = cairo_image_surface_create_from_xpm(path.c_str());
+    if (!xpm_surface)
+        return false;
+
+    if (cairo_surface_status(xpm_surface) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(xpm_surface);
+        return false;
+    }
+
+    auto* temp_context = cairo_create(surface);
+    int   w            = cairo_image_surface_get_width(xpm_surface);
+
+    cairo_save(temp_context);
+    cairo_set_operator(temp_context, CAIRO_OPERATOR_CLEAR);
+    cairo_paint(temp_context);
+    cairo_restore(temp_context);
+
+    cairo_save(temp_context);
+    if (target_size != w) {
+        double scale = ((double)target_size) / ((double)w);
+        cairo_scale(temp_context, scale, scale);
+    }
+    cairo_set_source_surface(temp_context, xpm_surface, 0, 0);
+    cairo_paint(temp_context);
+    cairo_restore(temp_context);
+    cairo_destroy(temp_context);
+    cairo_surface_destroy(xpm_surface);
+
+    return true;
+}
+
+bool paint_surface_with_image(cairo_surface_t* surface, std::string path, int target_size, void (*upon_completion)(bool)) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    bool success = false;
+    if (path.find(".svg") != std::string::npos) {
+        success = paint_svg_to_surface(surface, path, target_size);
+    } else if (path.find(".png") != std::string::npos) {
+        success = paint_png_to_surface(surface, path, target_size);
+    } else if (path.find(".xpm") != std::string::npos) {
+        success = paint_xpm_to_surface(surface, path, target_size);
+    }
+    if (upon_completion != nullptr) {
+        upon_completion(success);
+    }
+    return success;
+}
+
+cairo_surface_t* accelerated_surface(int w, int h) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+
+    cairo_surface_t* raw_surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+
+    /*
+  cairo_surface_t *fast_surface = cairo_surface_create_similar_image(
+          cairo_get_target(client_entity->cr), CAIRO_FORMAT_ARGB32, w, h);
+          */
+
+    if (cairo_surface_status(raw_surface) != CAIRO_STATUS_SUCCESS)
+        return nullptr;
+
+    return raw_surface;
+}
+
+void load_icon_full_path(cairo_surface_t** surface, std::string path, int target_size) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    if (path.find("svg") != std::string::npos) {
+        *surface = accelerated_surface(target_size, target_size);
+        paint_svg_to_surface(*surface, path, target_size);
+    } else if (path.find("png") != std::string::npos) {
+        *surface = accelerated_surface(target_size, target_size);
+        paint_png_to_surface(*surface, path, target_size);
+    } else if (path.find("xpm") != std::string::npos) {
+        *surface = accelerated_surface(target_size, target_size);
+        paint_xpm_to_surface(*surface, path, target_size);
+    }
+}
+
+SP<CTexture> missingTexure(int size) {
+    SP<CTexture> tex = makeShared<CTexture>();
+    tex->allocate();
+
+    const auto CAIROSURFACE = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 512, 512);
+    const auto CAIRO        = cairo_create(CAIROSURFACE);
+
+    cairo_set_antialias(CAIRO, CAIRO_ANTIALIAS_NONE);
+    cairo_save(CAIRO);
+    cairo_set_source_rgba(CAIRO, 0, 0, 0, 1);
+    cairo_set_operator(CAIRO, CAIRO_OPERATOR_SOURCE);
+    cairo_paint(CAIRO);
+    cairo_set_source_rgba(CAIRO, 1, 0, 1, 1);
+    cairo_rectangle(CAIRO, 256, 0, 256, 256);
+    cairo_fill(CAIRO);
+    cairo_rectangle(CAIRO, 0, 256, 256, 256);
+    cairo_fill(CAIRO);
+    cairo_restore(CAIRO);
+
+    cairo_surface_flush(CAIROSURFACE);
+
+    tex->m_size = {512, 512};
+
+    // copy the data to an OpenGL texture we have
+    const GLint glFormat = GL_RGBA;
+    const GLint glType   = GL_UNSIGNED_BYTE;
+
+    const auto  DATA = cairo_image_surface_get_data(CAIROSURFACE);
+    tex->bind();
+    tex->setTexParameter(GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    tex->setTexParameter(GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    tex->setTexParameter(GL_TEXTURE_SWIZZLE_R, GL_BLUE);
+    tex->setTexParameter(GL_TEXTURE_SWIZZLE_B, GL_RED);
+    glTexImage2D(GL_TEXTURE_2D, 0, glFormat, tex->m_size.x, tex->m_size.y, 0, glFormat, glType, DATA);
+
+    cairo_surface_destroy(CAIROSURFACE);
+    cairo_destroy(CAIRO);
+
+    return tex;
+}
+
+SP<CTexture> loadAsset(const std::string& filename, int target_size) {
+    cairo_surface_t* icon = nullptr;
+    load_icon_full_path(&icon, filename, target_size);
+    if (!icon) {
+        return missingTexure(target_size);
+    }
+    // we can darken
+
+    const auto CAIROFORMAT = cairo_image_surface_get_format(icon);
+    auto       tex         = makeShared<CTexture>();
+
+    tex->allocate();
+    tex->m_size = {cairo_image_surface_get_width(icon), cairo_image_surface_get_height(icon)};
+
+    const GLint glIFormat = CAIROFORMAT == CAIRO_FORMAT_RGB96F ? GL_RGB32F : GL_RGBA;
+    const GLint glFormat  = CAIROFORMAT == CAIRO_FORMAT_RGB96F ? GL_RGB : GL_RGBA;
+    const GLint glType    = CAIROFORMAT == CAIRO_FORMAT_RGB96F ? GL_FLOAT : GL_UNSIGNED_BYTE;
+
+    const auto  DATA = cairo_image_surface_get_data(icon);
+    tex->bind();
+    tex->setTexParameter(GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    tex->setTexParameter(GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+    if (CAIROFORMAT != CAIRO_FORMAT_RGB96F) {
+        tex->setTexParameter(GL_TEXTURE_SWIZZLE_R, GL_BLUE);
+        tex->setTexParameter(GL_TEXTURE_SWIZZLE_B, GL_RED);
+    }
+
+    glTexImage2D(GL_TEXTURE_2D, 0, glIFormat, tex->m_size.x, tex->m_size.y, 0, glFormat, glType, DATA);
+
+    cairo_surface_destroy(icon);
+
+    return tex;
+}
      
+TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA color) {
+    auto tex = g_pHyprOpenGL->renderText(text, CHyprColor(color.r, color.g, color.b, color.a), h, false, font, 0);
+    if (tex.get()) {
+        auto t = new Texture;
+        t->texture = tex;
+        TextureInfo info;
+        info.id = unique_id++;
+        info.w = t->texture->m_size.x;
+        info.h = t->texture->m_size.y;
+        t->info = info;
+        hyprtextures.push_back(t);
+        return t->info;
+    }
+    return {};
+}
+
+void draw_texture(TextureInfo info, int x, int y, float a) {
+    for (auto t : hyprtextures) {
+       if (t->info.id == info.id) {
+            CTexPassElement::SRenderData data;
+            data.tex = t->texture;
+            data.box = {(float) x, (float) y, data.tex->m_size.x, data.tex->m_size.y};
+            data.box.x = x;
+            data.box.round();
+            data.clipBox = data.box;
+            data.a = 1.0 * a;
+            g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(std::move(data)));
+       }
+    }
+}
+
+
  

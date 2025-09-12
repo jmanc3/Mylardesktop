@@ -5,13 +5,19 @@
 #include "spring.h"
 #include "container.h"
 #include "hypriso.h"
-#include <hyprland/src/render/OpenGL.hpp>
 
 #include <format>
 #include <cassert>
 
 static std::vector<Container *> roots; // monitors
 static int titlebar_h = 29;
+static int titlebar_icon_h = 12;
+RGBA color_titlebar = {1.0, 1.0, 1.0, 1.0};
+RGBA color_titlebar_hovered = {0.0, 0.0, 0.0, 0.03f};
+RGBA color_titlebar_pressed = {0.0, 0.0, 0.0, 0.08f};
+RGBA color_titlebar_icon = {0.0, 0.0, 0.0, 1.0};
+static float title_button_wratio = 1.4375f;
+static float rounding = 10.0f;
 
 struct RootData : UserData {
     int id = 0;
@@ -165,6 +171,7 @@ void on_window_open(int id) {
     auto tc = new ThinClient(id);
     hypriso->windows.push_back(tc);
     hypriso->reserve_titlebar(tc, titlebar_h);
+    set_window_corner_mask(id, 13);
 
     int monitor = monitor_overlapping(id);
     if (monitor == -1) {
@@ -207,20 +214,98 @@ void on_window_open(int id) {
                 auto data = (ClientData *) c->parent->user_data;
                 auto rdata = (RootData *) root->user_data;
             };
-        	title->when_paint = [](Container *root, Container *c) {
+            title->when_paint = [](Container *root, Container *c) {
                 auto data = (ClientData *) c->parent->user_data;
                 auto rdata = (RootData *) root->user_data;
                 if (data->id == rdata->active_id) {
+                    rect(tobox(c), color_titlebar, 12, rounding * scale(rdata->id));
+                }
+            };
+            title->alignment = ALIGN_RIGHT;
+            struct TitleData {
+                long previous = 0;
+            };
+            title->when_clicked = [](Container *root, Container *c) {
+                auto data = (TitleData *) c->user_data;
+                long current = get_current_time_in_ms();
+                if (current - data->previous < 300) {
+                    notify("toggle max");
+                }
+                data->previous = current;
+            };
+            title->user_data = new TitleData;
+
+            struct IconData {
+                bool attempted = false;
+                TextureInfo info;
+            };
+            
+            auto min = title->child(100, FILL_SPACE);
+            min->user_data = new IconData;
+            min->when_paint = [](Container *root, Container *c) {
+                auto data = (ClientData *) c->parent->parent->user_data;
+                auto rdata = (RootData *) root->user_data;
+                auto cdata = (IconData *) c->user_data;
+                auto s = scale(rdata->id);
+                if (data->id == rdata->active_id && rdata->stage == RENDER_POST_WINDOW) {
                     if (c->state.mouse_pressing) {
-                        border(tobox(c), {0, 1, 0, 1}, 2);
+                        rect(tobox(c), color_titlebar_pressed, 10 * scale(rdata->id));
                     } else if (c->state.mouse_hovering) {
-                        border(tobox(c), {1, 1, 0, 1}, 2);
-                    } else {
-                        border(tobox(c), {1, 0, 0, 1}, 2);
+                        rect(tobox(c), color_titlebar_hovered, 10 * scale(rdata->id));
+                    }
+
+                    if (!cdata->attempted) {
+                        cdata->attempted = true;
+                        cdata->info = gen_text_texture("Segoe Fluent Icons", "\ue921",
+                            titlebar_icon_h * s, color_titlebar_icon);
+                    }
+                    if (cdata->info.id != -1) {
+                        draw_texture(cdata->info,
+                            c->real_bounds.x + c->real_bounds.w * .5 - cdata->info.w * .5,
+                            c->real_bounds.y + c->real_bounds.h * .5 - cdata->info.h * .5);
                     }
                 }
-        	};
+            };
+            min->pre_layout = [](Container *root, Container *c, const Bounds &b) {
+                c->wanted_bounds.w = b.h * title_button_wratio;
+            };
+            min->when_clicked = [](Container *root, Container *C)  {
+                notify("min");
+            };
+            auto max = title->child(100, FILL_SPACE);
+            max->user_data = new IconData;
+            max->when_paint = [](Container *root, Container *c) {
+                auto data = (ClientData *) c->parent->parent->user_data;
+                auto rdata = (RootData *) root->user_data;
+                auto cdata = (IconData *) c->user_data;
+                if (data->id == rdata->active_id) {
+                    //rect(tobox(c), {1, 1, 0, 1}, 10 * scale(rdata->id));
+                }
+            };
+            max->pre_layout = [](Container *root, Container *c, const Bounds &b) {
+                c->wanted_bounds.w = b.h * title_button_wratio;
+            };
+            max->when_clicked = [](Container *root, Container *C)  {
+                notify("toggle max");
+            };
+            auto close = title->child(100, FILL_SPACE);
+            close->user_data = new IconData;
+            close->when_paint = [](Container *root, Container *c) {
+                auto data = (ClientData *) c->parent->parent->user_data;
+                auto rdata = (RootData *) root->user_data;
+                auto cdata = (IconData *) c->user_data;
+                if (data->id == rdata->active_id) {
+                    //rect(tobox(c), {1, 1, 0, 1}, 10 * scale(rdata->id));
+                }
+            };
+            close->pre_layout = [](Container *root, Container *c, const Bounds &b) {
+                c->wanted_bounds.w = b.h * title_button_wratio;
+            };
+            close->when_clicked = [](Container *root, Container *C)  {
+                notify("close");
+            };
             
+
             break;
         }
     }
@@ -253,7 +338,6 @@ void on_monitor_open(int id) {
     auto c = new Container(layout_type::absolute, FILL_SPACE, FILL_SPACE);
     c->user_data = new RootData(id);
     c->when_paint = [](Container *root, Container *c) {
-       //rect({0, 0, 100, 100}, {1, 1, 0, 1});
     };
     roots.push_back(c);
 }
@@ -306,7 +390,7 @@ void startup::begin() {
 }
 
 void startup::end() {
-    
+    hypriso->end();
 }
 
 

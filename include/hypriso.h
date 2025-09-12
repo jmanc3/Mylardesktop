@@ -1,7 +1,6 @@
 #ifndef hypriso_h_INCLUDED
 #define hypriso_h_INCLUDED
 
-#include <hyprland/src/helpers/Color.hpp>
 #include <hyprutils/math/Box.hpp>
 #include <hyprland/src/SharedDefs.hpp>
 #include <string>
@@ -22,6 +21,20 @@ enum struct STAGE : uint8_t {
     RENDER_POST_WINDOW = eRenderStage::RENDER_PRE_WINDOW,    /* After rendering a window (any pass) */
 };
 
+struct RGBA {
+    float r, g, b, a;
+    
+    RGBA(float r, float g, float b, float a) : r(r), g(g), b(b), a(a) {
+        
+    }
+};
+
+struct TextureInfo {
+    int id = -1;
+    int w = 0;
+    int h = 0;
+};
+
 struct ThinClient {
     int id; // unique id which maps to a hyprland window 
 
@@ -38,6 +51,9 @@ struct HyprIso {
 
     // The main workhorse of the program which pumps events from hyprland to mylar
     void create_hooks_and_callbacks();
+
+    // So things can be cleaned
+    void end(); 
     
     std::function<bool(int id, float x, float y)> on_mouse_move = nullptr;
 
@@ -66,8 +82,8 @@ struct HyprIso {
 
 extern HyprIso *hypriso;
 
-void rect(Hyprutils::Math::CBox box, CHyprColor color, float round = 0.0, float roundingPower = 2.0, bool blur = true, float blurA = 1.0);
-void border(Hyprutils::Math::CBox box, CHyprColor color, float size, float round = 0.0, float roundingPower = 2.0, bool blur = true, float blurA = 1.0);
+void rect(Hyprutils::Math::CBox box, RGBA color, int conrnermask = 0, float round = 0.0, float roundingPower = 2.0, bool blur = true, float blurA = 1.0);
+void border(Hyprutils::Math::CBox box, RGBA color, float size, int cornermask = 0, float round = 0.0, float roundingPower = 2.0, bool blur = true, float blurA = 1.0);
 
 static long get_current_time_in_ms() {
     using namespace std::chrono;
@@ -96,6 +112,12 @@ std::vector<int> get_window_stacking_order();
 void move(int id, int x, int y);
 
 void notify(std::string text);
+
+void set_window_corner_mask(int id, int cornermask);
+
+TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA color);
+
+void draw_texture(TextureInfo info, int x, int y, float a = 1.0);
 
 
 #endif // hypriso_h_INCLUDED
