@@ -835,6 +835,17 @@ SP<CTexture> loadAsset(const std::string& filename, int target_size) {
 
     return tex;
 }
+
+void free_text_texture(int id) {
+    for (int i = 0; i < hyprtextures.size(); i++) {
+        auto h = hyprtextures[i];
+        if (h->info.id == id) {
+            h->texture.reset();
+            hyprtextures.erase(hyprtextures.begin() + i);
+            delete h;
+        }
+    }
+}
      
 TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA color) {
     auto tex = g_pHyprOpenGL->renderText(text, CHyprColor(color.r, color.g, color.b, color.a), h, false, font, 0);

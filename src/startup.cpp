@@ -204,6 +204,19 @@ void on_window_open(int id) {
     for (auto r : roots) {
         auto data = (RootData *) r->user_data;
         if (data->id == monitor) {
+            struct IconData {
+                bool attempted = false;
+                TextureInfo main;
+                TextureInfo secondary;
+            };
+
+            struct TitleData {
+                long previous = 0;
+
+                TextureInfo main;
+                std::string cached_text;
+            };
+
             auto c = r->child(::vbox, FILL_SPACE, FILL_SPACE); // the sizes are set later by layout code
             c->user_data = new ClientData(id);            
             auto s = scale(((RootData *) r->user_data)->id);
@@ -232,14 +245,24 @@ void on_window_open(int id) {
             title->when_paint = [](Container *root, Container *c) {
                 auto data = (ClientData *) c->parent->user_data;
                 auto rdata = (RootData *) root->user_data;
+                auto s = scale(rdata->id);
+                auto client = client_by_id(data->id);
+                auto titledata = (TitleData *) c->user_data;
                 if (data->id == rdata->active_id) {
                     rect(c->real_bounds, color_titlebar, 12, rounding * scale(rdata->id));
+                    auto text = title_name(client);
+                    if (titledata->cached_text != text) {
+                        if (titledata->main.id != -1) {
+                            titledata->main.id = -1;
+                            free_text_texture(titledata->main.id);
+                        }
+                        titledata->main = gen_text_texture("Segoe UI Variable", text, titlebar_icon_h * s, color_titlebar_icon);
+                        titledata->cached_text = text;
+                    }
+                    draw_texture(titledata->main, c->real_bounds.x, c->real_bounds.y);
                 }
             };
             title->alignment = ALIGN_RIGHT;
-            struct TitleData {
-                long previous = 0;
-            };
             title->when_clicked = [](Container *root, Container *c) {
                 auto data = (TitleData *) c->user_data;
                 long current = get_current_time_in_ms();
@@ -251,12 +274,6 @@ void on_window_open(int id) {
             };
             title->user_data = new TitleData;
 
-            struct IconData {
-                bool attempted = false;
-                TextureInfo main;
-                TextureInfo secondary;
-            };
-            
             auto min = title->child(100, FILL_SPACE);
             min->user_data = new IconData;
             min->when_paint = [](Container *root, Container *c) {

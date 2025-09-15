@@ -125,6 +125,7 @@ void notify(std::string text);
 
 void set_window_corner_mask(int id, int cornermask);
 
+void free_text_texture(int id);
 TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA color);
 
 void draw_texture(TextureInfo info, int x, int y, float a = 1.0);
