@@ -324,25 +324,33 @@ void HyprIso::end() {
     g_pHyprRenderer->m_renderPass.removeAllOfType("CAnyPassElement");
 }
 
-void rect(Hyprutils::Math::CBox box, RGBA color, int cornermask, float round, float roundingPower, bool blur, float blurA) {
+CBox tocbox(Bounds b) {
+    return {b.x, b.y, b.w, b.h};
+}
+
+Bounds tobounds(CBox box) {
+    return {box.x, box.y, box.w, box.h};
+}
+
+void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPower, bool blur, float blurA) {
     AnyPass::AnyData anydata([box, color, cornermask, round, roundingPower, blur, blurA](AnyPass* pass) {
-        set_rounding(cornermask); // only top side
         CHyprOpenGLImpl::SRectRenderData rectdata;
         rectdata.blur          = blur;
         rectdata.blurA         = blurA;
         rectdata.round         = std::round(round);
         rectdata.roundingPower = roundingPower;
-        g_pHyprOpenGL->renderRect(box, CHyprColor(color.r, color.g, color.b, color.a), rectdata);
+        set_rounding(cornermask); // only top side
+        g_pHyprOpenGL->renderRect(tocbox(box), CHyprColor(color.r, color.g, color.b, color.a), rectdata);
         set_rounding(0);
     });
     g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
 }
 
-void border(Hyprutils::Math::CBox box, RGBA color, float size, int cornermask, float round, float roundingPower, bool blur, float blurA) {
+void border(Bounds box, RGBA color, float size, int cornermask, float round, float roundingPower, bool blur, float blurA) {
     CBorderPassElement::SBorderData rectdata;
     rectdata.grad1         = CHyprColor(color.r, color.g, color.b, color.a);
     rectdata.grad2         = CHyprColor(color.r, color.g, color.b, color.a);
-    rectdata.box           = box;
+    rectdata.box           = tocbox(box);
     rectdata.round         = round;
     rectdata.outerRound    = round;
     rectdata.borderSize    = size;
@@ -401,23 +409,23 @@ void request_refresh() {
     }
 }
 
-Hyprutils::Math::CBox bounds_full(ThinClient *w) {
+Bounds bounds_full(ThinClient *w) {
     for (auto hyprwindow : hyprwindows) {
         if (hyprwindow->id == w->id) {
             if (auto w = hyprwindow->w.get()) {
-                return w->getFullWindowBoundingBox();
+                return tobounds(w->getFullWindowBoundingBox());
             }
         }
     }    
     return {0, 0, 0, 0};
 }
 
-Hyprutils::Math::CBox bounds(ThinClient *w) {
+Bounds bounds(ThinClient *w) {
     for (auto hyprwindow : hyprwindows) {
         if (hyprwindow->id == w->id) {
             if (auto w = hyprwindow->w.get()) {
                 //return w->getFullWindowBoundingBox();
-                return w->getWindowMainSurfaceBox();
+                return tobounds(w->getWindowMainSurfaceBox());
             }
         }
     }    
@@ -448,11 +456,11 @@ std::string title_name(ThinClient *w) {
     return "";
 }
 
-Hyprutils::Math::CBox bounds(ThinMonitor *m) {
+Bounds bounds(ThinMonitor *m) {
     for (auto hyprmonitor : hyprmonitors) {
         if (hyprmonitor->id == m->id) {
             if (auto m = hyprmonitor->m.get()) {
-                return m->logicalBox();
+                return tobounds(m->logicalBox());
             }
         }
     }    
@@ -857,6 +865,14 @@ void draw_texture(TextureInfo info, int x, int y, float a) {
             g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(std::move(data)));
        }
     }
+}
+
+void setCursorImageUntilUnset(std::string cursor) {
+    g_pInputManager->setCursorImageUntilUnset(cursor);
+
+}
+void unsetCursorImage() {
+    g_pInputManager->unsetCursorImage();
 }
 
 

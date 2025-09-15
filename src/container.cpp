@@ -902,6 +902,14 @@ void Bounds::grow(double amount) {
     this->h += amount * 2;
 }
 
+Bounds Bounds::scale(double amount) {
+    this->x *= amount;
+    this->y *= amount;
+    this->w *= amount;
+    this->h *= amount;
+    return *this;
+}
+
 std::string get_uuid() {
     std::random_device              rd;
     std::mt19937                    gen(rd());

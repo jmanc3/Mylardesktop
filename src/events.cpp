@@ -410,10 +410,8 @@ bool handle_mouse_button_release(Container* root, const Event& e) {
         // TODO: when_clicked could've delete'd 'c' so recheck for it
         c->state.mouse_pressing = false;
         c->state.mouse_dragging = false;
-        c->state.mouse_hovering = p;
-        c->state.concerned      = p;
-        if (c->name == "asdfasdfasdf")
-            c->name = "";
+        c->state.mouse_hovering = false;
+        c->state.concerned      = false;
     }
 
     handle_mouse_motion(root, e.x, e.y);

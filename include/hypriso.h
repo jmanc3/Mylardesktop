@@ -1,8 +1,9 @@
 #ifndef hypriso_h_INCLUDED
 #define hypriso_h_INCLUDED
 
-#include <hyprutils/math/Box.hpp>
 #include <hyprland/src/SharedDefs.hpp>
+
+#include "container.h"
 #include <string>
 #include <vector>
 #include <chrono>
@@ -36,7 +37,16 @@ struct TextureInfo {
 };
 
 struct ThinClient {
-    int id; // unique id which maps to a hyprland window 
+    int id; // unique id which maps to a hyprland window
+
+    int initial_x = 0; // before drag start
+    int initial_y = 0; // before drag start
+
+    bool maximized = false;
+
+    bool snaped = false;
+    Bounds pre_snap_bounds;
+
 
     ThinClient(int _id) : id(_id) {}
 };
@@ -82,8 +92,8 @@ struct HyprIso {
 
 extern HyprIso *hypriso;
 
-void rect(Hyprutils::Math::CBox box, RGBA color, int conrnermask = 0, float round = 0.0, float roundingPower = 2.0, bool blur = true, float blurA = 1.0);
-void border(Hyprutils::Math::CBox box, RGBA color, float size, int cornermask = 0, float round = 0.0, float roundingPower = 2.0, bool blur = true, float blurA = 1.0);
+void rect(Bounds box, RGBA color, int conrnermask = 0, float round = 0.0, float roundingPower = 2.0, bool blur = true, float blurA = 1.0);
+void border(Bounds box, RGBA color, float size, int cornermask = 0, float round = 0.0, float roundingPower = 2.0, bool blur = true, float blurA = 1.0);
 
 static long get_current_time_in_ms() {
     using namespace std::chrono;
@@ -94,13 +104,13 @@ static long get_current_time_in_ms() {
 void request_refresh();
 
 // ThinClient props
-Hyprutils::Math::CBox bounds(ThinClient *w);
-Hyprutils::Math::CBox bounds_full(ThinClient *w);
+Bounds bounds(ThinClient *w);
+Bounds bounds_full(ThinClient *w);
 std::string class_name(ThinClient *w);
 std::string title_name(ThinClient *w);
 
 // ThinMonitor props
-Hyprutils::Math::CBox bounds(ThinMonitor *m);
+Bounds bounds(ThinMonitor *m);
 
 int current_rendering_monitor();
 int current_rendering_window();
@@ -118,6 +128,9 @@ void set_window_corner_mask(int id, int cornermask);
 TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA color);
 
 void draw_texture(TextureInfo info, int x, int y, float a = 1.0);
+
+void setCursorImageUntilUnset(std::string cursor);
+void unsetCursorImage();
 
 
 #endif // hypriso_h_INCLUDED
