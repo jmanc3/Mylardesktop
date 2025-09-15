@@ -259,7 +259,9 @@ void on_window_open(int id) {
                         titledata->main = gen_text_texture("Segoe UI Variable", text, titlebar_icon_h * s, color_titlebar_icon);
                         titledata->cached_text = text;
                     }
-                    draw_texture(titledata->main, c->real_bounds.x, c->real_bounds.y);
+                    draw_texture(titledata->main,
+                        c->real_bounds.x + (c->real_bounds.h - titledata->main.h) * .5,
+                        c->real_bounds.y + (c->real_bounds.h - titledata->main.h) * .5);
                 }
             };
             title->alignment = ALIGN_RIGHT;
