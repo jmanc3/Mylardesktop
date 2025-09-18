@@ -7,27 +7,25 @@
 
 #include "container.h"
 #include <algorithm>
-#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
-
-struct App {};
 
 static bool starts_with(const std::string& str, const std::string& prefix) {
     // Check if str is long enough to contain the prefix
     return str.size() >= prefix.size() && str.compare(0, prefix.size(), prefix) == 0;
 }
 
-// Load icons into memory
-void set_icons_path_and_possibly_update(App* app);
+extern bool icons_loaded;
+
+bool icon_cache_needs_update();
+void icon_cache_generate();
+void icon_cache_load();
 
 // Remove all icons from memory
-void              unload_icons();
+void unload_icons();
 
-extern std::mutex icon_cache_mutex;
-
-void              generate_cache();
+void generate_cache();
 
 enum IconContext {
     Actions,
@@ -47,13 +45,13 @@ enum IconContext {
 };
 
 struct Candidate {
-    std::string               parent_path;
-    std::string               filename;
-    std::string               theme;
-    int                       extension;
-    int                       size;
-    int                       scale;
-    IconContext               context;
+    std::string parent_path;
+    std::string filename;
+    std::string theme;
+    int extension;
+    int size;
+    int scale;
+    IconContext context;
 
     [[nodiscard]] std::string full_path() const {
         std::string temp = std::string(parent_path).append("/").append(filename);
@@ -69,41 +67,43 @@ struct Candidate {
         return temp;
     }
 
-    int  size_index                 = 10;
-    bool is_part_of_current_theme   = false;
+    int size_index = 10;
+    bool is_part_of_current_theme = false;
     bool is_part_of_preferred_theme = false;
-    bool is_part_of_target_context  = false;
+    bool is_part_of_target_context = false;
 };
 
 struct IconTarget {
     bool was_searched = false;
 
-    std::string            name;
+    std::string name;
     std::vector<Candidate> candidates;
 
-    std::string            best_full_path;
+    std::string best_full_path;
 
-    void*                  user_data = nullptr;
+    void* user_data = nullptr;
 
     IconTarget(std::string name) : name(std::move(name)) {}
 
     IconTarget(std::string name, void* user_data) : name(std::move(name)), user_data(user_data) {}
 };
 
-void        search_icons(std::vector<IconTarget>& targets);
+void search_icons(std::vector<IconTarget>& targets);
 
-void        pick_best(std::vector<IconTarget>& targets, int size);
+void pick_best(std::vector<IconTarget>& targets, int size);
 
-void        pick_best(std::vector<IconTarget>& targets, int size, IconContext target_context);
+void pick_best(std::vector<IconTarget>& targets, int size, IconContext target_context);
 
 std::string one_shot_icon(int size, const std::vector<std::string>& alt_names);
 
-bool        has_options(const std::string& name);
+bool has_options(const std::string& name);
 
-void        get_options(std::vector<std::string_view>& names, const std::string& name, int max);
+void get_options(std::vector<std::string_view>& names, const std::string& name, int max);
 
 std::string c3ic_fix_desktop_file_icon(const std::string& given_name, const std::string& given_wm_class, const std::string& given_path, const std::string& given_icon);
 
 std::string c3ic_fix_wm_class(const std::string& given_wm_class);
+
+std::string single_shot_icon_live(std::string icon, int size); 
 
 #endif // WINBAR_ICONS_H

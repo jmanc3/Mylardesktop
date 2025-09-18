@@ -9,6 +9,8 @@
 #include <chrono>
 #include <functional>
 
+static int titlebar_h = 29;
+
 enum struct STAGE : uint8_t {
     RENDER_PRE = eRenderStage::RENDER_PRE,        /* Before binding the gl context */
     RENDER_BEGIN = eRenderStage::RENDER_BEGIN,          /* Just when the rendering begins, nothing has been rendered yet. Damage, current render data in opengl valid. */
@@ -47,7 +49,6 @@ struct ThinClient {
     bool snaped = false;
     Bounds pre_snap_bounds;
 
-
     ThinClient(int _id) : id(_id) {}
 };
 
@@ -58,6 +59,11 @@ struct ThinMonitor {
 };
 
 struct HyprIso {
+
+    bool dragging = false;
+    int dragging_id = -1;
+    Bounds drag_initial_mouse_pos;
+    Bounds drag_initial_window_pos;
 
     // The main workhorse of the program which pumps events from hyprland to mylar
     void create_hooks_and_callbacks();
@@ -111,6 +117,7 @@ std::string title_name(ThinClient *w);
 
 // ThinMonitor props
 Bounds bounds(ThinMonitor *m);
+Bounds bounds_reserved(ThinMonitor *m);
 
 int current_rendering_monitor();
 int current_rendering_window();
@@ -127,11 +134,16 @@ void set_window_corner_mask(int id, int cornermask);
 
 void free_text_texture(int id);
 TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA color);
+TextureInfo gen_texture(std::string path, float h);
 
 void draw_texture(TextureInfo info, int x, int y, float a = 1.0);
 
 void setCursorImageUntilUnset(std::string cursor);
 void unsetCursorImage();
+
+int get_monitor(int client);
+
+Bounds mouse();
 
 
 #endif // hypriso_h_INCLUDED

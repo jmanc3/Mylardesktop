@@ -2,16 +2,26 @@
 
 #include "first.h"
 #include "events.h"
+#include "icons.h"
 #include "spring.h"
 #include "container.h"
 #include "hypriso.h"
 
 #include <format>
 #include <cassert>
+#include <linux/input-event-codes.h>
+
+#ifdef TRACY_ENABLE
+
+#include "../tracy/public/tracy/Tracy.hpp"
+
+#endif
 
 static std::vector<Container *> roots; // monitors
-static int titlebar_h = 29;
-static int titlebar_icon_h = 12;
+static int titlebar_text_h = 14;
+static int titlebar_icon_button_h = 13;
+static int titlebar_icon_h = 21;
+static int titlebar_icon_pad = 8;
 RGBA color_titlebar = {1.0, 1.0, 1.0, 1.0};
 RGBA color_titlebar_hovered = {0.87, 0.87, 0.87, 1.0f};
 RGBA color_titlebar_pressed = {0.69, 0.69, 0.69, 1.0f};
@@ -21,6 +31,14 @@ RGBA color_titlebar_icon = {0.0, 0.0, 0.0, 1.0};
 RGBA color_titlebar_icon_close_pressed = {1.0, 1.0, 1.0, 1.0};
 static float title_button_wratio = 1.4375f;
 static float rounding = 10.0f;
+
+static std::string to_lower(const std::string& str) {
+    std::string result;
+    result.reserve(str.size()); // avoid reallocations
+
+    std::transform(str.begin(), str.end(), std::back_inserter(result), [](unsigned char c) { return std::tolower(c); });
+    return result;
+}
 
 struct RootData : UserData {
     int id = 0;
@@ -47,12 +65,50 @@ CBox tobox(Container *c) {
 
 void layout_every_single_root();
 
+ThinClient *c_from_id(int id);
+ThinMonitor *m_from_id(int id);
+
+void drag_update() {
+    auto client = c_from_id(hypriso->dragging_id);
+    auto m = mouse();
+    auto mid = get_monitor(client->id);
+    auto newx = hypriso->drag_initial_window_pos.x + (m.x - hypriso->drag_initial_mouse_pos.x);
+    auto newy = hypriso->drag_initial_window_pos.y + (m.y - hypriso->drag_initial_mouse_pos.y);
+    move(hypriso->dragging_id, newx, newy);
+}
+
+void drag_start(int id) {
+    hypriso->dragging_id = id;
+    hypriso->dragging = false; 
+    auto client = c_from_id(hypriso->dragging_id);
+    auto mid = get_monitor(client->id);
+    auto b = bounds(client);
+    hypriso->drag_initial_window_pos = b; 
+    hypriso->drag_initial_mouse_pos = mouse(); 
+    setCursorImageUntilUnset("grabbing");
+    drag_update();
+}
+
+void drag_stop() {
+    drag_update();
+    hypriso->dragging_id = -1;
+    hypriso->dragging = false;
+    unsetCursorImage();
+}
+
 // returning true means consume the event
 bool on_mouse_move(int id, float x, float y) {
+    if (hypriso->dragging)
+        drag_update();
+    
     Event event(x, y);
     layout_every_single_root();
     for (auto root : roots)
         move_event(root, event);
+
+    if (hypriso->dragging)
+        return true;
+    
     return false;
 }
 
@@ -158,26 +214,20 @@ bool on_mouse_press(int id, int button, int state, float x, float y) {
     for (auto root : roots)
         mouse_event(root, event);
 
-    return false;
+    bool consumed = false;
+    for (auto root : roots) {
+       if (root->consumed_event) {
+           consumed = true;
+           root->consumed_event = false;
+       } 
+    }
+
+    return consumed;
 }
 
 int monitor_overlapping(int id) {
     
     return -1;
-}
-
-ThinClient *client_by_id(int id) {
-    for (auto c : hypriso->windows)
-        if (c->id == id)
-            return c;
-    return nullptr;
-}
-
-ThinMonitor *monitor_by_id(int id) {
-    for (auto c : hypriso->monitors)
-        if (c->id == id)
-            return c;
-    return nullptr;
 }
 
 void on_window_open(int id) {
@@ -204,49 +254,46 @@ void on_window_open(int id) {
     for (auto r : roots) {
         auto data = (RootData *) r->user_data;
         if (data->id == monitor) {
-            struct IconData {
+            struct IconData : UserData {
                 bool attempted = false;
                 TextureInfo main;
                 TextureInfo secondary;
             };
 
-            struct TitleData {
+            struct TitleData : UserData {
                 long previous = 0;
 
                 TextureInfo main;
                 std::string cached_text;
+
+                TextureInfo icon;
             };
 
             auto c = r->child(::vbox, FILL_SPACE, FILL_SPACE); // the sizes are set later by layout code
             c->user_data = new ClientData(id);            
             auto s = scale(((RootData *) r->user_data)->id);
             auto title = c->child(::hbox, FILL_SPACE, titlebar_h * s);
+            title->when_mouse_down = [](Container *root, Container *c) {
+                root->consumed_event = true; 
+            };
             auto content = c->child(::hbox, FILL_SPACE, FILL_SPACE);
             title->when_drag_start = [](Container *root, Container *c) {
                 auto data = (ClientData *) c->parent->user_data;
-                auto rdata = (RootData *) root->user_data;
-                auto s = scale(rdata->id);
-                auto b = bounds(c_from_id(data->id));
-                auto client = client_by_id(data->id);
-                client->initial_x = b.x * s;
-                client->initial_y = b.y * s;
-                setCursorImageUntilUnset("grabbing");
+                drag_start(data->id);
             };
             title->when_drag = [](Container *root, Container *c) {
-                auto data = (ClientData *) c->parent->user_data;
-                auto client = client_by_id(data->id);
-                auto newx = client->initial_x + (root->mouse_current_x - root->mouse_initial_x);
-                auto newy = client->initial_y + (root->mouse_current_y - root->mouse_initial_y);
-                move(data->id, newx, newy);
+                drag_update();
             };
             title->when_drag_end = [](Container *root, Container *c) {
-                unsetCursorImage();
+                drag_stop();
             };
             title->when_paint = [](Container *root, Container *c) {
+                auto backup = c->real_bounds;
+                c->real_bounds.h += 1;
                 auto data = (ClientData *) c->parent->user_data;
                 auto rdata = (RootData *) root->user_data;
                 auto s = scale(rdata->id);
-                auto client = client_by_id(data->id);
+                auto client = c_from_id(data->id);
                 auto titledata = (TitleData *) c->user_data;
                 if (data->id == rdata->active_id) {
                     rect(c->real_bounds, color_titlebar, 12, rounding * scale(rdata->id));
@@ -256,13 +303,29 @@ void on_window_open(int id) {
                             titledata->main.id = -1;
                             free_text_texture(titledata->main.id);
                         }
-                        titledata->main = gen_text_texture("Segoe UI Variable", text, titlebar_icon_h * s, color_titlebar_icon);
+                        titledata->main = gen_text_texture("Segoe UI Variable", text, titlebar_text_h * s, color_titlebar_icon);
                         titledata->cached_text = text;
                     }
+
+                    if (titledata->icon.id == -1) {
+                        if (icons_loaded) {
+                            auto name = class_name(client);
+                            auto path = one_shot_icon(titlebar_icon_h * s, {
+                                name, c3ic_fix_wm_class(name), to_lower(name), to_lower(c3ic_fix_wm_class(name))
+                            });
+                            titledata->icon = gen_texture(path, titlebar_icon_h * s);
+                        }
+                    } else {
+                        draw_texture(titledata->icon,
+                            c->real_bounds.x + titlebar_icon_pad * s,
+                            c->real_bounds.y + (c->real_bounds.h - titledata->icon.h) * .5);
+                    }
+
                     draw_texture(titledata->main,
-                        c->real_bounds.x + (c->real_bounds.h - titledata->main.h) * .5,
+                        c->real_bounds.x + (titledata->icon.id == -1 ? titlebar_icon_pad * s : titlebar_icon_pad * s * 2 + titledata->icon.w),
                         c->real_bounds.y + (c->real_bounds.h - titledata->main.h) * .5);
                 }
+                c->real_bounds = backup;
             };
             title->alignment = ALIGN_RIGHT;
             title->when_clicked = [](Container *root, Container *c) {
@@ -278,6 +341,7 @@ void on_window_open(int id) {
 
             auto min = title->child(100, FILL_SPACE);
             min->user_data = new IconData;
+            min->when_mouse_down = title->when_mouse_down;
             min->when_paint = [](Container *root, Container *c) {
                 auto data = (ClientData *) c->parent->parent->user_data;
                 auto rdata = (RootData *) root->user_data;
@@ -293,7 +357,7 @@ void on_window_open(int id) {
                     if (!cdata->attempted) {
                         cdata->attempted = true;
                         cdata->main = gen_text_texture("Segoe Fluent Icons", "\ue921",
-                            titlebar_icon_h * s, color_titlebar_icon);
+                            titlebar_icon_button_h * s, color_titlebar_icon);
                     }
                     if (cdata->main.id != -1) {
                         draw_texture(cdata->main,
@@ -310,12 +374,13 @@ void on_window_open(int id) {
             };
             auto max = title->child(100, FILL_SPACE);
             max->user_data = new IconData;
+            max->when_mouse_down = title->when_mouse_down;
             max->when_paint = [](Container *root, Container *c) {
                 auto data = (ClientData *) c->parent->parent->user_data;
                 auto rdata = (RootData *) root->user_data;
                 auto cdata = (IconData *) c->user_data;
                 auto s = scale(rdata->id);
-                auto client = client_by_id(data->id);
+                auto client = c_from_id(data->id);
                 if (data->id == rdata->active_id) {
                     if (c->state.mouse_pressing) {
                         rect(c->real_bounds, color_titlebar_pressed);
@@ -326,10 +391,10 @@ void on_window_open(int id) {
                     if (!cdata->attempted) {
                         cdata->attempted = true;
                         cdata->main = gen_text_texture("Segoe Fluent Icons", "\ue922",
-                            titlebar_icon_h * s, color_titlebar_icon);
+                            titlebar_icon_button_h * s, color_titlebar_icon);
                         // demax
                         cdata->secondary = gen_text_texture("Segoe Fluent Icons", "\ue923",
-                            titlebar_icon_h * s, color_titlebar_icon);
+                            titlebar_icon_button_h * s, color_titlebar_icon);
                     }
                     if (cdata->main.id != -1) {
                         auto texid = cdata->main;
@@ -346,7 +411,7 @@ void on_window_open(int id) {
             };
             max->when_clicked = [](Container *root, Container *c)  {
                 auto cdata = (ClientData *) c->parent->parent->user_data;
-                auto client = client_by_id(cdata->id);
+                auto client = c_from_id(cdata->id);
                 if (cdata) {
                     client->maximized = !client->maximized;
                 }
@@ -354,6 +419,7 @@ void on_window_open(int id) {
             };
             auto close = title->child(100, FILL_SPACE);
             close->user_data = new IconData;
+            close->when_mouse_down = title->when_mouse_down;
             close->when_paint = [](Container *root, Container *c) {
                 auto data = (ClientData *) c->parent->parent->user_data;
                 auto rdata = (RootData *) root->user_data;
@@ -369,9 +435,9 @@ void on_window_open(int id) {
                     if (!cdata->attempted) {
                         cdata->attempted = true;
                         cdata->main = gen_text_texture("Segoe Fluent Icons", "\ue8bb",
-                            titlebar_icon_h * s, color_titlebar_icon);
+                            titlebar_icon_button_h * s, color_titlebar_icon);
                         cdata->secondary = gen_text_texture("Segoe Fluent Icons", "\ue8bb",
-                            titlebar_icon_h * s, color_titlebar_icon_close_pressed);
+                            titlebar_icon_button_h * s, color_titlebar_icon_close_pressed);
                     }
                     if (cdata->main.id != -1) {
                         auto texid = cdata->main;
@@ -401,6 +467,7 @@ void on_window_closed(int id) {
     for (int i = 0; i < hypriso->windows.size(); i++) {
         auto w = hypriso->windows[i];
         if (w->id == id) {
+            set_window_corner_mask(w->id, 0);
             delete w;
             hypriso->windows.erase(hypriso->windows.begin() + i); 
         }
@@ -462,6 +529,14 @@ void startup::begin() {
  
     // hooks need to be created last because otherwise we miss initial loading of all windows with on_window_open
 	hypriso->create_hooks_and_callbacks(); 
+    if (icon_cache_needs_update()) {
+        icon_cache_generate();
+        notify("generated");
+    }
+    {
+        notify("icon load");
+        icon_cache_load();
+    }
 
 	/*auto b = root->child(::vbox, 200, 200);
 	b->when_paint = [](Container *root, Container *c) {

@@ -8,13 +8,22 @@
 
 #include "hypriso.h"
 
+#include "container.h"
 #include "first.h"
 
+#include <algorithm>
 #include <hyprland/src/helpers/Color.hpp>
+#include <hyprland/protocols/kde-server-decoration.hpp>
 
 #define private public
 #include <hyprland/src/render/pass/SurfacePassElement.hpp>
+#include <hyprland/src/protocols/ServerDecorationKDE.hpp>
+#include <hyprland/src/protocols/XDGDecoration.hpp>
+#include <hyprland/src/protocols/XDGShell.hpp>
 #undef private
+
+#include <hyprland/src/xwayland/XWayland.hpp>
+#include <hyprland/src/xwayland/XWM.hpp>
 
 #include <any>
 #include <hyprland/src/plugins/PluginAPI.hpp>
@@ -133,6 +142,29 @@ void set_rounding(int mask) {
 }
 
 void on_open_window(PHLWINDOW w) {
+    // Validate that we care about the window
+    if (w->m_X11DoesntWantBorders)
+        return;
+    
+    for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
+        if (w->m_xdgSurface && s->m_surf == w->m_xdgSurface) {
+            notify(std::to_string((int) s->m_mostRecentlyRequested));
+            if (s->m_mostRecentlyRequested == ORG_KDE_KWIN_SERVER_DECORATION_MODE_CLIENT) {
+               return;
+            }
+        }
+    }
+
+    for (const auto &[a, b] : NProtocols::xdgDecoration->m_decorations) {
+        if (w->m_xdgSurface && w->m_xdgSurface->m_toplevel && w->m_xdgSurface->m_toplevel->m_resource && b->m_resource == w->m_xdgSurface->m_toplevel->m_resource) {
+            if (b->mostRecentlyRequested == ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE) {
+                return;
+            }
+        }
+    }
+
+    // Or csd client side requested
+    
     auto hw = new HyprWindow;
     hw->id = unique_id;
     hw->w = w;
@@ -204,6 +236,159 @@ void fix_window_corner_rendering() {
             g_pOnSurfacePassDraw->hook();
         }
     }
+}
+
+
+inline CFunctionHook* g_pOnReadProp = nullptr;
+typedef void (*origOnReadProp)(void*, SP<CXWaylandSurface> XSURF, uint32_t atom, xcb_get_property_reply_t* reply);
+    //void CXWM::readProp(SP<CXWaylandSurface> XSURF, uint32_t atom, xcb_get_property_reply_t* reply) {
+void hook_OnReadProp(void* thisptr, SP<CXWaylandSurface> XSURF, uint32_t atom, xcb_get_property_reply_t* reply) {
+    (*(origOnReadProp)g_pOnReadProp->m_original)(thisptr, XSURF, atom, reply);
+
+    const auto* value    = sc<const char*>(xcb_get_property_value(reply));
+
+    auto handleMotifs = [&]() {
+        // Motif hints are 5 longs: flags, functions, decorations, input_mode, status
+        const uint32_t* hints = rc<const uint32_t*>(value);
+
+        std::vector<uint32_t> m_motifs;
+        m_motifs.assign(hints, hints + std::min<size_t>(reply->value_len, 5));
+
+        for (const auto &w : g_pCompositor->m_windows) {
+            if (w->m_xwaylandSurface == XSURF) {
+                w->m_X11DoesntWantBorders = false;
+                g_pXWaylandManager->checkBorders(w);
+
+                const uint32_t flags       = m_motifs[0];
+                const uint32_t decorations = m_motifs.size() > 2 ? m_motifs[2] : 1;
+                const uint32_t MWM_HINTS_DECORATIONS = (1L << 1);
+
+                if ((flags & MWM_HINTS_DECORATIONS) && decorations == 0) {
+                    w->m_X11DoesntWantBorders = true;
+                }
+
+                // has decora
+                bool has_decorations = false;
+                for (auto& wd : w->m_windowDecorations)
+                    if (wd->getDisplayName() == "MylarBar")
+                        has_decorations = true;
+
+                if (w->m_X11DoesntWantBorders && has_decorations) {
+                    for (auto it = w.get()->m_windowDecorations.rbegin(); it != w.get()->m_windowDecorations.rend(); ++it) {
+                        auto bar = (IHyprWindowDecoration *) it->get();
+                        if (bar->getDisplayName() == "MylarBar" || bar->getDisplayName() == "MylarResize") {
+                            HyprlandAPI::removeWindowDecoration(globals->api, bar);
+                            for (auto hw : hyprwindows) {
+                                if (hw->w == w && hypriso->on_window_closed) {
+                                    hypriso->on_window_closed(hw->id);
+                                }
+                            }
+                        }
+                    }
+                } else if (!w->m_X11DoesntWantBorders && !has_decorations) {
+                    // add
+                    for (auto hw : hyprwindows) {
+                        if (hw->w == w && hypriso->on_window_open) {
+                           hypriso->on_window_open(hw->id);
+                        }
+                    }
+                }
+            }
+        }
+    };
+    if (atom == HYPRATOMS["_MOTIF_WM_HINTS"])
+        handleMotifs();
+}
+
+static wl_event_source *source = nullptr;
+
+void recheck_csd_for_all_wayland_windows() {
+    if (source)    
+        return;
+    source = wl_event_loop_add_timer(g_pCompositor->m_wlEventLoop, [](void *) {
+        source = nullptr;
+
+        for (auto w : g_pCompositor->m_windows) {
+            if (w->m_isX11)
+                continue;
+            
+            bool remove_csd = false;
+            for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
+                if (w->m_xdgSurface && s->m_surf == w->m_xdgSurface) {
+                    notify(std::to_string((int) s->m_mostRecentlyRequested));
+                    if (s->m_mostRecentlyRequested == ORG_KDE_KWIN_SERVER_DECORATION_MODE_CLIENT) {
+                        remove_csd = true;
+                    }
+                }
+            }
+
+            for (const auto &[a, b] : NProtocols::xdgDecoration->m_decorations) {
+                if (w->m_xdgSurface && w->m_xdgSurface->m_toplevel && w->m_xdgSurface->m_toplevel->m_resource && b->m_resource == w->m_xdgSurface->m_toplevel->m_resource) {
+                    if (b->mostRecentlyRequested == ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE) {
+                        remove_csd = true;
+                    }
+                }
+            }
+
+
+            bool has_csd = false;
+            for (auto& wd : w->m_windowDecorations)
+                if (wd->getDisplayName() == "MylarBar")
+                    has_csd = true;
+            if (has_csd && remove_csd) {
+                for (auto hw : hyprwindows) {
+                    if (hw->w == w) {
+                        hypriso->on_window_closed(hw->id);
+                    }
+                }
+            } else if (!has_csd && !remove_csd) {
+                for (auto hw : hyprwindows) {
+                    if (hw->w == w) {
+                        hypriso->on_window_open(hw->id);
+                    }
+                }
+            }
+        }
+        
+        return 0; // 0 means stop timer, >0 means retry in that amount of ms
+    }, nullptr);
+    wl_event_source_timer_update(source, 10); // 10ms
+}
+
+inline CFunctionHook* g_pOnKDECSD = nullptr;
+typedef uint32_t (*origOnKDECSD)(void*);
+uint32_t hook_OnKDECSD(void* thisptr) {
+    recheck_csd_for_all_wayland_windows();
+    return (*(origOnKDECSD)g_pOnKDECSD->m_original)(thisptr);
+}
+
+inline CFunctionHook* g_pOnXDGCSD = nullptr;
+typedef zxdgToplevelDecorationV1Mode (*origOnXDGCSD)(void*);
+zxdgToplevelDecorationV1Mode hook_OnXDGCSD(void* thisptr) {
+    recheck_csd_for_all_wayland_windows();
+    return (*(origOnXDGCSD)g_pOnXDGCSD->m_original)(thisptr);
+}
+
+void detect_csd_request_change() {
+    // hook xdg and kde csd request mode, then set timeout for 25 ms, 5 times which checks and updates csd for current windows based on most recent requests
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "kdeDefaultModeCSD");
+        g_pOnKDECSD = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_OnKDECSD);
+        g_pOnKDECSD->hook();
+    }
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "xdgDefaultModeCSD");
+        g_pOnXDGCSD = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_OnXDGCSD);
+        g_pOnXDGCSD->hook();
+    }
+
+    // hook props change xwayland function, parse motifs, set or remove decorations as needed
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "readProp");
+        g_pOnReadProp = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_OnReadProp);
+        g_pOnReadProp->hook();
+    }
+
 }
 
 void set_window_corner_mask(int id, int cornermask) {
@@ -316,6 +501,7 @@ void HyprIso::create_hooks_and_callbacks() {
     }
 
     fix_window_corner_rendering();
+    detect_csd_request_change();
 }
 
 void HyprIso::end() {
@@ -467,6 +653,21 @@ Bounds bounds(ThinMonitor *m) {
     return {0, 0, 0, 0};
 }
 
+Bounds bounds_reserved(ThinMonitor *m) {
+    for (auto hyprmonitor : hyprmonitors) {
+        if (hyprmonitor->id == m->id) {
+            if (auto m = hyprmonitor->m.get()) {
+                auto b = m->logicalBox();
+                b.x += m->m_reservedTopLeft.x;
+                b.y += m->m_reservedTopLeft.y;
+                b.w -= (m->m_reservedTopLeft.x = m->m_reservedBottomRight.x);
+                b.h -= (m->m_reservedTopLeft.y = m->m_reservedBottomRight.y);
+                return tobounds(b);
+            }
+        }
+    }    
+    return {0, 0, 0, 0};
+}
 
 void notify(std::string text) {
     HyprlandAPI::addNotification(globals->api, text, {1, 1, 1, 1}, 4000);
@@ -521,9 +722,7 @@ void move(int id, int x, int y) {
     auto m = g_pCompositor->getMonitorFromCursor();
     for (auto c : hyprwindows) {
         if (c->id == id) {
-            float xs = x * (1.0 / m->m_scale);
-            float ys = y * (1.0 / m->m_scale);
-            c->w->m_realPosition->setValueAndWarp({xs, ys});
+            c->w->m_realPosition->setValueAndWarp({x, y});
         }
     }
 }
@@ -804,10 +1003,8 @@ SP<CTexture> missingTexure(int size) {
 SP<CTexture> loadAsset(const std::string& filename, int target_size) {
     cairo_surface_t* icon = nullptr;
     load_icon_full_path(&icon, filename, target_size);
-    if (!icon) {
-        return missingTexure(target_size);
-    }
-    // we can darken
+    if (!icon)
+        return {};
 
     const auto CAIROFORMAT = cairo_image_surface_get_format(icon);
     auto       tex         = makeShared<CTexture>();
@@ -846,6 +1043,22 @@ void free_text_texture(int id) {
         }
     }
 }
+
+TextureInfo gen_texture(std::string path, float h) {
+    auto tex = loadAsset(path, h);
+    if (tex.get()) {
+        auto t = new Texture;
+        t->texture = tex;
+        TextureInfo info;
+        info.id = unique_id++;
+        info.w = t->texture->m_size.x;
+        info.h = t->texture->m_size.y;
+        t->info = info;
+        hyprtextures.push_back(t);
+        return t->info;
+    }
+    return {};
+}
      
 TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA color) {
     auto tex = g_pHyprOpenGL->renderText(text, CHyprColor(color.r, color.g, color.b, color.a), h, false, font, 0);
@@ -882,9 +1095,27 @@ void setCursorImageUntilUnset(std::string cursor) {
     g_pInputManager->setCursorImageUntilUnset(cursor);
 
 }
+
 void unsetCursorImage() {
     g_pInputManager->unsetCursorImage();
 }
 
+int get_monitor(int client) {
+    for (auto hw : hyprwindows) {
+       if (hw->id == client) {
+           for (auto hm : hyprmonitors) {
+              if (hm->m == hw->w->m_monitor) {
+                  return hw->id;                  
+              } 
+           }
+       } 
+    }
+    return -1; 
+}
+
+Bounds mouse() {
+    auto mouse = g_pInputManager->getMouseCoordsInternal();
+    return {mouse.x, mouse.y, mouse.x, mouse.y};
+}
 
  

@@ -165,6 +165,7 @@ struct Container {
     double                scroll_v_visual = 0;
     double                scroll_h_visual = 0;
 
+    bool                  consumed_event  = false;
     bool                  left_mouse_down = false;
     int                   previous_x      = -1;
     int                   previous_y      = -1;

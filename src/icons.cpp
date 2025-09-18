@@ -29,10 +29,10 @@
 
 #endif
 
-static uint32_t cache_version            = 3;
-static long     last_time_cached_checked = -1;
+static uint32_t cache_version = 3;
+bool icons_loaded = false;
 
-int             getExtension(unsigned short int i) {
+int getExtension(unsigned short int i) {
     // return the top two bits
     return i >> 14;
 }
@@ -68,7 +68,7 @@ struct OptionsData {
     // looking for icons
     std::map<std::string, std::vector<Option>> options;
 
-    unsigned short int                         parentIndexOf(const std::string& path) {
+    unsigned short int parentIndexOf(const std::string& path) {
         for (int i = parentPaths.size() - 1; i >= 0; --i) {
             if (parentPaths[i] == path) {
                 return i;
@@ -90,17 +90,17 @@ struct OptionsData {
 };
 
 static std::vector<std::string> icon_search_paths;
-static auto*                    data = new OptionsData;
+static auto* data = new OptionsData;
 
-char*                           name_buffer   = nullptr;
-char*                           option_buffer = nullptr;
+char* name_buffer   = nullptr;
+char* option_buffer = nullptr;
 struct Range {
     unsigned long start  = -1;
     unsigned long length = -1;
 };
 std::unordered_map<std::string_view, Range> ranges;
 
-void                                        traverse_dir(const char* path) {
+void traverse_dir(const char* path) {
     DIR* dir = opendir(path);
     if (dir == nullptr) {
         return;
@@ -218,27 +218,13 @@ void save_data() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    const char* home_directory = getenv("HOME");
-    std::string icon_cache_path(home_directory);
-    icon_cache_path += "/.cache/winbar_icon_cache/icon.cache";
-
-    std::string icon_cache_temp_path(home_directory);
-    icon_cache_temp_path += "/.cache";
+    std::string icon_cache_path("/var/tmp/winbar_icon.cache");
+    std::string icon_cache_temp_path("/var/tmp/winbar_icon.cache.tmp");
+    
     std::ofstream cache_file;
-    {
-        if (mkdir(icon_cache_temp_path.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == -1)
-            if (errno != EEXIST)
-                return;
-        icon_cache_temp_path += "/winbar_icon_cache";
-        if (mkdir(icon_cache_temp_path.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == -1)
-            if (errno != EEXIST)
-                return;
-        icon_cache_temp_path += "/icon.cache.tmp";
-
-        cache_file.open(icon_cache_temp_path, std::ios_base::out | std::ios_base::binary);
-        if (!cache_file.is_open())
-            return;
-    }
+    cache_file.open(icon_cache_temp_path, std::ios_base::out | std::ios_base::binary);
+    if (!cache_file.is_open())
+        return;
 
     // version (string)
     cache_file << std::to_string(cache_version) << '\0';
@@ -304,7 +290,7 @@ void save_data() {
 
 static bool first_time_load_data = true;
 
-void        load_data() {
+void load_data() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
@@ -319,10 +305,7 @@ void        load_data() {
         delete[] option_buffer;
     ranges.clear();
 
-    // Load data from disk
-    const char* home_directory = getenv("HOME");
-    std::string icon_cache_path(home_directory);
-    icon_cache_path += "/.cache/winbar_icon_cache/icon.cache";
+    std::string icon_cache_path("/var/tmp/winbar_icon.cache");
 
     struct stat cache_stat{};
     if (stat(icon_cache_path.c_str(), &cache_stat) == 0) { // exists
@@ -426,6 +409,7 @@ void        load_data() {
         munmap(icon_cache_data, fileSize);
         close(fd);
     }
+    icons_loaded = true;
 }
 
 void update_paths() {
@@ -471,128 +455,62 @@ void generate_cache() {
     save_data();
 }
 
-void check_if_cache_needs_update(App*, AppClient*, Timeout* timeout, void*);
-
-void check_cache_file();
-
-void set_icons_path_and_possibly_update(App* app) {
+bool icon_cache_needs_update() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    last_time_cached_checked = 0;
-    if (data == nullptr)
-        data = new OptionsData();
     update_paths();
+    std::string path = "/var/tmp/winbar_icon.cache";
 
-    check_cache_file();
-}
-
-static std::string first_message;
-static std::string second_message;
-static std::string third_message;
-
-void               check_cache_file() {
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
-    if (get_current_time_in_ms() - last_time_cached_checked < 5000) {
-        // If it hasn't been five seconds since last time checked
-        return;
-    }
-
-    // Check if cache file exists and that it is up-to date, and refresh cache, if
-    // it is not.
-    const char* home_directory = getenv("HOME");
-    std::string icon_cache_path(home_directory);
-    icon_cache_path += "/.cache/winbar_icon_cache/icon.cache";
-
-    struct stat cache_stat{};
-    if (stat(icon_cache_path.c_str(), &cache_stat) == 0) { // exists
-        bool  cache_version_on_disk_acceptable = true;
+    if (std::filesystem::exists(path)) {
+        // If cache version is not the same as modern cache version, icon cache needs update
         FILE* fp;
-        char  buf[1024];
-        if ((fp = fopen(icon_cache_path.data(), "rb"))) {
+        char buf[1024];
+        if ((fp = fopen(path.data(), "rb"))) {
             fread(buf, 1, 10, fp);
             std::string versionString = std::string(buf, std::max(strlen(buf), (unsigned long)0));
-            int         version       = atoi(versionString.data());
-            if (version != cache_version)
-                cache_version_on_disk_acceptable = false;
+            int version = atoi(versionString.data());
+            if (version != cache_version) {
+                return true;
+            }
             fclose(fp);
         }
 
-        if (!cache_version_on_disk_acceptable) {
-            std::thread t([icon_cache_path]() -> void {
-                generate_data();
-                save_data();
-                load_data();
-            });
-            // App *temp_app = app_new();
-            // std::thread t2([&temp_app]() -> void {
-            //     Settings settings;
-            //     settings.w = 400 * config->dpi;
-            //     settings.h = 200 * config->dpi;
-            //     auto c = client_new(temp_app, settings, "winbar_temp_warning");
-            //     first_message = "Icon cache version file out of date";
-            //     second_message = "We are re-caching all icons, so this may take a
-            //     while. Subsequent launches won't do this, so they'll be faster.";
-            //     third_message = "We'll start WinBar when we are done! (Feel free to
-            //     close this window)"; client_show(temp_app, c);
-            //     allow_audio_thread_creation = false;
-            //     app_main(temp_app);
-            //     app_clean(temp_app);
-            //     allow_audio_thread_creation = true;
-            // });
-            if (t.joinable())
-                t.join();
-            // if (t2.joinable()) {
-            //     temp_app->running = false;
-            //     t2.join();
-            // }
-        } else {
-            load_data();
+        auto cache_time = std::filesystem::last_write_time(path);
+        // If any icon folders are newer than cache
+        for (auto p : icon_search_paths) {
+            if (!std::filesystem::exists(p))
+               continue; 
+            auto icon_folder_time = std::filesystem::last_write_time(p);
+            if (icon_folder_time > cache_time) {
+                return true;
+            }
         }
-    } else {
-        // If no cache file exists, we are forced to do it on the main thread
-        // (a.k.a. the first launch will be slow)
-        std::thread t([icon_cache_path]() -> void {
-            generate_data();
-            save_data();
-            load_data();
-        });
-        // App *temp_app = app_new();
-        // std::thread t2([&temp_app]() -> void {
-        //     Settings settings;
-        //     settings.w = 400 * config->dpi;
-        //     settings.h = 200 * config->dpi;
-        //     auto c = client_new(temp_app, settings, "winbar_temp_warning");
-        //     c->root->when_paint = paint_warning;
-        //     first_message = "First time launching WinBar";
-        //     second_message = "We are caching all icons so this may take a while.
-        //     Subsequent launches will be faster."; third_message = "We'll start
-        //     WinBar when we are done! (Feel free to close this window)";
-        //     client_show(temp_app, c);
-        //     allow_audio_thread_creation = false;
-        //     app_main(temp_app);
-        //     app_clean(temp_app);
-        //     allow_audio_thread_creation = true;
-        // });
-        if (t.joinable())
-            t.join();
-        // if (t2.joinable()) {
-        //     temp_app->running = false;
-        //     t2.join();
-        // }
-    }
 
-    last_time_cached_checked = get_current_time_in_ms();
+        return false;
+    }
+    
+    return true;
+}
+
+void icon_cache_generate() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+     generate_cache();
+}
+
+void icon_cache_load() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+     load_data();
 }
 
 void search_icons(std::vector<IconTarget>& targets) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    check_cache_file();
-
     for (int i = 0; i < targets.size(); ++i) {
         auto             &target = targets[i];
         target.was_searched = true;
@@ -869,7 +787,7 @@ void pick_best(std::vector<IconTarget>& targets, int target_size, IconContext ta
             // If the target is just a full path, then just return the full path
             target->best_full_path = target->name;
         } else {
-            assert(target->was_searched);
+            //assert(target->was_searched);
             for (int i = 0; i < target->candidates.size(); i++) {
                 Candidate* candidate                 = &target->candidates[i];
                 candidate->is_part_of_current_theme  = current_theme == candidate->theme;
@@ -941,71 +859,6 @@ std::string one_shot_icon(int size, const std::vector<std::string>& alt_names) {
         }
     }
     return "";
-}
-
-std::mutex icon_cache_mutex;
-
-void       check_if_cache_needs_update(App* app, AppClient*, Timeout* timeout, void*) {
-    /*
-      std::thread t([app]() -> void {
-          std::lock_guard m(icon_cache_mutex); // No one is allowed to stop
-  Winbar until this function finishes
-
-  #ifdef TRACY_ENABLE
-          ZoneScopedN("icon directory timeout");
-  #endif
-          // TODO: this is crashin in some cases
-          const char *home_directory = getenv("HOME");
-          std::string icon_cache_path(home_directory);
-          icon_cache_path += "/.cache/winbar_icon_cache/icon.cache";
-
-          struct stat cache_stat{};
-          if (stat(icon_cache_path.c_str(), &cache_stat) == 0) { // exists
-              bool found_newer_folder_than_cache_file = false;
-
-              const std::filesystem::directory_options options = (
-                      std::filesystem::directory_options::follow_directory_symlink
-  | std::filesystem::directory_options::skip_permission_denied
-              );
-              struct stat search_stat{};
-              for (const auto &search_path: icon_search_paths) {
-                  // Check if the search path exists
-                  if (stat(search_path.c_str(), &search_stat) != 0)
-                      continue;
-
-                  if (search_stat.st_mtim.tv_sec > cache_stat.st_mtim.tv_sec) {
-                      found_newer_folder_than_cache_file = true;
-                      break;
-                  }
-
-                  for (auto i =
-  std::filesystem::recursive_directory_iterator(search_path,
-                                                                              std::filesystem::directory_options(
-                                                                                      options));
-                       i != std::filesystem::recursive_directory_iterator();
-                       ++i) {
-                      if (i.depth() == 0 && i->is_directory() && i->exists()) {
-                          if (stat(i->path().string().data(), &search_stat) !=
-  0) continue;
-
-                          if (search_stat.st_mtim.tv_sec >
-  cache_stat.st_mtim.tv_sec) { found_newer_folder_than_cache_file = true; break;
-                          }
-                      }
-                  }
-                  if (found_newer_folder_than_cache_file)
-                      break;
-              }
-
-              if (found_newer_folder_than_cache_file) {
-                  std::lock_guard lock(app->running_mutex);
-                  generate_data();
-                  save_data();
-              }
-          }
-      });
-      t.detach();
-   */
 }
 
 void unload_icons() {
@@ -1221,3 +1074,205 @@ void get_options(std::vector<std::string_view>& names, const std::string& name, 
         }
     }
 }
+
+
+std::vector<std::string> all_dirs;
+std::vector<std::string> possible_dirs;
+
+void gen_all_final_dirs() {
+    namespace fs = std::filesystem;
+
+    // go through each directory possible, enumerate every dir under it into a vector including root
+    for (const auto& rootdir : icon_search_paths) {
+        fs::path root(rootdir);
+
+        if (!fs::exists(root))
+            continue;
+
+        if (fs::is_directory(root))
+            all_dirs.push_back(root.string()); // include the root itself
+
+        for (auto const& entry : fs::recursive_directory_iterator(root)) {
+            if (entry.is_directory()) {
+                all_dirs.push_back(entry.path().string());
+            }
+        }
+    }
+}
+
+Candidate path_to_candidate(std::string path) {
+    Candidate can;
+    // Set default values for icons that are loose or in the root folder and not attached to a theme by default
+    can.theme = "hardcoded";
+    can.size = 48; // Default size
+    can.scale = 1; // Default scale
+    can.context = IconContext::Apps;
+
+    std::string under = path;
+    for (char &t: under)
+        t = std::tolower(t);
+
+    { // Context
+        struct ICMap {
+            std::string name;
+            IconContext context;
+        };
+        std::vector<ICMap> ics = {{"/actions",    IconContext::Actions},
+                                  {"/animations", IconContext::Animations},
+                                  {"/apps",       IconContext::Apps},
+                                  {"/categories", IconContext::Categories},
+                                  {"/devices",    IconContext::Devices},
+                                  {"/emblems",    IconContext::Emblems},
+                                  {"/emotes",     IconContext::Emotes},
+                                  {"/intl",       IconContext::Intl},
+                                  {"/mimetypes",  IconContext::Mimetypes},
+                                  {"/places",     IconContext::Places},
+                                  {"/status",     IconContext::Statuses},
+                                  {"/panel",      IconContext::Panel}};
+        for (const auto &item: ics)
+            if (under.find(item.name) != std::string::npos)
+                can.context = item.context;
+    }
+    { // Extension
+        if (under.find(".svg") != std::string::npos) {
+            can.extension = 0;
+        }
+        if (under.find(".png") != std::string::npos) {
+            can.extension = 1;
+        }
+        if (under.find(".xpm") != std::string::npos) {
+            can.extension = 2;
+        }
+    }
+    {
+        size_t last_slash = path.find_last_of("/");
+        if (last_slash != std::string::npos) {
+            can.parent_path = path.substr(0, last_slash);
+
+            // Extract filename
+            size_t last_dot = path.find_last_of(".");
+            if (last_dot != std::string::npos) {
+                can.filename = path.substr(last_slash + 1, last_dot - last_slash - 1);
+            }
+        }
+    }
+    { // Theme
+        for (auto f : icon_search_paths) {
+            if (path.find(f) != std::string::npos) {
+                auto s = path.substr(f.size() + 1);
+                auto l = s.find("/");
+                if (l != std::string::npos) {
+                    can.theme = s.substr(0, l);
+
+                    // extract size and scale from s if possible
+                    char buffer[64];
+                    int buffer_len = 0;
+                    bool found_at = false;
+                    int scale = 0;
+                    int size = 0;
+
+                    // Iterate through the characters in the path string
+                    for (int i = 0; i < can.parent_path.length(); i++) {
+                        if (scale != 0 && size != 0)
+                            break;
+
+                        char c = can.parent_path[i];
+                        if (isdigit(c)) {
+                            // Save the digit character to the buffer
+                            buffer[buffer_len] = c;
+                            buffer_len++;
+                        } else if (c == '@') {
+                            if (buffer_len != 0) {
+                                buffer[buffer_len] = '\0';
+                                size = atoi(buffer);
+                            }
+                            found_at = true;
+                            buffer_len = 0;
+                        } else if (c == '/' || c == 'x' || c == 'X' || i == can.parent_path.length() - 1) {
+                            if (found_at && buffer_len != 0) {
+                                // Convert the buffer to an integer and save it to the scale variable
+                                buffer[buffer_len] = '\0';
+                                scale = atoi(buffer);
+                            } else if (buffer_len != 0) {
+                                // Convert the buffer to an integer and save it to the size variable
+                                buffer[buffer_len] = '\0';
+                                size = atoi(buffer);
+                            }
+                            // Reset the buffer and the found_at flag
+                            buffer_len = 0;
+                            found_at = false;
+                        }
+                    }
+                    if (found_at && buffer_len != 0) {
+                        // Convert the buffer to an integer and save it to the scale variable
+                        buffer[buffer_len] = '\0';
+                        scale = atoi(buffer);
+                    } else if (buffer_len != 0) {
+                        // Convert the buffer to an integer and save it to the size variable
+                        buffer[buffer_len] = '\0';
+                        size = atoi(buffer);
+                    }
+                    can.size = size;
+                    can.scale = scale;
+                }
+
+                // It's not visible here, but the case Where the icon is at the root path is being attended to here
+                // as by default, We set the theme as hardcoded for that and sane defaults for the other aspects of the icon
+            }
+        }
+    }
+
+    return can;
+}
+
+std::string single_shot_icon_live(std::string icon, int size) {
+    icon = c3ic_fix_wm_class(icon);
+    {
+#ifdef TRACY_ENABLE
+        ZoneScopedN("single_shot one time cost");
+#endif
+        if (icon_search_paths.empty())
+            update_paths();
+
+        // One time cost (heavy)
+        if (all_dirs.empty())
+            gen_all_final_dirs();
+    }
+
+    {
+#ifdef TRACY_ENABLE
+        ZoneScopedN("single_shot possible");
+#endif
+        possible_dirs.clear();
+        for (auto s : all_dirs) {
+            auto svg = s + "/" + icon + ".svg";
+            auto png = s + "/" + icon + ".png";
+            auto xpm = s + "/" + icon + ".xpm";
+            if (std::filesystem::exists(svg)) {
+                possible_dirs.push_back(svg);
+            }
+            if (std::filesystem::exists(png)) {
+                possible_dirs.push_back(png);
+            }
+            if (std::filesystem::exists(xpm)) {
+                possible_dirs.push_back(xpm);
+            }
+        }
+    }
+
+    std::vector<IconTarget> targets;
+    targets.push_back(IconTarget(icon));
+    {
+#ifdef TRACY_ENABLE
+            ZoneScopedN("single_shot gen canidates");
+#endif
+        for (auto s : possible_dirs) {
+            targets[0].candidates.push_back(path_to_candidate(s));
+        }
+        pick_best(targets, size);
+        printf("%s\n", targets[0].best_full_path.c_str());
+    }
+    return targets[0].best_full_path;
+}
+
+
