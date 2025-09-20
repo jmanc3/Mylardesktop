@@ -18,9 +18,9 @@
 #endif
 
 static std::vector<Container *> roots; // monitors
-static int titlebar_text_h = 14;
-static int titlebar_icon_button_h = 13;
-static int titlebar_icon_h = 21;
+static int titlebar_text_h = 15;
+static int titlebar_icon_button_h = 14;
+static int titlebar_icon_h = 24;
 static int titlebar_icon_pad = 8;
 RGBA color_titlebar = {1.0, 1.0, 1.0, 1.0};
 RGBA color_titlebar_hovered = {0.87, 0.87, 0.87, 1.0f};
@@ -31,6 +31,14 @@ RGBA color_titlebar_icon = {0.0, 0.0, 0.0, 1.0};
 RGBA color_titlebar_icon_close_pressed = {1.0, 1.0, 1.0, 1.0};
 static float title_button_wratio = 1.4375f;
 static float rounding = 10.0f;
+
+enum struct TYPE : uint8_t {
+    NONE = 0,
+    RESIZE_HANDLE, // The handle that exists between two snapped winodws
+    CLIENT_RESIZE, // The resize that exists around a window
+    CLIENT, // Windows
+};
+
 
 static std::string to_lower(const std::string& str) {
     std::string result;
@@ -74,26 +82,144 @@ void drag_update() {
     auto mid = get_monitor(client->id);
     auto newx = hypriso->drag_initial_window_pos.x + (m.x - hypriso->drag_initial_mouse_pos.x);
     auto newy = hypriso->drag_initial_window_pos.y + (m.y - hypriso->drag_initial_mouse_pos.y);
-    move(hypriso->dragging_id, newx, newy);
+    hypriso->move(hypriso->dragging_id, newx, newy);
+    hypriso->bring_to_front(hypriso->dragging_id);
 }
 
 void drag_start(int id) {
     hypriso->dragging_id = id;
     hypriso->dragging = false; 
     auto client = c_from_id(hypriso->dragging_id);
-    auto mid = get_monitor(client->id);
     auto b = bounds(client);
-    hypriso->drag_initial_window_pos = b; 
+    if (client->snapped) {
+        client->snapped = false;
+        hypriso->move_resize(client->id, b.x, b.y, client->pre_snap_bounds.w, client->pre_snap_bounds.h);
+    }
+    client->pre_snap_bounds = b;
+    hypriso->drag_initial_window_pos = b;
     hypriso->drag_initial_mouse_pos = mouse(); 
     setCursorImageUntilUnset("grabbing");
     drag_update();
 }
 
+enum class SnapPosition {
+  NONE,
+  MAX,
+  LEFT,
+  RIGHT,
+  TOP_LEFT,
+  TOP_RIGHT,
+  BOTTOM_RIGHT,
+  BOTTOM_LEFT
+};
+
+SnapPosition mouse_to_snap_position(int mon, int x, int y) {
+    Bounds pos = bounds(m_from_id(mon));
+
+    const float edgeThresh     = 20.0;
+    const float sideThreshX    = pos.w * 0.05f;
+    const float sideThreshY    = pos.h * 0.05f;
+    const float rightEdge      = pos.x + pos.w;
+    const float bottomEdge     = pos.y + pos.h;
+    bool        on_top_edge    = y < pos.y + edgeThresh;
+    bool        on_bottom_edge = y > bottomEdge - edgeThresh;
+    bool        on_left_edge   = x < pos.x + edgeThresh;
+    bool        on_right_edge  = x > rightEdge - edgeThresh;
+    bool        on_left_side   = x < pos.x + sideThreshX;
+    bool        on_right_side  = x > rightEdge - sideThreshX;
+    bool        on_top_side    = y < pos.y + sideThreshY;
+    bool        on_bottom_side = y > bottomEdge - sideThreshY;
+
+    if ((on_top_edge && on_left_side) || (on_left_edge && on_top_side)) {
+        return SnapPosition::TOP_LEFT;
+    } else if ((on_top_edge && on_right_side) || (on_right_edge && on_top_side)) {
+        return SnapPosition::TOP_RIGHT;
+    } else if ((on_bottom_edge && on_left_side) || (on_left_edge && on_bottom_side)) {
+        return SnapPosition::BOTTOM_LEFT;
+    } else if ((on_bottom_edge && on_right_side) || (on_right_edge && on_bottom_side)) {
+        return SnapPosition::BOTTOM_RIGHT;
+    } else if (on_top_edge) {
+        return SnapPosition::MAX;
+    } else if (on_left_edge) {
+        return SnapPosition::LEFT;
+    } else if (on_right_edge) {
+        return SnapPosition::RIGHT;
+    } else if (on_bottom_edge) {
+        return SnapPosition::MAX;
+    } else {
+        return SnapPosition::NONE;
+    }
+
+    return SnapPosition::NONE;
+}
+
+Bounds snap_position_to_bounds(int mon, SnapPosition pos) {
+    Bounds screen = bounds_reserved(m_from_id(mon));
+    
+    float x = screen.x;
+    float y = screen.y;
+    float w = screen.w;
+    float h = screen.h;
+
+    Bounds out = {x, y, w, h};
+
+    if (pos == SnapPosition::MAX) {
+        return {x, y, w, h};
+    } else if (pos == SnapPosition::LEFT) {
+        return {x, y, w * .5, h};
+    } else if (pos == SnapPosition::RIGHT) {
+        return {x + w * .5, y, w * .5, h};
+    } else if (pos == SnapPosition::TOP_LEFT) {
+        return {x, y, w * .5, h * .5};
+    } else if (pos == SnapPosition::TOP_RIGHT) {
+        return {x + w * .5, y, w * .5, h * .5};
+    } else if (pos == SnapPosition::BOTTOM_LEFT) {
+        return {x, y + h * .5, w * .5, h * .5};
+    } else if (pos == SnapPosition::BOTTOM_RIGHT) {
+        return {x + w * .5, y + h * .5, w * .5, h * .5};
+    }
+
+    return out;    
+}
+
 void drag_stop() {
+    int window = hypriso->dragging_id;
     drag_update();
     hypriso->dragging_id = -1;
     hypriso->dragging = false;
     unsetCursorImage();
+
+    int mon = hypriso->monitor_from_cursor();
+    auto m = mouse();
+    auto snap_position = mouse_to_snap_position(mon, m.x, m.y);
+    Bounds position = snap_position_to_bounds(mon, snap_position);
+    auto c = c_from_id(window);
+    if (snap_position == SnapPosition::NONE) {
+        auto newx = hypriso->drag_initial_window_pos.x + (m.x - hypriso->drag_initial_mouse_pos.x);
+        auto newy = hypriso->drag_initial_window_pos.y + (m.y - hypriso->drag_initial_mouse_pos.y);
+        position.x = newx;
+        position.y = newy;
+        hypriso->move(window, position.x, position.y);
+    } else {
+        c->snapped = true;
+        c->pre_snap_bounds = bounds(c);
+        position.y += titlebar_h;
+        position.h -= titlebar_h;
+        hypriso->move_resize(window, position.x, position.y, position.w, position.h);
+    }
+}
+
+void toggle_maximize(int id) {
+    auto c = c_from_id(id);
+    int mon = hypriso->monitor_from_cursor();
+    if (c->snapped) {
+        hypriso->move_resize(id, c->pre_snap_bounds.x, c->pre_snap_bounds.y, c->pre_snap_bounds.w, c->pre_snap_bounds.h);
+    } else {
+        Bounds position = snap_position_to_bounds(mon, SnapPosition::MAX);
+        c->pre_snap_bounds = bounds(c);
+        hypriso->move_resize(id, position.x, position.y + titlebar_h, position.w, position.h - titlebar_h);
+    }
+    c->snapped = !c->snapped;
 }
 
 // returning true means consume the event
@@ -137,6 +263,17 @@ ThinClient *c_from_id(int id) {
 }
 
 void layout_every_single_root() {
+    std::vector<Container *> backup;
+    for (auto r : roots) {
+        for (int i = r->children.size() - 1; i >= 0; i--) {
+            auto c = r->children[i];
+            if (c->custom_type != (int) TYPE::CLIENT) {
+                backup.push_back(c);
+                r->children.erase(r->children.begin() + i);
+            }
+        }
+    }
+
     // reorder based on stacking
     std::vector<int> order = get_window_stacking_order();
     for (auto r : roots) {
@@ -181,7 +318,33 @@ void layout_every_single_root() {
                 ::layout(c, c, c->real_bounds);
             }
         } 
-    }    
+    }
+    for (auto b: backup) {
+        if (b->custom_type == (int) TYPE::CLIENT_RESIZE) {
+            auto bdata = (ClientData *) b->user_data;
+            for (auto r: roots) {
+                for (int i = 0; i < r->children.size(); i++) {
+                    auto c = r->children[i];
+                    if (c->custom_type == (int) TYPE::CLIENT) {
+                        auto cdata = (ClientData *) c->user_data;
+                        if (cdata->id == bdata->id) {
+                            b->real_bounds = c->real_bounds;
+                            b->real_bounds.shrink(100);
+                            r->children.insert(r->children.begin() + i, b);
+                            break;
+                        }
+                    }
+                }
+            }
+        } else if (b->custom_type == (int) TYPE::RESIZE_HANDLE) {
+        } 
+    }
+    /*for (auto r : roots) {
+        for (int i = r->children.size() - 1; i >= 0; i--) {
+            auto c = r->children[i];
+            
+        }
+    }*/
 }
 
 
@@ -269,8 +432,26 @@ void on_window_open(int id) {
                 TextureInfo icon;
             };
 
+            auto resize = r->child(::vbox, FILL_SPACE, FILL_SPACE); // the sizes are set later by layout code
+            resize->custom_type = (int) TYPE::CLIENT_RESIZE;
+            resize->when_paint = [](Container *root, Container *c) {
+               rect(c->real_bounds, {1, 1, 0, 1}); 
+            };
+            resize->when_mouse_down = [](Container *root, Container *c) {
+                root->consumed_event = true;
+            };
+            resize->when_clicked = [](Container *root, Container *c) {
+                notify("reiszeasdfasfd");
+            };
+            resize->skip_delete = true;
+
             auto c = r->child(::vbox, FILL_SPACE, FILL_SPACE); // the sizes are set later by layout code
+            c->custom_type = (int) TYPE::CLIENT;
             c->user_data = new ClientData(id);            
+            resize->user_data = c->user_data;
+            
+            auto thinc = c_from_id(id);
+            thinc->uuid = c->uuid;
             auto s = scale(((RootData *) r->user_data)->id);
             auto title = c->child(::hbox, FILL_SPACE, titlebar_h * s);
             title->when_mouse_down = [](Container *root, Container *c) {
@@ -329,11 +510,11 @@ void on_window_open(int id) {
             };
             title->alignment = ALIGN_RIGHT;
             title->when_clicked = [](Container *root, Container *c) {
+                auto cdata = (ClientData *) c->parent->user_data;
                 auto data = (TitleData *) c->user_data;
                 long current = get_current_time_in_ms();
-                notify("title clicked");
                 if (current - data->previous < 300) {
-                    notify("toggle max");
+                    toggle_maximize(cdata->id);
                 }
                 data->previous = current;
             };
@@ -398,7 +579,7 @@ void on_window_open(int id) {
                     }
                     if (cdata->main.id != -1) {
                         auto texid = cdata->main;
-                        if (client->maximized)
+                        if (client->snapped)
                            texid = cdata->secondary; 
                         draw_texture(texid,
                             c->real_bounds.x + c->real_bounds.w * .5 - cdata->main.w * .5,
@@ -411,11 +592,9 @@ void on_window_open(int id) {
             };
             max->when_clicked = [](Container *root, Container *c)  {
                 auto cdata = (ClientData *) c->parent->parent->user_data;
-                auto client = c_from_id(cdata->id);
                 if (cdata) {
-                    client->maximized = !client->maximized;
+                    toggle_maximize(cdata->id);
                 }
-                notify("toggle max");
             };
             auto close = title->child(100, FILL_SPACE);
             close->user_data = new IconData;
@@ -453,8 +632,9 @@ void on_window_open(int id) {
             close->pre_layout = [](Container *root, Container *c, const Bounds &b) {
                 c->wanted_bounds.w = b.h * title_button_wratio;
             };
-            close->when_clicked = [](Container *root, Container *C)  {
-                notify("close");
+            close->when_clicked = [](Container *root, Container *c)  {
+                auto data = (ClientData *) c->parent->parent->user_data;
+                close_window(data->id);
             };
             
 
@@ -464,6 +644,18 @@ void on_window_open(int id) {
 }
 
 void on_window_closed(int id) {
+    auto client = c_from_id(id);
+    
+    for (auto r : roots) {
+        for (int i = 0; i < r->children.size(); i++) {
+            auto child = r->children[i];
+            if (child->uuid == client->uuid) {
+                delete r->children[i];
+                r->children.erase(r->children.begin() + i);
+            }
+        } 
+    }
+
     for (int i = 0; i < hypriso->windows.size(); i++) {
         auto w = hypriso->windows[i];
         if (w->id == id) {
@@ -471,16 +663,6 @@ void on_window_closed(int id) {
             delete w;
             hypriso->windows.erase(hypriso->windows.begin() + i); 
         }
-    }
-
-    for (auto r : roots) {
-        for (int i = 0; i < r->children.size(); i++) {
-            auto data = (ClientData *) r->children[i]->user_data;
-            if (data->id == id) {
-                delete r->children[i];
-                r->children.erase(r->children.begin() + i);
-            }
-        } 
     }
 }
 
@@ -512,6 +694,10 @@ void on_monitor_closed(int id) {
     } 
 }
 
+void on_drag_start_requested(int id) {
+    drag_start(id);
+}
+
 void startup::begin() {
     hypriso->on_mouse_press = on_mouse_press;
     hypriso->on_mouse_move = on_mouse_move;
@@ -522,6 +708,7 @@ void startup::begin() {
     hypriso->on_window_closed = on_window_closed;
     hypriso->on_monitor_open = on_monitor_open;
     hypriso->on_monitor_closed = on_monitor_closed;
+    hypriso->on_drag_start_requested = on_drag_start_requested;
 
 	// The two most important callbacks we hook are mouse move and mouse events
 	// On every mouse move we update the current state of the ThinClients to be in the right positions
@@ -537,17 +724,6 @@ void startup::begin() {
         notify("icon load");
         icon_cache_load();
     }
-
-	/*auto b = root->child(::vbox, 200, 200);
-	b->when_paint = [](Container *root, Container *c) {
-    	if (c->state.mouse_pressing) {
-            rect(tobox(c), {1, 1, 0, 1});	
-    	} else {
-            //rect(tobox(c), {1, 1, 1, 1});	
-            border(tobox(c), {1, 1, 1, 1}, 10.0f);
-    	}
-	};
-	*/
 }
 
 void startup::end() {

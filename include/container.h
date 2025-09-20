@@ -138,6 +138,8 @@ struct Container {
     // A user settable name that can be used for retrival
     std::string name;
 
+    int custom_type = 0;
+
     // List of this containers children;
     std::vector<Container*> children;
 

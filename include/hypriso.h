@@ -9,7 +9,7 @@
 #include <chrono>
 #include <functional>
 
-static int titlebar_h = 29;
+static int titlebar_h = 30;
 
 enum struct STAGE : uint8_t {
     RENDER_PRE = eRenderStage::RENDER_PRE,        /* Before binding the gl context */
@@ -44,10 +44,10 @@ struct ThinClient {
     int initial_x = 0; // before drag start
     int initial_y = 0; // before drag start
 
-    bool maximized = false;
-
-    bool snaped = false;
+    bool snapped = false;
     Bounds pre_snap_bounds;
+
+    std::string uuid;
 
     ThinClient(int _id) : id(_id) {}
 };
@@ -89,11 +89,18 @@ struct HyprIso {
     
     std::function<void(int id, int stage)> on_render = nullptr;
 
+    std::function<void(int id)> on_drag_start_requested = nullptr;
+
     std::vector<ThinClient *> windows;
     std::vector<ThinMonitor *> monitors;
 
     void reserve_titlebar(ThinClient *c, int size);
     
+    void move(int id, int x, int y);
+    void move_resize(int id, int x, int y, int w, int h);
+    int monitor_from_cursor();
+    
+    void bring_to_front(int id);
 };
 
 extern HyprIso *hypriso;
@@ -126,8 +133,6 @@ float scale(int id);
 
 std::vector<int> get_window_stacking_order();
 
-void move(int id, int x, int y);
-
 void notify(std::string text);
 
 void set_window_corner_mask(int id, int cornermask);
@@ -142,6 +147,8 @@ void setCursorImageUntilUnset(std::string cursor);
 void unsetCursorImage();
 
 int get_monitor(int client);
+
+void close_window(int id);
 
 Bounds mouse();
 

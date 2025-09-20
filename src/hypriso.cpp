@@ -13,7 +13,8 @@
 
 #include <algorithm>
 #include <hyprland/src/helpers/Color.hpp>
-#include <hyprland/protocols/kde-server-decoration.hpp>
+#include <kde-server-decoration.hpp>
+//#include <hyprland/protocols/kde-server-decoration.hpp>
 
 #define private public
 #include <hyprland/src/render/pass/SurfacePassElement.hpp>
@@ -141,7 +142,33 @@ void set_rounding(int mask) {
     glUniform1i(loc, mask);
 }
 
+PHLWINDOW get_window_from_mouse() {
+    const auto      MOUSECOORDS = g_pInputManager->getMouseCoordsInternal();
+    const PHLWINDOW PWINDOW     = g_pCompositor->vectorToWindowUnified(MOUSECOORDS, RESERVED_EXTENTS | INPUT_EXTENTS | ALLOW_FLOATING);
+    return PWINDOW;
+}
+
 void on_open_window(PHLWINDOW w) {
+   if (auto surface = w->m_xdgSurface) {
+        if (auto toplevel = surface->m_toplevel.lock()) {
+            auto resource = toplevel->m_resource;
+            if (resource) {
+                resource->setMove([](CXdgToplevel*, wl_resource*, uint32_t) {
+                    notify("move requested");
+                    if (hypriso->on_drag_start_requested) {
+                        if (auto w = get_window_from_mouse()) {
+                            for (auto hw : hyprwindows) {
+                                if (w == hw->w) {
+                                    hypriso->on_drag_start_requested(hw->id);
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+   }
+    
     // Validate that we care about the window
     if (w->m_X11DoesntWantBorders)
         return;
@@ -391,6 +418,21 @@ void detect_csd_request_change() {
 
 }
 
+void detect_move_resize_requests() {
+   /*if (auto surface = PWINDOW->m_xdgSurface) {
+        if (auto toplevel = surface->m_toplevel.lock()) {
+            auto resource = *toplevel.*result<r_data_tag>::ptr;
+            if (resource) {
+            //HyprlandAPI::createFunctionHook(stable_hypr::APIHANDLE, resource->requests.move, dest);
+            resource->setMove(on_move_requsted);
+            resource->setResize(on_resize_requested);
+            }
+        }
+   }*/
+  
+}
+
+
 void set_window_corner_mask(int id, int cornermask) {
     for (auto hw: hyprwindows)
         if (hw->id == id)
@@ -502,6 +544,7 @@ void HyprIso::create_hooks_and_callbacks() {
 
     fix_window_corner_rendering();
     detect_csd_request_change();
+    detect_move_resize_requests();
 }
 
 void HyprIso::end() {
@@ -519,6 +562,8 @@ Bounds tobounds(CBox box) {
 }
 
 void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPower, bool blur, float blurA) {
+    if (box.h < 0 || box.w < 0)
+        return;
     AnyPass::AnyData anydata([box, color, cornermask, round, roundingPower, blur, blurA](AnyPass* pass) {
         CHyprOpenGLImpl::SRectRenderData rectdata;
         rectdata.blur          = blur;
@@ -533,6 +578,8 @@ void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPow
 }
 
 void border(Bounds box, RGBA color, float size, int cornermask, float round, float roundingPower, bool blur, float blurA) {
+    if (box.h < 0 || box.w < 0)
+        return;
     CBorderPassElement::SBorderData rectdata;
     rectdata.grad1         = CHyprColor(color.r, color.g, color.b, color.a);
     rectdata.grad2         = CHyprColor(color.r, color.g, color.b, color.a);
@@ -660,8 +707,8 @@ Bounds bounds_reserved(ThinMonitor *m) {
                 auto b = m->logicalBox();
                 b.x += m->m_reservedTopLeft.x;
                 b.y += m->m_reservedTopLeft.y;
-                b.w -= (m->m_reservedTopLeft.x = m->m_reservedBottomRight.x);
-                b.h -= (m->m_reservedTopLeft.y = m->m_reservedBottomRight.y);
+                b.w -= (m->m_reservedTopLeft.x + m->m_reservedBottomRight.x);
+                b.h -= (m->m_reservedTopLeft.y + m->m_reservedBottomRight.y);
                 return tobounds(b);
             }
         }
@@ -718,7 +765,7 @@ std::vector<int> get_window_stacking_order() {
     return vec;
 }
 
-void move(int id, int x, int y) {
+void HyprIso::move(int id, int x, int y) {
     auto m = g_pCompositor->getMonitorFromCursor();
     for (auto c : hyprwindows) {
         if (c->id == id) {
@@ -727,6 +774,17 @@ void move(int id, int x, int y) {
     }
 }
 
+void HyprIso::move_resize(int id, int x, int y, int w, int h) {
+    auto m = g_pCompositor->getMonitorFromCursor();
+    for (auto c : hyprwindows) {
+        if (c->id == id) {
+            c->w->m_realPosition->setValueAndWarp({x, y});
+            c->w->m_realSize->setValueAndWarp({w, h});
+            c->w->sendWindowSize(true);
+            c->w->updateWindowDecos();
+        }
+    }
+}
 
 bool paint_svg_to_surface(cairo_surface_t* surface, std::string path, int target_size) {
 #ifdef TRACY_ENABLE
@@ -1118,4 +1176,29 @@ Bounds mouse() {
     return {mouse.x, mouse.y, mouse.x, mouse.y};
 }
 
- 
+void close_window(int id) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            g_pCompositor->closeWindow(hw->w);
+        }
+    }
+}
+
+int HyprIso::monitor_from_cursor() {
+    auto m = g_pCompositor->getMonitorFromCursor();
+    for (auto hm : hyprmonitors) {
+        if (hm->m == m) {
+            return hm->id;   
+        }
+    }
+    return -1;
+}
+
+void HyprIso::bring_to_front(int id) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            g_pCompositor->focusWindow(hw->w);
+            g_pCompositor->changeWindowZOrder(hw->w, true);
+        }
+    }
+}
