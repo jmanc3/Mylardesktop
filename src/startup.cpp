@@ -22,6 +22,7 @@ static int titlebar_text_h = 15;
 static int titlebar_icon_button_h = 14;
 static int titlebar_icon_h = 24;
 static int titlebar_icon_pad = 8;
+static int resize_size = 13;
 RGBA color_titlebar = {1.0, 1.0, 1.0, 1.0};
 RGBA color_titlebar_hovered = {0.87, 0.87, 0.87, 1.0f};
 RGBA color_titlebar_pressed = {0.69, 0.69, 0.69, 1.0f};
@@ -323,13 +324,15 @@ void layout_every_single_root() {
         if (b->custom_type == (int) TYPE::CLIENT_RESIZE) {
             auto bdata = (ClientData *) b->user_data;
             for (auto r: roots) {
+                auto rdata = (RootData *) r->user_data;
+                auto s = scale(rdata->id);
                 for (int i = 0; i < r->children.size(); i++) {
                     auto c = r->children[i];
                     if (c->custom_type == (int) TYPE::CLIENT) {
                         auto cdata = (ClientData *) c->user_data;
                         if (cdata->id == bdata->id) {
                             b->real_bounds = c->real_bounds;
-                            b->real_bounds.shrink(100);
+                            b->real_bounds.grow(resize_size * s);
                             r->children.insert(r->children.begin() + i, b);
                             break;
                         }
@@ -435,14 +438,51 @@ void on_window_open(int id) {
             auto resize = r->child(::vbox, FILL_SPACE, FILL_SPACE); // the sizes are set later by layout code
             resize->custom_type = (int) TYPE::CLIENT_RESIZE;
             resize->when_paint = [](Container *root, Container *c) {
-               rect(c->real_bounds, {1, 1, 0, 1}); 
-            };
+                auto cdata = (ClientData *) c->user_data;
+                auto client = c_from_id(cdata->id);                
+                if (client->snapped) {
+                    return;
+                }
+ 
+                auto rdata = (RootData *) root->user_data;
+                auto s = scale(rdata->id);
+                auto b = c->real_bounds;
+                b.shrink(resize_size * s);
+                border(b, {1, 1, 0, 1}, resize_size * s); 
+                };
             resize->when_mouse_down = [](Container *root, Container *c) {
                 root->consumed_event = true;
             };
             resize->when_clicked = [](Container *root, Container *c) {
                 notify("reiszeasdfasfd");
             };
+            resize->handles_pierced = [](Container* container, int mouse_x, int mouse_y) {
+                auto cdata = (ClientData *) container->user_data;
+                auto client = c_from_id(cdata->id);                
+                if (client->snapped) {
+                    return false; 
+                }
+                auto b = container->real_bounds;
+                auto s = 1.0f;
+                for (auto r : roots) {
+                    for (auto c : r->children) {
+                        if (c == container) {
+                            auto rdata = (RootData *) r->user_data;
+                            s = scale(rdata->id);
+                            break; 
+                        }
+                    }
+                }
+                if (bounds_contains(b, mouse_x, mouse_y)) {
+                    b.shrink(resize_size * s);
+                    if (bounds_contains(b, mouse_x, mouse_y)) {
+                        return false;
+                    }
+                    return true;
+                }
+                return false; 
+            };
+            
             resize->skip_delete = true;
 
             auto c = r->child(::vbox, FILL_SPACE, FILL_SPACE); // the sizes are set later by layout code
