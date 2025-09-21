@@ -628,6 +628,14 @@ bool on_mouse_press(int id, int button, int state, float x, float y) {
        } 
     }
 
+    if (state == 0) {
+        if (hypriso->dragging) {
+           drag_stop(); 
+        } else if (hypriso->resizing) {
+           resize_stop(); 
+        }
+    }
+
     return consumed;
 }
 
