@@ -47,6 +47,10 @@ struct ThinClient {
     bool snapped = false;
     Bounds pre_snap_bounds;
 
+    bool resizing = false;
+    int resize_type = 0;
+    Bounds initial_win_box;
+
     std::string uuid;
 
     ThinClient(int _id) : id(_id) {}
@@ -99,6 +103,9 @@ struct HyprIso {
     void move(int id, int x, int y);
     void move_resize(int id, int x, int y, int w, int h);
     int monitor_from_cursor();
+
+    Bounds min_size(int id);
+    bool is_x11(int id);
     
     void bring_to_front(int id);
 };

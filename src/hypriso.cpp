@@ -1202,3 +1202,24 @@ void HyprIso::bring_to_front(int id) {
         }
     }
 }
+
+Bounds HyprIso::min_size(int id) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            auto s = hw->w->requestedMinSize();
+            return {s.x, s.y, s.x, s.y};
+        }
+    }
+    return {10, 10, 10, 10};
+}
+
+bool HyprIso::is_x11(int id) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            return hw->w->m_isX11;
+        }
+    }
+    return false;
+}
+
+
