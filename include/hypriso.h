@@ -24,6 +24,29 @@ enum struct STAGE : uint8_t {
     RENDER_POST_WINDOW = eRenderStage::RENDER_PRE_WINDOW,    /* After rendering a window (any pass) */
 };
 
+enum class SnapPosition {
+  NONE,
+  MAX,
+  LEFT,
+  RIGHT,
+  TOP_LEFT,
+  TOP_RIGHT,
+  BOTTOM_RIGHT,
+  BOTTOM_LEFT
+};
+
+enum class RESIZE_TYPE {
+  NONE,
+  TOP,
+  RIGHT,
+  BOTTOM,
+  LEFT,
+  TOP_RIGHT,
+  TOP_LEFT,
+  BOTTOM_LEFT,
+  BOTTOM_RIGHT,
+};
+
 struct RGBA {
     float r, g, b, a;
     
@@ -51,6 +74,8 @@ struct ThinClient {
     int resize_type = 0;
     Bounds initial_win_box;
 
+    bool iconified = false;
+
     std::string uuid;
 
     ThinClient(int _id) : id(_id) {}
@@ -68,6 +93,8 @@ struct HyprIso {
     int dragging_id = -1;
     Bounds drag_initial_mouse_pos;
     Bounds drag_initial_window_pos;
+    
+    bool resizing = false;
 
     // The main workhorse of the program which pumps events from hyprland to mylar
     void create_hooks_and_callbacks();
@@ -94,6 +121,7 @@ struct HyprIso {
     std::function<void(int id, int stage)> on_render = nullptr;
 
     std::function<void(int id)> on_drag_start_requested = nullptr;
+    std::function<void(int id, RESIZE_TYPE type)> on_resize_start_requested = nullptr;
 
     std::vector<ThinClient *> windows;
     std::vector<ThinMonitor *> monitors;
@@ -106,8 +134,14 @@ struct HyprIso {
 
     Bounds min_size(int id);
     bool is_x11(int id);
+    bool has_decorations(int id);
     
     void bring_to_front(int id);
+    void iconify(int id, bool state);
+
+    void should_round(int id, bool state);
+
+    void damage_entire(int monitor);
 };
 
 extern HyprIso *hypriso;

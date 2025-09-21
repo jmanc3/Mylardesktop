@@ -432,7 +432,7 @@ void mouse_event(Container* root, const Event& e) {
 }
 
 void paint_outline(Container* root, Container* c) {
-    if (c->when_paint) {
+    if (c->when_paint && c->exists) {
         c->when_paint(root, c);
     }
     for (auto ch : c->children) {

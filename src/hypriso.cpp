@@ -165,6 +165,42 @@ void on_open_window(PHLWINDOW w) {
                         }
                     }
                 });
+                resource->setResize([](CXdgToplevel* t, wl_resource*, uint32_t, xdgToplevelResizeEdge e) {
+                    for (auto w : g_pCompositor->m_windows) {
+                        if (auto surf = w->m_xdgSurface.lock()) {
+                            if (auto top = surf->m_toplevel.lock()) {
+                                auto resource = top->m_resource;
+                                if (resource.get() == t) {
+                                    auto type = RESIZE_TYPE::NONE;
+                                    if (e == XDG_TOPLEVEL_RESIZE_EDGE_NONE) {
+                                        type = RESIZE_TYPE::NONE;
+                                    } else if (e == XDG_TOPLEVEL_RESIZE_EDGE_TOP) {
+                                        type = RESIZE_TYPE::TOP;
+                                    } else if (e == XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM) {
+                                        type = RESIZE_TYPE::BOTTOM;
+                                    } else if (e == XDG_TOPLEVEL_RESIZE_EDGE_LEFT) {
+                                        type = RESIZE_TYPE::LEFT;
+                                    } else if (e == XDG_TOPLEVEL_RESIZE_EDGE_TOP_LEFT) {
+                                        type = RESIZE_TYPE::TOP_LEFT;
+                                    } else if (e == XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_LEFT) {
+                                        type = RESIZE_TYPE::BOTTOM_LEFT;
+                                    } else if (e == XDG_TOPLEVEL_RESIZE_EDGE_RIGHT) {
+                                        type = RESIZE_TYPE::RIGHT;
+                                    } else if (e == XDG_TOPLEVEL_RESIZE_EDGE_TOP_RIGHT) {
+                                        type = RESIZE_TYPE::TOP_RIGHT;
+                                    } else if (e == XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_RIGHT) {
+                                        type = RESIZE_TYPE::BOTTOM_RIGHT;
+                                    }
+                                    int id = 0;
+                                    for (auto hw : hyprwindows) 
+                                        if (hw->w == w)
+                                            id = hw->id;
+                                    hypriso->on_resize_start_requested(id, type);
+                                }
+                            }
+                        }
+                    }
+                });
             }
         }
    }
@@ -329,6 +365,20 @@ void hook_OnReadProp(void* thisptr, SP<CXWaylandSurface> XSURF, uint32_t atom, x
 
 static wl_event_source *source = nullptr;
 
+void remove_request_listeners() {
+    for (auto& w : g_pCompositor->m_windows) {
+        if (auto surface = w->m_xdgSurface) {
+            if (auto toplevel = surface->m_toplevel.lock()) {
+                auto resource = toplevel->m_resource;
+                if (resource) {
+                    resource->setMove(nullptr);
+                    resource->setResize(nullptr);
+                }
+            }
+        }
+    }
+}
+
 void recheck_csd_for_all_wayland_windows() {
     if (source)    
         return;
@@ -432,6 +482,20 @@ void detect_move_resize_requests() {
   
 }
 
+inline CFunctionHook* g_pOnCircleNextHook = nullptr;
+typedef bool (*origOnCircleNextFunc)(void*, const IPointer::SButtonEvent&);
+SDispatchResult hook_onCircleNext(void* thisptr, std::string arg) {
+    // we don't call the original function because we want to remove it
+    return {};
+}
+
+void disable_default_alt_tab_behaviour() {
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "circleNext");
+        g_pOnCircleNextHook       = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_onCircleNext);
+        g_pOnCircleNextHook->hook();
+    }
+}
 
 void set_window_corner_mask(int id, int cornermask) {
     for (auto hw: hyprwindows)
@@ -544,13 +608,15 @@ void HyprIso::create_hooks_and_callbacks() {
 
     fix_window_corner_rendering();
     detect_csd_request_change();
-    detect_move_resize_requests();
+    detect_move_resize_requests();    
+    disable_default_alt_tab_behaviour();
 }
 
 void HyprIso::end() {
     g_pHyprRenderer->m_renderPass.removeAllOfType("CRectPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CTexPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CAnyPassElement");
+    remove_request_listeners();
 }
 
 CBox tocbox(Bounds b) {
@@ -1194,6 +1260,45 @@ int HyprIso::monitor_from_cursor() {
     return -1;
 }
 
+void HyprIso::iconify(int id, bool state) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            hw->w->updateWindowDecos();
+            hw->w->setHidden(state);
+        }
+    }
+ 
+    /*
+    if (state) {
+        // only if w is top w
+        alt_tab_menu.change_showing(true);
+        if (!alt_tab_menu.options.empty()) {
+            auto& o = alt_tab_menu.options[0];
+            if (o.window == w) {
+                tab_next_window();
+            }
+        }
+        alt_tab_menu.change_showing(false);
+
+        auto window_data = get_or_create_window_data(w.get());
+        //for (auto it = w.get()->m_windowDecorations.rbegin(); it != w.get()->m_windowDecorations.rend(); ++it) {
+            //auto bar = (IHyprWindowDecoration *) it->get();
+            //if (bar->getDisplayName() == "MylarBar" || bar->getDisplayName() == "MylarResize") {
+                //HyprlandAPI::removeWindowDecoration(stable_hypr::APIHANDLE, bar);
+            //}
+        //}
+        window_data->iconified = true;
+        w->updateWindowDecos();
+        w->setHidden(true);
+    } else {
+        w->setHidden(false);
+        //add_decorations_to_window(w);
+        get_or_create_window_data(w.get())->iconified = false;
+        switchToWindow(w, true);
+    }
+    */
+}
+
 void HyprIso::bring_to_front(int id) {
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
@@ -1213,6 +1318,20 @@ Bounds HyprIso::min_size(int id) {
     return {10, 10, 10, 10};
 }
 
+bool HyprIso::has_decorations(int id) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            for (const auto &decos : hw->w->m_windowDecorations) {
+               if (decos->getDisplayName() == "MylarBar") {
+                   return true;
+               } 
+            }
+        }
+    }
+    return false;
+}
+
+
 bool HyprIso::is_x11(int id) {
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
@@ -1222,4 +1341,20 @@ bool HyprIso::is_x11(int id) {
     return false;
 }
 
+
+void HyprIso::should_round(int id, bool state) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            hw->w->m_windowData.noRounding = !state;
+        }
+    }
+}
+
+void HyprIso::damage_entire(int monitor) {
+    for (auto hm : hyprmonitors) {
+        if (hm->id == monitor) {
+            g_pHyprRenderer->damageMonitor(hm->m);
+        }
+    }
+}
 

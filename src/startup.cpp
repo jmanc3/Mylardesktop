@@ -10,6 +10,7 @@
 #include <format>
 #include <cassert>
 #include <linux/input-event-codes.h>
+#include <src/SharedDefs.hpp>
 
 #ifdef TRACY_ENABLE
 
@@ -23,6 +24,7 @@ static int titlebar_icon_button_h = 14;
 static int titlebar_icon_h = 24;
 static int titlebar_icon_pad = 8;
 static int resize_size = 18;
+static int tab_menu_font_h = 28;
 RGBA color_titlebar = {1.0, 1.0, 1.0, 1.0};
 RGBA color_titlebar_hovered = {0.87, 0.87, 0.87, 1.0f};
 RGBA color_titlebar_pressed = {0.69, 0.69, 0.69, 1.0f};
@@ -33,13 +35,16 @@ RGBA color_titlebar_icon_close_pressed = {1.0, 1.0, 1.0, 1.0};
 static float title_button_wratio = 1.4375f;
 static float rounding = 10.0f;
 
+ThinClient *c_from_id(int id);
+ThinMonitor *m_from_id(int id);
+
 enum struct TYPE : uint8_t {
     NONE = 0,
     RESIZE_HANDLE, // The handle that exists between two snapped winodws
     CLIENT_RESIZE, // The resize that exists around a window
     CLIENT, // Windows
+    ALT_TAB,
 };
-
 
 static std::string to_lower(const std::string& str) {
     std::string result;
@@ -72,10 +77,151 @@ CBox tobox(Container *c) {
    return {c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h}; 
 }
 
-void layout_every_single_root();
+struct AltTabOption {
+    std::string class_name;
+    std::string title;
+    int window;
+};
 
-ThinClient *c_from_id(int id);
-ThinMonitor *m_from_id(int id);
+void reset_visible_window();
+void update_visible_window();
+
+class AltTabMenu {
+  public:
+    bool showing = false;
+
+    Container* root  = nullptr;
+    int index = 0;
+    std::vector<AltTabOption> options;
+    //Timer*                    timer = nullptr;
+    //CMonitor*                 m;
+
+    long switch_time = 0;
+    int previous_index = 0;
+    long time_when_open = 0;
+    long time_when_change = 0;
+
+    void change_showing(bool state) {
+        auto m_windows = get_window_stacking_order();
+        for (int i = options.size() - 1; i >= 0; i--) {
+            auto& o = options[i];
+            bool  found = false;
+            for (auto w : m_windows)
+                if (o.window == w)
+                    found = true;
+            if (!found) {
+                options.erase(options.begin() + i);
+            }
+        }
+        // todo get rid of those who exist in options but not in m_windows
+        for (auto w : m_windows) {
+            bool has_mylar_bar = false;
+            for (auto r: roots) {
+                for (auto c: r->children) {
+                    if (c->custom_type == (int) TYPE::CLIENT) {
+                        auto data = (ClientData *) c->user_data;
+                        if (data->id == w) {
+                            has_mylar_bar = hypriso->has_decorations(data->id);
+                        }
+                    }
+                }
+            }
+
+            if (has_mylar_bar) {
+                AltTabOption o;
+                bool skip = false;
+                for (auto option : options)
+                    if (option.window == w)
+                        skip = true;
+                if (skip)
+                    continue;
+                auto c = c_from_id(w);
+                o.class_name = class_name(c);
+                o.title = title_name(c);
+                o.window = w;
+                options.insert(options.begin(), o);
+            }
+        }
+        
+        if (showing != state) {
+            if (root && state) {
+                delete root;
+                root = nullptr;
+            }
+            if (state) {
+                index = 0;
+                time_when_open = get_current_time_in_ms();
+                time_when_change = time_when_open - 80;
+            } else {
+                //activate option at index
+                if (!options.empty() && index < options.size()) {
+                    auto& o = options[index];
+                    auto w = o.window;
+                    auto client = c_from_id(w);
+                    if (client->iconified) { // problem with preview making it not hidden when it is
+                        hypriso->iconify(w, false);
+                        //iconify(w, false);
+                    }
+                    hypriso->bring_to_front(w);
+                }
+                options.clear();
+            }
+
+            if (state) {
+                update_visible_window();
+                // start taking screenshots at 24fps
+                /*screenshot_all();
+                timer = start_producing_thumbnails();
+                timer->keep_running = true;
+                */
+            } else {
+                // stop taking screenshots
+                /*if (timer)
+                    timer->keep_running = false;
+
+                // go through windows and set iconify based on perwindow data
+                */
+                reset_visible_window();
+            }
+
+            request_refresh();
+        }
+        showing = state;
+    }
+
+    bool is_showing() {
+        return showing;
+    }
+};
+
+static AltTabMenu alt_tab_menu;
+
+void reset_visible_window() {
+    return;
+    for (auto& w : get_window_stacking_order()) {
+        auto client = c_from_id(w);
+        hypriso->iconify(client->id, client->iconified) ;
+    }
+}
+
+void update_visible_window() {
+    return;
+    for (auto& w : get_window_stacking_order()) {
+        auto client = c_from_id(w);
+        auto& o = alt_tab_menu.options[alt_tab_menu.index];
+        bool is_hidden = client->iconified;
+        if (w == o.window && is_hidden) {
+            hypriso->iconify(w, false);
+        } else if (!is_hidden) {
+            hypriso->iconify(w, true);
+        }
+        if (w == o.window) {
+            hypriso->iconify(w, false);
+        }
+    }
+}
+
+void layout_every_single_root();
 
 void drag_update() {
     auto client = c_from_id(hypriso->dragging_id);
@@ -87,13 +233,26 @@ void drag_update() {
     hypriso->bring_to_front(hypriso->dragging_id);
 }
 
+void resize_start(int id, RESIZE_TYPE type) {
+    
+}
+
+void resize_update() {
+    
+}
+
+void resize_stop() {
+    
+}
+
 void drag_start(int id) {
     hypriso->dragging_id = id;
-    hypriso->dragging = false; 
+    hypriso->dragging = true; 
     auto client = c_from_id(hypriso->dragging_id);
     auto b = bounds(client);
     if (client->snapped) {
         client->snapped = false;
+        hypriso->should_round(client->id, true);
         hypriso->move_resize(client->id, b.x, b.y, client->pre_snap_bounds.w, client->pre_snap_bounds.h);
     }
     client->pre_snap_bounds = b;
@@ -102,30 +261,6 @@ void drag_start(int id) {
     setCursorImageUntilUnset("grabbing");
     drag_update();
 }
-
-enum class SnapPosition {
-  NONE,
-  MAX,
-  LEFT,
-  RIGHT,
-  TOP_LEFT,
-  TOP_RIGHT,
-  BOTTOM_RIGHT,
-  BOTTOM_LEFT
-};
-
-enum class RESIZE_TYPE {
-  NONE,
-  TOP,
-  RIGHT,
-  BOTTOM,
-  LEFT,
-  TOP_RIGHT,
-  TOP_LEFT,
-  BOTTOM_LEFT,
-  BOTTOM_RIGHT,
-};
-
 
 SnapPosition mouse_to_snap_position(int mon, int x, int y) {
     Bounds pos = bounds(m_from_id(mon));
@@ -216,6 +351,7 @@ void drag_stop() {
         hypriso->move(window, position.x, position.y);
     } else {
         c->snapped = true;
+        hypriso->should_round(c->id, false);
         c->pre_snap_bounds = bounds(c);
         position.y += titlebar_h;
         position.h -= titlebar_h;
@@ -252,8 +388,76 @@ bool on_mouse_move(int id, float x, float y) {
     return false;
 }
 
+
+void tab_next_window() {
+    alt_tab_menu.previous_index = alt_tab_menu.index;
+    alt_tab_menu.index++;
+    if (alt_tab_menu.index >= alt_tab_menu.options.size()) {
+        alt_tab_menu.index = 0;
+    }
+    update_visible_window();
+    alt_tab_menu.time_when_change = get_current_time_in_ms();
+    /*
+    auto w = alt_tab_menu.stored[alt_tab_menu.index]; 
+    switchToWindow(w.lock(), true);
+    g_pCompositor->changeWindowZOrder(w.lock(), true);
+    */
+}
+
+void tab_previous_window() {
+    alt_tab_menu.index--;
+    if (alt_tab_menu.index < 0) {
+        alt_tab_menu.index = alt_tab_menu.options.size() - 1;
+    }
+    update_visible_window();
+    alt_tab_menu.time_when_change = get_current_time_in_ms();
+
+    /*
+    auto w = alt_tab_menu.stored[alt_tab_menu.index]; 
+    switchToWindow(w.lock(), true);
+    g_pCompositor->changeWindowZOrder(w.lock(), true);
+    */
+}
+
+
 // returning true means consume the event
 bool on_key_press(int id, int key, int state, bool update_mods) {
+    static bool alt_down   = false;
+    static bool shift_down = false;
+    
+    if (key == KEY_ESC && state == 0) {
+        if (hypriso->dragging) {
+            drag_stop();
+        }
+        if (hypriso->resizing) {
+            resize_stop();
+        }
+    }
+    
+    if (key == KEY_LEFTALT || key == KEY_RIGHTALT) {
+        alt_down = state;
+        if (state == 0) {
+            alt_tab_menu.change_showing(false);
+        }
+    }
+
+    if (key == KEY_LEFTSHIFT || key == KEY_RIGHTSHIFT) {
+        shift_down = state;
+    }
+
+    if (key == KEY_TAB) { // on tab release
+        if (alt_down) {
+            alt_tab_menu.change_showing(true);
+            if (shift_down) {
+                if (state == 1)
+                    tab_previous_window();
+            } else {
+                if (state == 1)
+                    tab_next_window();
+            }
+        }
+    }
+
     return false;
 }
 
@@ -352,7 +556,24 @@ void layout_every_single_root() {
                     }
                 }
             }
-        } else if (b->custom_type == (int) TYPE::RESIZE_HANDLE) {
+        } else if (b->custom_type == (int) TYPE::RESIZE_HANDLE) {            
+        } else if (b->custom_type == (int) TYPE::ALT_TAB) {
+            for (auto r: roots) {
+                auto rdata = (RootData *) r->user_data;
+                b->exists = alt_tab_menu.is_showing();
+                auto count = alt_tab_menu.options.size();
+                if (count == 0)
+                    count++;
+                float w = 500;
+                float h = tab_menu_font_h * count * scale(rdata->id);
+                b->real_bounds = Bounds(
+                    r->real_bounds.x + r->real_bounds.w * .5 - w * .5, 
+                    r->real_bounds.y + r->real_bounds.h * .5 - h * .5, 
+                    w, h);
+                r->children.insert(r->children.begin() + 0, b);
+                // TODO maybe show alt tab menu on active monitor?
+                break;
+            }
         } 
     }
     /*for (auto r : roots) {
@@ -382,7 +603,13 @@ void on_render(int id, int stage) {
     }
     
     if (stage == (int) STAGE::RENDER_LAST_MOMENT) {
-        request_refresh();
+        for (auto root : roots) {
+            auto rdata = (RootData *) root->user_data;
+            // TODO: how costly is this exactly?
+            hypriso->damage_entire(rdata->id);
+        }
+ 
+        //request_refresh();
     }
 }
 
@@ -484,19 +711,19 @@ void on_window_open(int id) {
                 auto m = mouse();
                 m.scale(s);
                 box.shrink(resize_size * s);
-                int corner = 20;
+                int corner = 20 * s;
                 client->resize_type = 0;
                 bool left = false;
                 bool right = false;
                 bool top = false;
                 bool bottom = false;
-                if (m.x < box.x)
+                if (m.x < box.x + corner)
                     left = true;
-                if (m.x > box.x + box.w)
+                if (m.x > box.x + box.w - corner)
                     right = true;
-                if (m.y < box.y)
+                if (m.y < box.y + corner)
                     top = true;
-                if (m.y > box.y + box.h)
+                if (m.y > box.y + box.h - corner)
                     bottom = true;
                 if (top && left) {
                     client->resize_type = (int) RESIZE_TYPE::TOP_LEFT;
@@ -672,6 +899,9 @@ void on_window_open(int id) {
             auto title = c->child(::hbox, FILL_SPACE, titlebar_h * s);
             title->when_mouse_down = [](Container *root, Container *c) {
                 root->consumed_event = true; 
+                auto cdata = (ClientData *) c->parent->user_data;
+                hypriso->bring_to_front(cdata->id);
+                //auto client = c_from_id(hypriso->dragging_id);
             };
             auto content = c->child(::hbox, FILL_SPACE, FILL_SPACE);
             title->when_drag_start = [](Container *root, Container *c) {
@@ -686,7 +916,7 @@ void on_window_open(int id) {
             };
             title->when_paint = [](Container *root, Container *c) {
                 auto backup = c->real_bounds;
-                c->real_bounds.h += 1;
+                //c->real_bounds.h += 1;
                 auto data = (ClientData *) c->parent->user_data;
                 auto rdata = (RootData *) root->user_data;
                 auto s = scale(rdata->id);
@@ -882,6 +1112,7 @@ void on_window_closed(int id) {
     }
 }
 
+
 void on_monitor_open(int id) {
     auto tm = new ThinMonitor(id);
     hypriso->monitors.push_back(tm);
@@ -891,6 +1122,30 @@ void on_monitor_open(int id) {
     c->when_paint = [](Container *root, Container *c) {
     };
     roots.push_back(c);
+
+   auto tab_menu = c->child(::vbox, FILL_SPACE, FILL_SPACE); 
+   tab_menu->custom_type = (int) TYPE::ALT_TAB;
+   tab_menu->when_paint = [](Container *root, Container *c) {
+        auto rdata = (RootData *) root->user_data;
+        auto s = scale(rdata->id);
+        if (RENDER_LAST_MOMENT == rdata->stage) {
+            rect(c->real_bounds, {1, 1, 1, 1}); 
+            int off = 0;
+            for (int i = 0; i < alt_tab_menu.options.size(); i++) {
+                auto o = alt_tab_menu.options[i];
+                // TODO: slow (should be cached)
+                int xoff = 0;
+                float h = tab_menu_font_h * s;
+                if (alt_tab_menu.index == i) {
+                    xoff += h * 2;
+                }
+                auto info = gen_text_texture("Segoe UI Variable", o.title, h - 5, {0, 0, 0, 1});
+                draw_texture(info, c->real_bounds.x + xoff, c->real_bounds.y + off); 
+                free_text_texture(info.id);
+                off += h;
+            }
+        }
+   };
 }
 
 void on_monitor_closed(int id) {
@@ -914,6 +1169,10 @@ void on_drag_start_requested(int id) {
     drag_start(id);
 }
 
+void on_resize_start_requested(int id, RESIZE_TYPE type) { 
+    resize_start(id, type);
+}
+
 void startup::begin() {
     hypriso->on_mouse_press = on_mouse_press;
     hypriso->on_mouse_move = on_mouse_move;
@@ -925,6 +1184,7 @@ void startup::begin() {
     hypriso->on_monitor_open = on_monitor_open;
     hypriso->on_monitor_closed = on_monitor_closed;
     hypriso->on_drag_start_requested = on_drag_start_requested;
+    hypriso->on_resize_start_requested = on_resize_start_requested;
 
 	// The two most important callbacks we hook are mouse move and mouse events
 	// On every mouse move we update the current state of the ThinClients to be in the right positions
