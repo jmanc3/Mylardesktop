@@ -378,13 +378,19 @@ void toggle_maximize(int id) {
     auto c = c_from_id(id);
     int mon = hypriso->monitor_from_cursor();
     if (c->snapped) {
-        hypriso->move_resize(id, c->pre_snap_bounds.x, c->pre_snap_bounds.y, c->pre_snap_bounds.w, c->pre_snap_bounds.h);
+        auto m = m_from_id(mon);
+        auto b = bounds(m);
+        hypriso->move_resize(id, 
+            b.x + b.w * .5 - c->pre_snap_bounds.w * .5, 
+            b.y + b.h * .5 - c->pre_snap_bounds.h * .5, 
+            c->pre_snap_bounds.w, c->pre_snap_bounds.h);
     } else {
         Bounds position = snap_position_to_bounds(mon, SnapPosition::MAX);
         c->pre_snap_bounds = bounds(c);
         hypriso->move_resize(id, position.x, position.y + titlebar_h, position.w, position.h - titlebar_h);
     }
     c->snapped = !c->snapped;
+    hypriso->should_round(c->id, !c->snapped);
 }
 
 // returning true means consume the event
