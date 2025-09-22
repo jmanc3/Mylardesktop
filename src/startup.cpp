@@ -899,6 +899,11 @@ void on_window_open(int id) {
                         y_clipped = true;
                     }
                     auto min = hypriso->min_size(client->id);
+                    auto mini = titlebar_h * s * 3 * title_button_wratio + titlebar_icon_button_h * s + titlebar_icon_pad * s * 2;
+                    if (min.w < mini) {
+                        min.w = mini;
+                    }
+                    
                     if (hypriso->is_x11(client->id)) {
                         min.x /= s;
                         min.y /= s;
@@ -1033,9 +1038,11 @@ void on_window_open(int id) {
                             c->real_bounds.y + (c->real_bounds.h - titledata->icon.h) * .5);
                     }
 
-                    draw_texture(titledata->main,
-                        c->real_bounds.x + (titledata->icon.id == -1 ? titlebar_icon_pad * s : titlebar_icon_pad * s * 2 + titledata->icon.w),
-                        c->real_bounds.y + (c->real_bounds.h - titledata->main.h) * .5);
+                    double xoff = c->real_bounds.x + (titledata->icon.id == -1 ? titlebar_icon_pad * s : titlebar_icon_pad * s * 2 + titledata->icon.w);
+                    double clip_w = c->real_bounds.w - (xoff - c->real_bounds.x) - (c->real_bounds.h * 3 * title_button_wratio);
+                    if (clip_w <= 0.0)
+                        clip_w = 1.0;
+                    draw_texture(titledata->main, xoff, c->real_bounds.y + (c->real_bounds.h - titledata->main.h) * .5, 1.0, clip_w);
                 }
                 c->real_bounds = backup;
             };

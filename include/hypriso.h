@@ -197,7 +197,7 @@ void free_text_texture(int id);
 TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA color);
 TextureInfo gen_texture(std::string path, float h);
 
-void draw_texture(TextureInfo info, int x, int y, float a = 1.0);
+void draw_texture(TextureInfo info, int x, int y, float a = 1.0, float clip_w = 0.0);
 
 void setCursorImageUntilUnset(std::string cursor);
 void unsetCursorImage();

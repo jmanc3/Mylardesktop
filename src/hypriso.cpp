@@ -1286,7 +1286,7 @@ TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA c
     return {};
 }
 
-void draw_texture(TextureInfo info, int x, int y, float a) {
+void draw_texture(TextureInfo info, int x, int y, float a, float clip_w) {
     for (auto t : hyprtextures) {
        if (t->info.id == info.id) {
             CTexPassElement::SRenderData data;
@@ -1295,6 +1295,9 @@ void draw_texture(TextureInfo info, int x, int y, float a) {
             data.box.x = x;
             data.box.round();
             data.clipBox = data.box;
+            if (clip_w != 0.0) {
+                data.clipBox.w = clip_w;
+            }
             data.a = 1.0 * a;
             g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(std::move(data)));
        }
@@ -1401,7 +1404,7 @@ Bounds HyprIso::min_size(int id) {
             return {s.x, s.y, s.x, s.y};
         }
     }
-    return {10, 10, 10, 10};
+    return {20, 20, 20, 20};
 }
 
 bool HyprIso::has_decorations(int id) {
