@@ -10,7 +10,6 @@
 #include <format>
 #include <cassert>
 #include <linux/input-event-codes.h>
-#include <src/SharedDefs.hpp>
 
 #ifdef TRACY_ENABLE
 
@@ -232,7 +231,6 @@ void layout_every_single_root();
 void drag_update() {
     auto client = c_from_id(hypriso->dragging_id);
     auto m = mouse();
-    auto mid = get_monitor(client->id);
     auto newx = hypriso->drag_initial_window_pos.x + (m.x - hypriso->drag_initial_mouse_pos.x);
     auto newy = hypriso->drag_initial_window_pos.y + (m.y - hypriso->drag_initial_mouse_pos.y);
     hypriso->move(hypriso->dragging_id, newx, newy);
@@ -256,15 +254,25 @@ void drag_start(int id) {
     hypriso->dragging = true; 
     auto client = c_from_id(hypriso->dragging_id);
     auto b = bounds(client);
+    auto MOUSECOORDS = mouse();
+    auto mid = get_monitor(client->id);
+    auto monitor = m_from_id(mid);
+    auto mb = bounds(monitor);
     if (client->snapped) {
         client->snapped = false;
         hypriso->should_round(client->id, true);
-        hypriso->move_resize(client->id, b.x, b.y, client->pre_snap_bounds.w, client->pre_snap_bounds.h);
+        auto s = scale(mid);
+        float perc = (MOUSECOORDS.x * s - b.x) / b.w;
+        client->drag_initial_mouse_percentage = perc;
+        hypriso->move_resize(client->id, MOUSECOORDS.x - (perc * (client->pre_snap_bounds.w * (1.0 / s))), b.y, client->pre_snap_bounds.w, client->pre_snap_bounds.h);
+        b = bounds(client);
+    } else {
+        client->pre_snap_bounds = b;
     }
-    client->pre_snap_bounds = b;
     hypriso->drag_initial_window_pos = b;
-    hypriso->drag_initial_mouse_pos = mouse(); 
+    hypriso->drag_initial_mouse_pos = mouse();
     setCursorImageUntilUnset("grabbing");
+
     drag_update();
 }
 

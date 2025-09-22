@@ -77,6 +77,7 @@ struct ThinClient {
 
     bool snapped = false;
     Bounds pre_snap_bounds;
+    float drag_initial_mouse_percentage = 0;
 
     bool resizing = false;
     int resize_type = 0;

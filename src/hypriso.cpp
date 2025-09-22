@@ -1265,7 +1265,7 @@ int get_monitor(int client) {
        if (hw->id == client) {
            for (auto hm : hyprmonitors) {
               if (hm->m == hw->w->m_monitor) {
-                  return hw->id;                  
+                  return hm->id;
               } 
            }
        } 
