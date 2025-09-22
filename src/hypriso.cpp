@@ -12,6 +12,8 @@
 #include "first.h"
 
 #include <algorithm>
+#include <any>
+
 #include <hyprland/src/helpers/Color.hpp>
 #include <kde-server-decoration.hpp>
 //#include <hyprland/protocols/kde-server-decoration.hpp>
@@ -26,7 +28,7 @@
 #include <hyprland/src/xwayland/XWayland.hpp>
 #include <hyprland/src/xwayland/XWM.hpp>
 
-#include <any>
+#include <hyprland/src/config/ConfigManager.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/devices/IPointer.hpp>
 #include <hyprland/src/render/Renderer.hpp>
@@ -64,6 +66,7 @@ struct HyprWindow {
     PHLWINDOW w;
     CFramebuffer *fb = nullptr;
     int cornermask = 0; // when rendering the surface, what corners should be rounded
+    bool no_rounding = false;
 };
 
 static std::vector<HyprWindow *> hyprwindows;
@@ -494,9 +497,56 @@ void detect_move_resize_requests() {
   
 }
 
+inline CFunctionHook* g_pRenderWindowHook = nullptr;
+typedef void (*origRenderWindowFunc)(void*, PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp& time, bool decorate, eRenderPassMode mode, bool ignorePosition, bool standalone);
+void hook_RenderWindow(void* thisptr, PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp& time, bool decorate, eRenderPassMode mode, bool ignorePosition, bool standalone) {
+    Hyprlang::INT* rounding_amount = nullptr;
+    int initial_value = 0;
+    for (auto hw : hyprwindows) {
+        if (hw->w == pWindow && hw->no_rounding) {
+            Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:rounding");
+            rounding_amount = (Hyprlang::INT*)val->dataPtr();
+            initial_value = *rounding_amount;
+            *rounding_amount = 0;
+        }
+    }
+
+    (*(origRenderWindowFunc)g_pRenderWindowHook->m_original)(thisptr, pWindow, pMonitor, time, decorate, mode, ignorePosition, standalone);
+    if (rounding_amount) {
+        *rounding_amount = initial_value;
+    }
+}
+
+inline CFunctionHook* g_pWindowRoundingHook = nullptr;
+typedef float (*origWindowRoundingFunc)(void*);
+float hook_WindowRounding(void* thisptr) {
+    float result = (*(origWindowRoundingFunc)g_pWindowRoundingHook->m_original)(thisptr);
+    return result;
+}
+
+inline CFunctionHook* g_pWindowRoundingPowerHook = nullptr;
+typedef float (*origWindowRoundingPowerFunc)(void*);
+float hook_WindowRoundingPower(void* thisptr) {
+    float result = (*(origWindowRoundingPowerFunc)g_pWindowRoundingPowerHook->m_original)(thisptr);
+    return result;
+}
+
 void hook_render_functions() {
     {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "rounding");
+        g_pWindowRoundingHook       = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_WindowRounding);
+        g_pWindowRoundingHook->hook();
+    }
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "roundingPower");
+        g_pWindowRoundingPowerHook       = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_WindowRoundingPower);
+        g_pWindowRoundingPowerHook->hook();
+    }
+ 
+    {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderWindow");
+        g_pRenderWindowHook       = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_RenderWindow);
+        g_pRenderWindowHook->hook();
         pRenderWindow = METHODS[0].address;
     }
     {
@@ -1403,7 +1453,7 @@ bool HyprIso::is_fullscreen(int id) {
 void HyprIso::should_round(int id, bool state) {
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
-            hw->w->m_windowData.noRounding = !state;
+            hw->no_rounding = !state;
         }
     }
 }

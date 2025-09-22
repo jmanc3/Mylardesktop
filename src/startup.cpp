@@ -327,7 +327,7 @@ Bounds snap_position_to_bounds(int mon, SnapPosition pos) {
     Bounds out = {x, y, w, h};
 
     if (pos == SnapPosition::MAX) {
-        return {x, y, w, h};
+        return {x, y, w + 2, h};
     } else if (pos == SnapPosition::LEFT) {
         return {x, y, w * .5, h};
     } else if (pos == SnapPosition::RIGHT) {
