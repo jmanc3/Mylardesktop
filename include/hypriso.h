@@ -55,6 +55,14 @@ struct RGBA {
     }
 };
 
+struct Timer {
+    wl_event_source *source = nullptr;
+    std::function<void(Timer *)> func = nullptr;
+    void *data = nullptr;
+    bool keep_running = false;
+    float delay = 0;
+};
+
 struct TextureInfo {
     int id = -1;
     int w = 0;
@@ -131,9 +139,12 @@ struct HyprIso {
     void move(int id, int x, int y);
     void move_resize(int id, int x, int y, int w, int h);
     int monitor_from_cursor();
+    
+    void send_key(uint32_t key);
 
     Bounds min_size(int id);
     bool is_x11(int id);
+    bool is_fullscreen(int id);
     bool has_decorations(int id);
     
     void bring_to_front(int id);
@@ -142,6 +153,9 @@ struct HyprIso {
     void should_round(int id, bool state);
 
     void damage_entire(int monitor);
+
+    void screenshot_all();
+    void draw_thumbnail(int id, Bounds b);
 };
 
 extern HyprIso *hypriso;
@@ -193,5 +207,8 @@ void close_window(int id);
 
 Bounds mouse();
 
+Timer* later(void* data, float time_ms, const std::function<void(Timer*)>& fn);
+
+Timer* later(float time_ms, const std::function<void(Timer*)>& fn);
 
 #endif // hypriso_h_INCLUDED

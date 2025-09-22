@@ -41,16 +41,28 @@
 #include <hyprland/src/render/decorations/DecorationPositioner.hpp>
 #include <hyprland/src/render/decorations/IHyprWindowDecoration.hpp>
 #include <librsvg/rsvg.h>
-
+#include <hyprland/src/desktop/DesktopTypes.hpp>
+#include <hyprland/src/render/Framebuffer.hpp>
 
 
 HyprIso *hypriso = new HyprIso;
 
 static int unique_id = 0;
 
+void* pRenderWindow = nullptr;
+void* pRenderLayer = nullptr;
+void* pRenderMonitor = nullptr;
+void* pRenderWorkspace = nullptr;
+void* pRenderWorkspaceWindowsFullscreen = nullptr;
+typedef void (*tRenderWindow)(void *, PHLWINDOW, PHLMONITOR, timespec *, bool decorate, eRenderPassMode, bool ignorePosition, bool standalone);
+typedef void (*tRenderMonitor)(void *, PHLMONITOR pMonitor, bool commit);
+typedef void (*tRenderWorkspace)(void *, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp &, const CBox &geom);
+typedef void (*tRenderWorkspaceWindowsFullscreen)(void *, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp &);
+
 struct HyprWindow {
     int id;  
     PHLWINDOW w;
+    CFramebuffer *fb = nullptr;
     int cornermask = 0; // when rendering the surface, what corners should be rounded
 };
 
@@ -482,6 +494,29 @@ void detect_move_resize_requests() {
   
 }
 
+void hook_render_functions() {
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderWindow");
+        pRenderWindow = METHODS[0].address;
+    }
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderLayer");
+        pRenderLayer = METHODS[0].address;
+    }
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderWorkspace");
+        pRenderWorkspace = METHODS[0].address;
+    }
+    {
+        static auto METHODS         = HyprlandAPI::findFunctionsByName(globals->api, "renderWorkspaceWindowsFullscreen");
+        pRenderWorkspaceWindowsFullscreen = METHODS[0].address;
+    }
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderMonitor");
+        pRenderMonitor = METHODS[0].address;
+    }
+}
+
 inline CFunctionHook* g_pOnCircleNextHook = nullptr;
 typedef bool (*origOnCircleNextFunc)(void*, const IPointer::SButtonEvent&);
 SDispatchResult hook_onCircleNext(void* thisptr, std::string arg) {
@@ -610,6 +645,7 @@ void HyprIso::create_hooks_and_callbacks() {
     detect_csd_request_change();
     detect_move_resize_requests();    
     disable_default_alt_tab_behaviour();
+    hook_render_functions();
 }
 
 void HyprIso::end() {
@@ -1341,6 +1377,28 @@ bool HyprIso::is_x11(int id) {
     return false;
 }
 
+void HyprIso::send_key(uint32_t key) {
+    for (auto k : g_pInputManager->m_keyboards) {
+        IKeyboard::SKeyEvent event;
+        event.timeMs     = get_current_time_in_ms();
+        event.updateMods = false;
+        event.keycode    = key;
+        event.state      = WL_KEYBOARD_KEY_STATE_PRESSED;
+        g_pInputManager->onKeyboardKey(event, k);
+        event.timeMs = get_current_time_in_ms();
+        event.state  = WL_KEYBOARD_KEY_STATE_RELEASED;
+        g_pInputManager->onKeyboardKey(event, k);
+    }
+}
+
+bool HyprIso::is_fullscreen(int id) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            return hw->w->isFullscreen();
+        }
+    }
+    return false;
+}
 
 void HyprIso::should_round(int id, bool state) {
     for (auto hw : hyprwindows) {
@@ -1354,6 +1412,172 @@ void HyprIso::damage_entire(int monitor) {
     for (auto hm : hyprmonitors) {
         if (hm->id == monitor) {
             g_pHyprRenderer->damageMonitor(hm->m);
+        }
+    }
+}
+
+int later_action(void* user_data) {
+    auto timer = (Timer*)user_data;
+    if (timer->func)
+        timer->func(timer);
+    if (!timer->keep_running) {
+        // remove from vec
+        wl_event_source_remove(timer->source);
+        delete timer;
+    } else {
+        wl_event_source_timer_update(timer->source, timer->delay);
+    }
+    return 0;
+}
+
+Timer* later(void* data, float time_ms, const std::function<void(Timer*)>& fn) {
+    auto timer    = new Timer;
+    timer->func   = fn;
+    timer->data   = data;
+    timer->delay  = time_ms;
+    timer->source = wl_event_loop_add_timer(g_pCompositor->m_wlEventLoop, &later_action, timer);
+    wl_event_source_timer_update(timer->source, time_ms);
+    return timer;
+}
+
+Timer* later(float time_ms, const std::function<void(Timer*)>& fn) {
+    auto timer    = new Timer;
+    timer->func   = fn;
+    timer->delay  = time_ms;
+    timer->source = wl_event_loop_add_timer(g_pCompositor->m_wlEventLoop, &later_action, timer);
+    wl_event_source_timer_update(timer->source, time_ms);
+    return timer;
+}
+
+void screenshot_monitor(CFramebuffer* buffer, PHLMONITOR m) {
+    if (!buffer || !pRenderMonitor)
+        return;
+    if (!m || !m->m_output || m->m_pixelSize.x <= 0 || m->m_pixelSize.y <= 0)
+        return;
+    CRegion fakeDamage{0, 0, INT16_MAX, INT16_MAX};
+    g_pHyprRenderer->makeEGLCurrent();
+    buffer->alloc(m->m_pixelSize.x, m->m_pixelSize.y, DRM_FORMAT_ABGR8888);
+    g_pHyprRenderer->beginRender(m, fakeDamage, RENDER_MODE_FULL_FAKE, nullptr, buffer);
+    g_pHyprRenderer->m_bRenderingSnapshot = true;
+    g_pHyprOpenGL->clear(CHyprColor(0, 0, 0, 0)); // JIC
+    g_pHyprOpenGL->m_renderData.pMonitor = m;
+    (*(tRenderMonitor)pRenderMonitor)(g_pHyprRenderer.get(), m, false);
+    g_pHyprOpenGL->m_renderData.pMonitor  = m;
+    g_pHyprOpenGL->m_renderData.outFB     = buffer;
+    g_pHyprOpenGL->m_renderData.currentFB = buffer;
+    g_pHyprRenderer->endRender();
+    g_pHyprRenderer->m_bRenderingSnapshot = false;
+}
+
+void screenshot_workspace(CFramebuffer* buffer, PHLWORKSPACEREF w, PHLMONITOR m, bool include_cursor) {
+    if (!buffer || pRenderWorkspace == nullptr)
+        return;
+    if (!m || !m->m_output || m->m_pixelSize.x <= 0 || m->m_pixelSize.y <= 0)
+        return;
+    CRegion fakeDamage{0, 0, INT16_MAX, INT16_MAX};
+    g_pHyprRenderer->makeEGLCurrent();
+    buffer->alloc(m->m_pixelSize.x, m->m_pixelSize.y, DRM_FORMAT_ABGR8888);
+    g_pHyprRenderer->beginRender(m, fakeDamage, RENDER_MODE_FULL_FAKE, nullptr, buffer);
+    g_pHyprOpenGL->clear(CHyprColor(0, 0, 0, 0)); // JIC
+    g_pHyprOpenGL->m_renderData.pMonitor = m;
+    const auto NOW                       = Time::steadyNow();
+    // bg
+    (*(tRenderWorkspace)pRenderWorkspace)(g_pHyprRenderer.get(), m, w.lock(), NOW, CBox(0, 0, (int)m->m_pixelSize.x, (int)m->m_pixelSize.y));
+    // clients
+    (*(tRenderWorkspaceWindowsFullscreen)pRenderWorkspaceWindowsFullscreen)(g_pHyprRenderer.get(), m, w.lock(), NOW);
+    g_pHyprRenderer->endRender();
+}
+
+void screenshot_window_with_decos(CFramebuffer* buffer, PHLWINDOW w) {
+    if (!buffer || !pRenderWindow)
+        return;
+    const auto m = w->m_monitor.lock();
+    if (!m || !m->m_output || m->m_pixelSize.x <= 0 || m->m_pixelSize.y <= 0)
+        return;
+    CRegion fakeDamage{0, 0, INT16_MAX, INT16_MAX};
+
+    g_pHyprRenderer->makeEGLCurrent();
+
+    auto ex = g_pDecorationPositioner->getWindowDecorationExtents(w, false);
+    buffer->alloc(m->m_pixelSize.x + ex.topLeft.x + ex.bottomRight.x, m->m_pixelSize.y + ex.topLeft.y + ex.bottomRight.y, DRM_FORMAT_ABGR8888);
+    g_pHyprRenderer->beginRender(m, fakeDamage, RENDER_MODE_FULL_FAKE, nullptr, buffer);
+
+    g_pHyprRenderer->m_bRenderingSnapshot = true;
+    g_pHyprOpenGL->clear(CHyprColor(0, 0, 0, 0)); // JIC
+
+    timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+
+    auto fo = w->m_floatingOffset;
+    w->m_floatingOffset.x -= w->m_realPosition->value().x - ex.topLeft.x;
+    w->m_floatingOffset.y -= w->m_realPosition->value().y - ex.topLeft.y;
+    (*(tRenderWindow)pRenderWindow)(g_pHyprRenderer.get(), w, m, &now, true, RENDER_PASS_ALL, false, false);
+    w->m_floatingOffset = fo;
+
+    g_pHyprRenderer->endRender();
+
+    g_pHyprRenderer->m_bRenderingSnapshot = false;
+}
+
+void screenshot_window(CFramebuffer* buffer, PHLWINDOW w, bool include_decorations) {
+    if (!buffer || !pRenderWindow)
+        return;
+    if (include_decorations) {
+        screenshot_window_with_decos(buffer, w);
+        return;
+    }
+    const auto m = w->m_monitor.lock();
+    if (!m || !m->m_output || m->m_pixelSize.x <= 0 || m->m_pixelSize.y <= 0)
+        return;
+
+    // we need to "damage" the entire monitor
+    // so that we render the entire window
+    // this is temporary, doesnt mess with the actual damage
+    CRegion fakeDamage{0, 0, INT16_MAX, INT16_MAX};
+    g_pHyprRenderer->makeEGLCurrent();
+    buffer->alloc(m->m_pixelSize.x, m->m_pixelSize.y, DRM_FORMAT_ABGR8888);
+    g_pHyprRenderer->beginRender(m, fakeDamage, RENDER_MODE_FULL_FAKE, nullptr, buffer);
+    g_pHyprRenderer->m_bRenderingSnapshot = true;
+    g_pHyprOpenGL->clear(CHyprColor(0, 0, 0, 0)); // JIC
+    timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    (*(tRenderWindow)pRenderWindow)(g_pHyprRenderer.get(), w, m, &now, false, RENDER_PASS_ALL, true, true);
+    g_pHyprRenderer->endRender();
+    g_pHyprRenderer->m_bRenderingSnapshot = false;
+}
+
+void HyprIso::screenshot_all() {
+    for (auto w : g_pCompositor->m_windows) {
+        bool has_mylar_bar = false;
+        for (const auto &decos : w->m_windowDecorations) 
+            if (decos->getDisplayName() == "MylarBar")
+                has_mylar_bar = true;
+            
+        if (has_mylar_bar) {
+            bool decorations = false;
+            for (auto hw : hyprwindows) {
+                if (hw->w == w) {
+                    if (!hw->fb)
+                        hw->fb = new CFramebuffer;
+                    screenshot_window(hw->fb, w, decorations);
+                }
+            }
+        }
+    }
+}
+
+void HyprIso::draw_thumbnail(int id, Bounds b) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            if (hw->fb) {
+                CTexPassElement::SRenderData data;
+                data.tex = hw->fb->getTexture();
+                data.box = tocbox(b);
+                data.box.round();
+                data.a = 1.0f;
+                data.clipBox = data.box;
+                g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(std::move(data)));
+            }
         }
     }
 }

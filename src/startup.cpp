@@ -24,7 +24,7 @@ static int titlebar_icon_button_h = 14;
 static int titlebar_icon_h = 24;
 static int titlebar_icon_pad = 8;
 static int resize_size = 18;
-static int tab_menu_font_h = 28;
+static int tab_menu_font_h = 40;
 RGBA color_titlebar = {1.0, 1.0, 1.0, 1.0};
 RGBA color_titlebar_hovered = {0.87, 0.87, 0.87, 1.0f};
 RGBA color_titlebar_pressed = {0.69, 0.69, 0.69, 1.0f};
@@ -85,6 +85,16 @@ struct AltTabOption {
 
 void reset_visible_window();
 void update_visible_window();
+void tab_next_window();
+
+// The reason we take screenshots like this is because if we try to do it in the render thread, we CRASH for some reason that I don't feel like investigating. PLUS, we need to take screenshots on a perdiodic basis anyways so this solves both problems.
+Timer* start_producing_thumbnails() {
+    //static float fps24 = 1000.0f / 24.0f;
+    float fps = 1000.0f / 12.0f;
+    Timer* timer = later(nullptr, fps, [](Timer* timer) { hypriso->screenshot_all(); });
+    timer->keep_running = true;
+    return timer;
+}
 
 class AltTabMenu {
   public:
@@ -93,8 +103,7 @@ class AltTabMenu {
     Container* root  = nullptr;
     int index = 0;
     std::vector<AltTabOption> options;
-    //Timer*                    timer = nullptr;
-    //CMonitor*                 m;
+    Timer *timer = nullptr;
 
     long switch_time = 0;
     int previous_index = 0;
@@ -169,18 +178,15 @@ class AltTabMenu {
 
             if (state) {
                 update_visible_window();
-                // start taking screenshots at 24fps
-                /*screenshot_all();
+                hypriso->screenshot_all();
                 timer = start_producing_thumbnails();
                 timer->keep_running = true;
-                */
             } else {
                 // stop taking screenshots
-                /*if (timer)
+                if (timer)
                     timer->keep_running = false;
 
                 // go through windows and set iconify based on perwindow data
-                */
                 reset_visible_window();
             }
 
@@ -384,10 +390,71 @@ bool on_mouse_move(int id, float x, float y) {
 
     if (hypriso->dragging)
         return true;
-    
-    return false;
-}
+    if (hypriso->resizing)
+        return true;
 
+    {
+        static bool has_done_window_switch = false;
+        bool no_fullscreens = true;
+        for (auto w : get_window_stacking_order())
+            if (hypriso->is_fullscreen(w))
+                no_fullscreens = false;
+        int m = hypriso->monitor_from_cursor();
+        auto s = scale(m);
+        auto current_coords = mouse();
+        current_coords.scale(s);
+        for (auto r : roots) {
+            auto rdata = (RootData *) r->user_data;
+            if (rdata->id != m)
+                continue;
+            if (current_coords.x <= r->real_bounds.x + 1) {
+                if (!has_done_window_switch && no_fullscreens) {
+                    has_done_window_switch = true;
+
+                    if (current_coords.y < r->real_bounds.h * .4) {
+                        // focus spotify
+                        bool found = false;
+                        for (auto w : get_window_stacking_order()) {
+                            auto client = c_from_id(w);
+                            if (class_name(client) == "Spotify") {
+                                found = true;
+                                hypriso->bring_to_front(w);
+                            }
+                        }
+                        if (!found) {
+                            system("nohup bash -c 'spotify &'");
+                        } else {
+                            later(nullptr, 100, [](Timer* data) {
+                                hypriso->send_key(KEY_SPACE);
+                                later(nullptr, 100, [](Timer* data) {
+                                    alt_tab_menu.change_showing(true);
+                                    tab_next_window();
+                                    alt_tab_menu.change_showing(false);
+                                });
+                            });
+                        }
+                    } else {
+                        alt_tab_menu.change_showing(true);
+                        tab_next_window();
+                        alt_tab_menu.change_showing(false);
+                    }
+                }
+            } else {
+                has_done_window_switch = false;
+            }
+        }
+    }
+
+    bool consumed = false;
+    for (auto root : roots) {
+       if (root->consumed_event) {
+           consumed = true;
+           root->consumed_event = false;
+       } 
+    }
+
+    return consumed;
+}
 
 void tab_next_window() {
     alt_tab_menu.previous_index = alt_tab_menu.index;
@@ -708,6 +775,7 @@ void on_window_open(int id) {
             auto resize = r->child(::vbox, FILL_SPACE, FILL_SPACE); // the sizes are set later by layout code
             resize->custom_type = (int) TYPE::CLIENT_RESIZE;
             resize->when_mouse_enters_container = [](Container *root, Container *c) {
+                root->consumed_event = true;
                 auto cdata = (ClientData *) c->user_data;
                 auto client = c_from_id(cdata->id);
                 auto rdata = (RootData *) root->user_data;
@@ -760,6 +828,7 @@ void on_window_open(int id) {
                 update_cursor(client->resize_type);
             };
             resize->when_mouse_motion = [](Container *root, Container *c) {
+                root->consumed_event = true;
                 c->when_mouse_enters_container(root, c);
             };
             resize->when_mouse_down = [](Container *root, Container *c) {
@@ -1142,14 +1211,19 @@ void on_monitor_open(int id) {
             for (int i = 0; i < alt_tab_menu.options.size(); i++) {
                 auto o = alt_tab_menu.options[i];
                 // TODO: slow (should be cached)
-                int xoff = 0;
+                RGBA color = {0, 0, 0, 1};
                 float h = tab_menu_font_h * s;
                 if (alt_tab_menu.index == i) {
-                    xoff += h * 2;
+                    color = {.1, .1, .8, 1};
                 }
-                auto info = gen_text_texture("Segoe UI Variable", o.title, h - 5, {0, 0, 0, 1});
-                draw_texture(info, c->real_bounds.x + xoff, c->real_bounds.y + off); 
+                auto info = gen_text_texture("Segoe UI Variable", o.title, h - 5, color);
+                draw_texture(info, c->real_bounds.x + c->real_bounds.h, c->real_bounds.y + off); 
                 free_text_texture(info.id);
+                auto b = c->real_bounds;
+                b.y += off;
+                b.w = h;
+                b.h = h;
+                hypriso->draw_thumbnail(o.window, b);
                 off += h;
             }
         }
