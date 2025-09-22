@@ -350,6 +350,7 @@ void drag_stop() {
     drag_update();
     hypriso->dragging_id = -1;
     hypriso->dragging = false;
+    hypriso->drag_stop_time = get_current_time_in_ms();
     unsetCursorImage();
 
     int mon = hypriso->monitor_from_cursor();
@@ -411,12 +412,17 @@ bool on_mouse_move(int id, float x, float y) {
         auto s = scale(m);
         auto current_coords = mouse();
         current_coords.scale(s);
+        bool enough_time = true;
+        if ((get_current_time_in_ms() - hypriso->drag_stop_time) < 500) {
+            enough_time = false;
+        }
+        
         for (auto r : roots) {
             auto rdata = (RootData *) r->user_data;
             if (rdata->id != m)
                 continue;
             if (current_coords.x <= r->real_bounds.x + 1) {
-                if (!has_done_window_switch && no_fullscreens) {
+                if (!has_done_window_switch && no_fullscreens && enough_time) {
                     has_done_window_switch = true;
 
                     if (current_coords.y < r->real_bounds.h * .4) {
@@ -1013,7 +1019,11 @@ void on_window_open(int id) {
                 auto client = c_from_id(data->id);
                 auto titledata = (TitleData *) c->user_data;
                 if (data->id == rdata->active_id) {
-                    rect(c->real_bounds, color_titlebar, 12, rounding * scale(rdata->id));
+                    if (client->snapped) {
+                        rect(c->real_bounds, color_titlebar, 0, 0);
+                    } else {
+                        rect(c->real_bounds, color_titlebar, 12, rounding * scale(rdata->id));
+                    }
                     auto text = title_name(client);
                     if (titledata->cached_text != text) {
                         if (titledata->main.id != -1) {
@@ -1139,14 +1149,21 @@ void on_window_open(int id) {
             close->when_mouse_down = title->when_mouse_down;
             close->when_paint = [](Container *root, Container *c) {
                 auto data = (ClientData *) c->parent->parent->user_data;
+                auto client = c_from_id(data->id);
                 auto rdata = (RootData *) root->user_data;
                 auto cdata = (IconData *) c->user_data;
                 auto s = scale(rdata->id);
                 if (data->id == rdata->active_id) {
+                    int mask = 13;
+                    float round = 10 * scale(rdata->id);
+                    if (client->snapped) {
+                       mask = 0; 
+                       round = 0.0;
+                    }
                     if (c->state.mouse_pressing) {
-                        rect(c->real_bounds, color_titlebar_pressed_closed, 13, 10 * scale(rdata->id));
+                        rect(c->real_bounds, color_titlebar_pressed_closed, mask, round);
                     } else if (c->state.mouse_hovering) {
-                        rect(c->real_bounds, color_titlebar_hovered_closed, 13, 10 * scale(rdata->id));
+                        rect(c->real_bounds, color_titlebar_hovered_closed, mask, round);
                     }
 
                     if (!cdata->attempted) {

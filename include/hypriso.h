@@ -100,6 +100,7 @@ struct HyprIso {
 
     bool dragging = false;
     int dragging_id = -1;
+    long drag_stop_time = 0;
     Bounds drag_initial_mouse_pos;
     Bounds drag_initial_window_pos;
     
