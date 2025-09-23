@@ -275,6 +275,7 @@ void fine_scrollpane_scrolled(Container *root,
                               int scroll_x,
                               int scroll_y,
                               bool came_from_touchpad) {
+    root->consumed_event = true;
     container->scroll_h_real += scroll_x;
     container->scroll_v_real += scroll_y;
     container->scroll_h_visual = container->scroll_h_real;

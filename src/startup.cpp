@@ -898,9 +898,20 @@ void on_window_open(int id) {
     auto cname = class_name(tc);
     for (auto [class_name, info] : restore_infos) {
         if (cname == class_name) {
-            //auto box = info.actual_size_on_monitor(bounds(tc));
-            //box.scale(scale(monitor));
             auto b = real_bounds(tc);
+            auto m = m_from_id(monitor);
+            auto b2 = bounds_reserved(m);
+            if (b.w >= b2.w * .9) {
+                b.w = b2.w * .9;
+            }
+            if (b.h >= b2.h * .9) {
+                b.h = b2.h * .9;
+            }
+            b.w = b2.w * info.box.w;
+            b.h = b2.h * info.box.h;
+            b.x = b2.x + b2.w * .5 - b.w * .5;
+            b.y = b2.y + b2.h * .5 - b.h * .5;
+
             hypriso->move_resize(tc->id, b.x, b.y, b.w, b.h);
         }
     }
@@ -1377,6 +1388,10 @@ void on_monitor_open(int id) {
 
     auto tab_menu = c->child(::vbox, FILL_SPACE, FILL_SPACE); 
     tab_menu->custom_type = (int) TYPE::ALT_TAB;
+    tab_menu->receive_events_even_if_obstructed = true;
+    tab_menu->when_mouse_motion = [](Container *root, Container *c) {
+        root->consumed_event = true;
+    };
     ScrollPaneSettings settings(1.0);
     ScrollContainer *scroll = make_newscrollpane_as_child(tab_menu, settings);
     for (int i = 0; i < 40; i++) {
