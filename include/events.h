@@ -6,8 +6,16 @@ struct Event {
     float x;
     float y;
 
-    int   button;
-    int   state;
+    int button;
+    int state;
+
+    bool scroll = false;
+    int axis = 0;
+    int direction = 0;
+    double delta = 0.0;
+    int descrete = 0;
+    bool from_mouse = false;
+ 
 
     Event(float x, float y, int button, int state) : x(x), y(y), button(button), state(state) {
        ; 

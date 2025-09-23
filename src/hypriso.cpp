@@ -817,6 +817,21 @@ Bounds bounds(ThinClient *w) {
     return {0, 0, 0, 0};
 }
 
+Bounds real_bounds(ThinClient *w) {
+    for (auto hyprwindow : hyprwindows) {
+        if (hyprwindow->id == w->id) {
+            if (auto w = hyprwindow->w.get()) {
+                //return w->getFullWindowBoundingBox();
+                return tobounds({
+                    w->m_realPosition->goal().x, w->m_realPosition->goal().y,
+                    w->m_realSize->goal().x, w->m_realSize->goal().y
+                });
+            }
+        }
+    }    
+    return {0, 0, 0, 0};
+}
+
 std::string class_name(ThinClient *w) {
     for (auto hyprwindow : hyprwindows) {
         if (hyprwindow->id == w->id) {

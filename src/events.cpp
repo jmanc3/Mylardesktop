@@ -1,7 +1,9 @@
 
 #include "events.h"
 #include "container.h"
+#include "hypriso.h"
 #include <linux/input-event-codes.h>
+#include <algorithm>
 
 void fill_list_with_concerned(std::vector<Container*>& containers, Container* parent) {
     if (parent->type == ::newscroll) {
@@ -176,14 +178,18 @@ void handle_mouse_motion(Container* root, int x, int y) {
 
     for (int i = 0; i < pierced.size(); i++) {
         auto p = pierced[i];
-
+        bool non_top = i != 0;
+        //if (c->when_mouse_leaves_container && !p) {
+            //c->when_mouse_leaves_container(root, c);
+        //}
+ 
         if (a_concerned_container_mouse_pressed && !p->state.concerned)
             continue;
 
-        if (i != 0 && (!p->receive_events_even_if_obstructed_by_one && !p->receive_events_even_if_obstructed)) {
+        if (non_top && (!p->receive_events_even_if_obstructed_by_one && !p->receive_events_even_if_obstructed)) {
             continue;
         }
-        if (i != 0) {
+        if (non_top) {
             if (p->receive_events_even_if_obstructed) {
 
             } else if (p->receive_events_even_if_obstructed_by_one && p != pierced[0]->parent) {
@@ -268,10 +274,10 @@ void handle_mouse_button_press(Container* root, const Event& e) {
     if (e.button == BTN_LEFT)
         root->left_mouse_down = true;
 
-    root->mouse_initial_x             = e.x;
-    root->mouse_initial_y             = e.y;
-    root->mouse_current_x             = e.x;
-    root->mouse_current_y             = e.y;
+    root->mouse_initial_x = e.x;
+    root->mouse_initial_y = e.y;
+    root->mouse_current_x = e.x;
+    root->mouse_current_y = e.y;
     std::vector<Container*> pierced   = pierced_containers(root, e.x, e.y);
     std::vector<Container*> concerned = concerned_containers(root);
 
@@ -302,39 +308,12 @@ void handle_mouse_button_press(Container* root, const Event& e) {
         p->state.concerned = true; // Make sure this container is concerned
 
         // Check if its a scroll event and call when_scrolled if so
-        if (e.button >= 4 && e.button <= 7) {
-            /*
-      if (!app->attempted_to_verify_if_raw_scroll_available) {
-          app->attempted_to_verify_if_raw_scroll_available = true;
-          app_timeout_create(app, client, 30, [](App *app, AppClient *, Timeout
-      *, void *) { app->raw_scroll_available = app->has_seen_raw_scroll;
-          }, nullptr, "attempt to verify if raw scrolls are happening");
-      }
-      if (!app->raw_scroll_available) {
-          if (p->when_fine_scrolled || app->wayland) {
-              if (e.button == 4 || e.button == 5) {
-                  if (app->wayland && p->when_fine_scrolled) {
-                      p->when_fine_scrolled(client, client->cr, p, 0,
-                                            e.button == 4 ? 1 * 12 * 3 *
-      config->dpi : -1 * 12 * 3 * config->dpi, false); } else if
-      (p->when_fine_scrolled) { p->when_fine_scrolled(client, client->cr, p, 0,
-                                            e.button == 4 ? 1 * 12 * 3 *
-      config->dpi : -1 * 12 * 3 * config->dpi, false);
-                  }
-              } else {
-                  if (app->wayland && p->when_fine_scrolled) {
-                      p->when_fine_scrolled(client, client->cr, p,
-                                            e.button == 6 ? 1 * 12 * 3 *
-      config->dpi : -1 * 12 * 3 * config->dpi, 0, false); } else if
-      (p->when_scrolled) { p->when_fine_scrolled(client, client->cr, p, e.button
-      == 6 ? 1 * 12 * 3 * config->dpi : -1 * 12 * 3 * config->dpi, 0, false);
-                  }
-              }
-          }
-          handle_mouse_motion(app, client, e.event_x, e.event_y);
-      }
-      continue;
-      */
+        if (e.scroll) {
+            if (p->when_fine_scrolled) {
+                p->when_fine_scrolled(root, p, 0, -e.delta, !e.from_mouse);
+                handle_mouse_motion(root, e.x, e.y);
+            }
+            continue;
         }
 
         if (e.button != BTN_LEFT && e.button != BTN_RIGHT && e.button != BTN_MIDDLE) {
@@ -424,7 +403,7 @@ void move_event(Container* root, const Event& e) {
 }
 
 void mouse_event(Container* root, const Event& e) {
-    if (e.state) {
+    if (e.state || e.scroll) {
         handle_mouse_button_press(root, e);
     } else {
         handle_mouse_button_release(root, e);
@@ -432,13 +411,42 @@ void mouse_event(Container* root, const Event& e) {
 }
 
 void paint_outline(Container* root, Container* c) {
-    if (c->when_paint && c->exists) {
+    if (!c->exists)
+        return;
+    
+    if (c->when_paint ) {
         c->when_paint(root, c);
     }
-    for (auto ch : c->children) {
-        paint_outline(root, ch);
+    if (!c->automatically_paint_children) {
+        return;
     }
-
+ 
+    if (c->type == ::newscroll) {
+        auto s = (ScrollContainer *) c;
+        std::vector<int> render_order;
+        for (int i = 0; i < s->content->children.size(); i++) {
+            render_order.push_back(i);
+        }
+        std::sort(render_order.begin(), render_order.end(), [s](int a, int b) -> bool {
+            return s->content->children[a]->z_index < s->content->children[b]->z_index;
+        });
+        
+        for (auto index: render_order) {
+            if (overlaps(s->content->children[index]->real_bounds, s->real_bounds)) {
+                paint_outline(root, s->content->children[index]);
+            }
+        }
+        
+        if (s->right && s->right->exists)
+            paint_outline(root, s->right);
+        if (s->bottom && s->bottom->exists)
+            paint_outline(s, s->bottom);
+    } else {
+        for (auto ch : c->children) {
+            paint_outline(root, ch);
+        }
+    }
+   
     if (c->after_paint) {
         c->after_paint(root, c);
     }

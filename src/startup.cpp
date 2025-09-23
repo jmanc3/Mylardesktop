@@ -1,5 +1,6 @@
 #include "startup.h"
 
+#include "components.h"
 #include "first.h"
 #include "events.h"
 #include "icons.h"
@@ -7,8 +8,10 @@
 #include "container.h"
 #include "hypriso.h"
 
+#include <fstream>
 #include <format>
 #include <cassert>
+#include <filesystem>
 #include <linux/input-event-codes.h>
 
 #ifdef TRACY_ENABLE
@@ -19,11 +22,12 @@
 
 static std::vector<Container *> roots; // monitors
 static int titlebar_text_h = 15;
-static int titlebar_icon_button_h = 14;
+static int titlebar_icon_button_h = 13;
 static int titlebar_icon_h = 24;
 static int titlebar_icon_pad = 8;
 static int resize_size = 18;
 static int tab_menu_font_h = 40;
+
 RGBA color_titlebar = {1.0, 1.0, 1.0, 1.0};
 RGBA color_titlebar_hovered = {0.87, 0.87, 0.87, 1.0f};
 RGBA color_titlebar_pressed = {0.69, 0.69, 0.69, 1.0f};
@@ -36,6 +40,22 @@ static float rounding = 10.0f;
 
 ThinClient *c_from_id(int id);
 ThinMonitor *m_from_id(int id);
+void update_restore_info_for(int w);
+
+struct WindowRestoreLocation {
+    Bounds box; // all values are 0-1 and supposed to be scaled to monitor
+
+    Bounds actual_size_on_monitor(Bounds m) {
+        Bounds b = {box.x * m.w, box.y * m.h, box.w * m.w, box.h * m.h};
+        if (b.w < 5)
+            b.w = 5;
+        if (b.h < 5)
+            b.h = 5;
+        return b;
+    }
+};
+
+std::unordered_map<std::string, WindowRestoreLocation> restore_infos;
 
 enum struct TYPE : uint8_t {
     NONE = 0,
@@ -71,10 +91,6 @@ struct ClientData : UserData {
        ; 
     }
 };
-
-CBox tobox(Container *c) {
-   return {c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h}; 
-}
 
 struct AltTabOption {
     std::string class_name;
@@ -262,12 +278,15 @@ void drag_start(int id) {
         client->snapped = false;
         hypriso->should_round(client->id, true);
         auto s = scale(mid);
-        float perc = (MOUSECOORDS.x * s - b.x) / b.w;
+        float perc = (MOUSECOORDS.x - b.x) / b.w;
+        notify(std::to_string(perc));
         client->drag_initial_mouse_percentage = perc;
-        hypriso->move_resize(client->id, MOUSECOORDS.x - (perc * (client->pre_snap_bounds.w * (1.0 / s))), b.y, client->pre_snap_bounds.w, client->pre_snap_bounds.h);
+        float x = MOUSECOORDS.x - (perc * (client->pre_snap_bounds.w));
+        hypriso->move_resize(client->id, x, b.y, client->pre_snap_bounds.w, client->pre_snap_bounds.h);
         b = bounds(client);
     } else {
         client->pre_snap_bounds = b;
+        update_restore_info_for(id);
     }
     hypriso->drag_initial_window_pos = b;
     hypriso->drag_initial_mouse_pos = mouse();
@@ -387,6 +406,7 @@ void toggle_maximize(int id) {
     } else {
         Bounds position = snap_position_to_bounds(mon, SnapPosition::MAX);
         c->pre_snap_bounds = bounds(c);
+        update_restore_info_for(c->id);
         hypriso->move_resize(id, position.x, position.y + titlebar_h, position.w, position.h - titlebar_h);
     }
     c->snapped = !c->snapped;
@@ -549,7 +569,31 @@ bool on_key_press(int id, int key, int state, bool update_mods) {
 }
 
 // returning true means consume the event
-bool on_scrolled(int id, int source, int axis, int direction, double delta, int discrete, bool mouse) {
+bool on_scrolled(int id, int source, int axis, int direction, double delta, int discrete, bool from_mouse) {
+    auto m = mouse();
+    auto mid = hypriso->monitor_from_cursor();
+    auto s = scale(mid);
+    Event event;
+    event.x = m.x * s;
+    event.y = m.y * s;
+    event.scroll = true;
+    event.axis = axis;
+    event.direction = direction;
+    event.delta = delta;
+    event.descrete = discrete;
+    event.from_mouse = from_mouse;
+    layout_every_single_root();
+    for (auto root : roots)
+        mouse_event(root, event);
+
+    bool consumed = false;
+    for (auto root : roots) {
+       if (root->consumed_event) {
+           consumed = true;
+           root->consumed_event = false;
+       } 
+    }
+    
     return false; 
 }
 
@@ -657,6 +701,7 @@ void layout_every_single_root() {
                     r->real_bounds.x + r->real_bounds.w * .5 - w * .5, 
                     r->real_bounds.y + r->real_bounds.h * .5 - h * .5, 
                     w, h);
+                ::layout(r, b, b->real_bounds);
                 r->children.insert(r->children.begin() + 0, b);
                 // TODO maybe show alt tab menu on active monitor?
                 break;
@@ -727,12 +772,94 @@ bool on_mouse_press(int id, int button, int state, float x, float y) {
 }
 
 int monitor_overlapping(int id) {
-    
-    return -1;
+    return get_monitor(id);
+}
+
+void save_restore_infos() {
+    // Resolve $HOME
+    const char* home = std::getenv("HOME");
+    if (!home) {
+        throw std::runtime_error("HOME environment variable not set");
+    }
+
+    // Target path
+    std::filesystem::path filepath = std::filesystem::path(home) / ".config/mylar/restore.txt";
+
+    // Ensure parent directories exist
+    std::filesystem::create_directories(filepath.parent_path());
+
+    // Write file (overwrite mode)
+    std::ofstream out(filepath, std::ios::trunc);
+    if (!out) {
+        throw std::runtime_error("Failed to write file: " + filepath.string());
+    }
+    for (auto [class_name, info] : restore_infos) {
+        // class_name std::string
+        // info.box.x info.box.y info.box.w info.box.h
+        out << class_name << " " << info.box.x << " " << info.box.y << " " << info.box.w << " " << info.box.h << "\n";
+    }
+    //out << contents;
+    if (!out.good()) {
+        throw std::runtime_error("Error occurred while writing: " + filepath.string());
+    }
+}
+
+void load_restore_infos() {
+    restore_infos.clear();
+
+    // Resolve $HOME
+    const char* home = std::getenv("HOME");
+    if (!home) {
+        throw std::runtime_error("HOME environment variable not set");
+    }
+
+    // Target path
+    std::filesystem::path filepath = std::filesystem::path(home) / ".config/mylar/restore.txt";
+
+    std::ifstream in(filepath);
+    if (!in) {
+        // No file — silently return
+        return;
+    }
+
+    std::string line;
+    while (std::getline(in, line)) {
+        std::istringstream iss(line);
+        std::string class_name;
+        Bounds info;
+
+        // Parse strictly: skip if the line is malformed
+        if (!(iss >> class_name >> info.x >> info.y >> info.w >> info.h)) {
+            continue; // bad line — skip
+        }
+
+        WindowRestoreLocation restore;
+        restore.box = info;
+        restore_infos[class_name] = restore;
+    }
+}
+
+void update_restore_info_for(int w) {
+    WindowRestoreLocation info;
+    ThinClient *c = c_from_id(w);
+    int mid = monitor_overlapping(w);
+    ThinMonitor *m = m_from_id(mid);
+    if (m && c) {
+        Bounds cb = bounds(c);
+        Bounds cm = bounds(m);
+        info.box = {
+            cb.x / cm.w,
+            cb.y / cm.h,
+            cb.w / cm.w,
+            cb.h / cm.h,
+        };
+        restore_infos[class_name(c_from_id(w))] = info;
+        save_restore_infos(); // I believe it's okay to call this here because it only happens on resize end, and drag end
+    }
 }
 
 void update_cursor(int type) {
-    if (type == (int) RESIZE_TYPE::NONE) {
+   if (type == (int) RESIZE_TYPE::NONE) {
         unsetCursorImage();
     } else if (type == (int) RESIZE_TYPE::BOTTOM) {
         setCursorImageUntilUnset("s-resize");
@@ -768,6 +895,16 @@ void on_window_open(int id) {
             break;
         }
     }
+    auto cname = class_name(tc);
+    for (auto [class_name, info] : restore_infos) {
+        if (cname == class_name) {
+            //auto box = info.actual_size_on_monitor(bounds(tc));
+            //box.scale(scale(monitor));
+            auto b = real_bounds(tc);
+            hypriso->move_resize(tc->id, b.x, b.y, b.w, b.h);
+        }
+    }
+    
 
    //notify(std::to_string(monitor));
 
@@ -960,6 +1097,7 @@ void on_window_open(int id) {
                 auto client = c_from_id(cdata->id);
                 client->resizing = false;
                 c->when_drag(root, c);
+                update_restore_info_for(client->id);
             };
             resize->handles_pierced = [](Container* container, int mouse_x, int mouse_y) {
                 auto cdata = (ClientData *) container->user_data;
@@ -1227,7 +1365,6 @@ void on_window_closed(int id) {
     }
 }
 
-
 void on_monitor_open(int id) {
     auto tm = new ThinMonitor(id);
     hypriso->monitors.push_back(tm);
@@ -1238,9 +1375,24 @@ void on_monitor_open(int id) {
     };
     roots.push_back(c);
 
-   auto tab_menu = c->child(::vbox, FILL_SPACE, FILL_SPACE); 
-   tab_menu->custom_type = (int) TYPE::ALT_TAB;
-   tab_menu->when_paint = [](Container *root, Container *c) {
+    auto tab_menu = c->child(::vbox, FILL_SPACE, FILL_SPACE); 
+    tab_menu->custom_type = (int) TYPE::ALT_TAB;
+    ScrollPaneSettings settings(1.0);
+    ScrollContainer *scroll = make_newscrollpane_as_child(tab_menu, settings);
+    for (int i = 0; i < 40; i++) {
+        auto c = scroll->content->child(100, 100);
+        c->when_paint = [](Container *r, Container *c) {
+            border(c->real_bounds, {1, 1, 0, 1}, 10);
+            if (c->state.mouse_pressing) {
+                border(c->real_bounds, {0, 1, 1, 1}, 10);
+            }
+        };
+    }
+    tab_menu->when_paint = [](Container *root, Container *c) {
+        rect(c->real_bounds, {1, 0, 1, 1});
+    };
+   
+   /*tab_menu->when_paint = [](Container *root, Container *c) {
         auto rdata = (RootData *) root->user_data;
         auto s = scale(rdata->id);
         if (RENDER_LAST_MOMENT == rdata->stage) {
@@ -1265,7 +1417,7 @@ void on_monitor_open(int id) {
                 off += h;
             }
         }
-   };
+   };*/
 }
 
 void on_monitor_closed(int id) {
@@ -1306,6 +1458,7 @@ void startup::begin() {
     hypriso->on_drag_start_requested = on_drag_start_requested;
     hypriso->on_resize_start_requested = on_resize_start_requested;
 
+    load_restore_infos();
 	// The two most important callbacks we hook are mouse move and mouse events
 	// On every mouse move we update the current state of the ThinClients to be in the right positions
 	// so that hen we receive a mouse down, we know if we have to consume it (snap resizing, title bar interactions, alt tab menu, overview dragging, overview drop down, desktop folders, desktop folder selection, so on)
@@ -1316,6 +1469,7 @@ void startup::begin() {
         icon_cache_generate();
         notify("generated");
     }
+    
     {
         notify("icon load");
         icon_cache_load();
