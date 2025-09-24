@@ -735,6 +735,7 @@ void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPow
         rectdata.blurA         = blurA;
         rectdata.round         = std::round(round);
         rectdata.roundingPower = roundingPower;
+        rectdata.xray = false;
         set_rounding(cornermask); // only top side
         g_pHyprOpenGL->renderRect(tocbox(box), CHyprColor(color.r, color.g, color.b, color.a), rectdata);
         set_rounding(0);

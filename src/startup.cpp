@@ -8,6 +8,7 @@
 #include "container.h"
 #include "hypriso.h"
 
+#include <algorithm>
 #include <fstream>
 #include <format>
 #include <cassert>
@@ -27,6 +28,9 @@ static int titlebar_icon_h = 23;
 static int titlebar_icon_pad = 8;
 static int resize_size = 18;
 static int tab_menu_font_h = 40;
+
+static float sd = .65;                  // scale down
+Bounds max_thumb = {510 * sd, 310 * sd, 510 * sd, 310 * sd}; // need to be multiplied by scale
 
 RGBA color_titlebar = {1.0, 1.0, 1.0, 1.0};
 RGBA color_titlebar_hovered = {0.87, 0.87, 0.87, 1.0f};
@@ -693,46 +697,47 @@ void layout_every_single_root() {
             if (count == 0)
                 count++;
             auto scroll = (ScrollContainer *) b->children[0];
-            // TODO: memory thrashing
-            for (auto c : scroll->content->children)
-                delete c;
-            scroll->content->children.clear();
-            
-            for (int i = 0; i < count; i++) {
-                auto c = scroll->content->child(FILL_SPACE, 400);
-                struct TData : UserData {
-                    int i = 0;
-                    TData(int i) : i(i) {}
-                };
-                c->user_data = new TData(i);
-                c->when_paint = [](Container *r, Container *c) {
-                    auto data = (TData *) c->user_data;
-                    rect(c->real_bounds, {1, 1, 1, .1});
-                    auto b = c->real_bounds;
-                    b.shrink(20);
-                    for (int i = 0; i < alt_tab_menu.options.size(); i++) {
-                        if (i == data->i) {
-                            auto o = alt_tab_menu.options[i];
-                            hypriso->draw_thumbnail(o.window, b, 20, 2.0f, 3);
-                        }
-                    }
 
-                    //border(c->real_bounds, {1, 1, 0, 1}, 10);
-                    //if (c->state.mouse_pressing) {
-                        //border(c->real_bounds, {0, 1, 1, 1}, 10);
-                    //}
-                };
-            }
             for (auto r: roots) {
                 auto rdata = (RootData *) r->user_data;
+                auto s = scale(rdata->id);
                 b->exists = alt_tab_menu.is_showing();
 
-                float w = 600;
-                float h = 400;
+                float w = 0;
+                //float w = max_thumb.w * s * count;
+                float h = max_thumb.h * s;
+                auto mb = bounds(m_from_id(rdata->id));
+                for (auto o : alt_tab_menu.options) {
+                    auto wb = bounds(c_from_id(o.window));
+                    auto rw = wb.w / mb.w;
+                    w += max_thumb.w * rw * s;
+                }
                 b->real_bounds = Bounds(
                     r->real_bounds.x + r->real_bounds.w * .5 - w * .5, 
                     r->real_bounds.y + r->real_bounds.h * .5 - h * .5, 
                     w, h);
+                b->when_paint = [](Container *root, Container *c) {
+                    auto rdata = (RootData *) root->user_data;
+                    auto mb = bounds(m_from_id(rdata->id));
+                    auto s = scale(rdata->id);
+                    int xoff = 0;
+                    for (int i = 0; i < alt_tab_menu.options.size(); i++) {
+                        auto o = alt_tab_menu.options[i];
+                        auto wb = bounds(c_from_id(o.window));
+                        auto rw = wb.w / mb.w;
+                        auto te = c->real_bounds;
+                        auto pp = max_thumb.w * rw * s;
+                        te.x += xoff;
+                        te.w = pp;
+                        hypriso->draw_thumbnail(o.window, te);
+                        if (i == alt_tab_menu.index) {
+                            rect(te, {1, 1, 1, .1}, 0, 0, 2.0, false);
+                            //border(te, {0, 0, 1, 1}, 5 * s);
+                        }
+                        xoff += pp;
+                    }
+                         
+                };
                 ::layout(r, b, b->real_bounds);
                 r->children.insert(r->children.begin() + 0, b);
                 // TODO maybe show alt tab menu on active monitor?
