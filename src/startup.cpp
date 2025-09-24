@@ -29,6 +29,8 @@ static int titlebar_icon_pad = 8;
 static int resize_size = 18;
 static int tab_menu_font_h = 40;
 
+static bool screenshotting = false;
+
 static float sd = .65;                  // scale down
 Bounds max_thumb = {510 * sd, 310 * sd, 510 * sd, 310 * sd}; // need to be multiplied by scale
 
@@ -106,11 +108,19 @@ void reset_visible_window();
 void update_visible_window();
 void tab_next_window();
 
+void screenshot_all() {
+    screenshotting = true;
+    hypriso->screenshot_all(); 
+    screenshotting = false; 
+}
+
 // The reason we take screenshots like this is because if we try to do it in the render thread, we CRASH for some reason that I don't feel like investigating. PLUS, we need to take screenshots on a perdiodic basis anyways so this solves both problems.
 Timer* start_producing_thumbnails() {
     //static float fps24 = 1000.0f / 24.0f;
     float fps = 1000.0f / 12.0f;
-    Timer* timer = later(nullptr, fps, [](Timer* timer) { hypriso->screenshot_all(); });
+    Timer* timer = later(nullptr, fps, [](Timer* timer) { 
+        screenshot_all();
+    });
     timer->keep_running = true;
     return timer;
 }
@@ -197,7 +207,7 @@ class AltTabMenu {
 
             if (state) {
                 update_visible_window();
-                hypriso->screenshot_all();
+                screenshot_all();
                 timer = start_producing_thumbnails();
                 timer->keep_running = true;
             } else {
@@ -725,10 +735,12 @@ void layout_every_single_root() {
                         auto o = alt_tab_menu.options[i];
                         auto wb = bounds(c_from_id(o.window));
                         auto rw = wb.w / mb.w;
+                        auto rh = wb.h / mb.h;
                         auto te = c->real_bounds;
                         auto pp = max_thumb.w * rw * s;
                         te.x += xoff;
                         te.w = pp;
+                        te.h = max_thumb.h * rh * s;
                         hypriso->draw_thumbnail(o.window, te);
                         if (i == alt_tab_menu.index) {
                             rect(te, {1, 1, 1, .1}, 0, 0, 2.0, false);
@@ -756,6 +768,8 @@ void layout_every_single_root() {
 
 // i think this is being called once per monitor
 void on_render(int id, int stage) {
+    if (screenshotting)
+        return;
     if (stage == (int) STAGE::RENDER_BEGIN) {
          layout_every_single_root();
     }
