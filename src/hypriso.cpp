@@ -64,7 +64,10 @@ typedef void (*tRenderWorkspaceWindowsFullscreen)(void *, PHLMONITOR, PHLWORKSPA
 struct HyprWindow {
     int id;  
     PHLWINDOW w;
+    
     CFramebuffer *fb = nullptr;
+    Bounds w_size; // 0 -> 1, percentage of fb taken up by the actual window used for drawing
+    
     int cornermask = 0; // when rendering the surface, what corners should be rounded
     bool no_rounding = false;
 };
@@ -502,18 +505,28 @@ typedef void (*origRenderWindowFunc)(void*, PHLWINDOW pWindow, PHLMONITOR pMonit
 void hook_RenderWindow(void* thisptr, PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp& time, bool decorate, eRenderPassMode mode, bool ignorePosition, bool standalone) {
     Hyprlang::INT* rounding_amount = nullptr;
     int initial_value = 0;
+
+    Hyprlang::INT* border_size = nullptr;
+    int initial_border_size = 0;
+    
     for (auto hw : hyprwindows) {
         if (hw->w == pWindow && hw->no_rounding) {
             Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:rounding");
             rounding_amount = (Hyprlang::INT*)val->dataPtr();
             initial_value = *rounding_amount;
             *rounding_amount = 0;
+
+            Hyprlang::CConfigValue* val2 = g_pConfigManager->getHyprlangConfigValuePtr("general:border_size");
+            border_size = (Hyprlang::INT*)val2->dataPtr();
+            initial_border_size = *border_size;
+            *border_size = 0;
         }
     }
 
     (*(origRenderWindowFunc)g_pRenderWindowHook->m_original)(thisptr, pWindow, pMonitor, time, decorate, mode, ignorePosition, standalone);
     if (rounding_amount) {
         *rounding_amount = initial_value;
+        *border_size = initial_border_size;
     }
 }
 
@@ -1587,11 +1600,11 @@ void screenshot_window_with_decos(CFramebuffer* buffer, PHLWINDOW w) {
     g_pHyprRenderer->m_bRenderingSnapshot = false;
 }
 
-void screenshot_window(CFramebuffer* buffer, PHLWINDOW w, bool include_decorations) {
-    if (!buffer || !pRenderWindow)
+void screenshot_window(HyprWindow *hw, PHLWINDOW w, bool include_decorations) {
+    if (!hw->fb|| !pRenderWindow)
         return;
     if (include_decorations) {
-        screenshot_window_with_decos(buffer, w);
+        screenshot_window_with_decos(hw->fb, w);
         return;
     }
     const auto m = w->m_monitor.lock();
@@ -1603,15 +1616,17 @@ void screenshot_window(CFramebuffer* buffer, PHLWINDOW w, bool include_decoratio
     // this is temporary, doesnt mess with the actual damage
     CRegion fakeDamage{0, 0, INT16_MAX, INT16_MAX};
     g_pHyprRenderer->makeEGLCurrent();
-    buffer->alloc(m->m_pixelSize.x, m->m_pixelSize.y, DRM_FORMAT_ABGR8888);
-    g_pHyprRenderer->beginRender(m, fakeDamage, RENDER_MODE_FULL_FAKE, nullptr, buffer);
+    hw->fb->alloc(m->m_pixelSize.x, m->m_pixelSize.y, DRM_FORMAT_ABGR8888);
+    g_pHyprRenderer->beginRender(m, fakeDamage, RENDER_MODE_FULL_FAKE, nullptr, hw->fb);
     g_pHyprRenderer->m_bRenderingSnapshot = true;
     g_pHyprOpenGL->clear(CHyprColor(0, 0, 0, 0)); // JIC
     timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
-    (*(tRenderWindow)pRenderWindow)(g_pHyprRenderer.get(), w, m, &now, false, RENDER_PASS_ALL, true, true);
+    (*(tRenderWindow)pRenderWindow)(g_pHyprRenderer.get(), w, m, &now, false, RENDER_PASS_MAIN, true, true);
     g_pHyprRenderer->endRender();
     g_pHyprRenderer->m_bRenderingSnapshot = false;
+
+    hw->w_size = Bounds(0, 0, (w->m_realSize->value().x * m->m_scale), (w->m_realSize->value().y * m->m_scale));
 }
 
 void HyprIso::screenshot_all() {
@@ -1622,29 +1637,41 @@ void HyprIso::screenshot_all() {
                 has_mylar_bar = true;
             
         if (has_mylar_bar) {
-            bool decorations = false;
             for (auto hw : hyprwindows) {
                 if (hw->w == w) {
                     if (!hw->fb)
                         hw->fb = new CFramebuffer;
-                    screenshot_window(hw->fb, w, decorations);
+                    screenshot_window(hw, w, false);
                 }
             }
         }
     }
 }
 
-void HyprIso::draw_thumbnail(int id, Bounds b) {
+// Will stretch the thumbnail if the aspect ratio passed in is different from thumbnail
+void HyprIso::draw_thumbnail(int id, Bounds b, int rounding, float roundingPower, int cornermask) {
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             if (hw->fb) {
-                CTexPassElement::SRenderData data;
-                data.tex = hw->fb->getTexture();
-                data.box = tocbox(b);
-                data.box.round();
-                data.a = 1.0f;
-                data.clipBox = data.box;
-                g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(std::move(data)));
+                AnyPass::AnyData anydata([id, b, hw, rounding, roundingPower, cornermask](AnyPass* pass) {
+                    auto tex = hw->fb->getTexture();
+                    auto box = tocbox(b);
+                    CHyprOpenGLImpl::STextureRenderData data;
+                    data.allowCustomUV = true;
+                    data.round = rounding;
+                    data.roundingPower = roundingPower;
+                    g_pHyprOpenGL->m_renderData.primarySurfaceUVTopLeft     = Vector2D(0, 0);
+                    g_pHyprOpenGL->m_renderData.primarySurfaceUVBottomRight = Vector2D(
+                        std::min(hw->w_size.w / hw->fb->m_size.x, 1.0), 
+                        std::min(hw->w_size.h / hw->fb->m_size.y, 1.0) 
+                    );
+                    set_rounding(cornermask);
+                    g_pHyprOpenGL->renderTexture(tex, box, data);
+                    set_rounding(0);
+                    g_pHyprOpenGL->m_renderData.primarySurfaceUVTopLeft     = Vector2D(-1, -1);
+                    g_pHyprOpenGL->m_renderData.primarySurfaceUVBottomRight = Vector2D(-1, -1);
+                });
+                g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
             }
         }
     }

@@ -189,7 +189,7 @@ struct HyprIso {
     void damage_entire(int monitor);
 
     void screenshot_all();
-    void draw_thumbnail(int id, Bounds b);
+    void draw_thumbnail(int id, Bounds b, int rounding = 0, float roundingPower = 2.0f, int cornermask = 0);
 };
 
 extern HyprIso *hypriso;

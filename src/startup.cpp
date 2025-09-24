@@ -23,7 +23,7 @@
 static std::vector<Container *> roots; // monitors
 static int titlebar_text_h = 15;
 static int titlebar_icon_button_h = 13;
-static int titlebar_icon_h = 24;
+static int titlebar_icon_h = 23;
 static int titlebar_icon_pad = 8;
 static int resize_size = 18;
 static int tab_menu_font_h = 40;
@@ -689,14 +689,46 @@ void layout_every_single_root() {
             }
         } else if (b->custom_type == (int) TYPE::RESIZE_HANDLE) {            
         } else if (b->custom_type == (int) TYPE::ALT_TAB) {
+            auto count = alt_tab_menu.options.size();
+            if (count == 0)
+                count++;
+            auto scroll = (ScrollContainer *) b->children[0];
+            // TODO: memory thrashing
+            for (auto c : scroll->content->children)
+                delete c;
+            scroll->content->children.clear();
+            
+            for (int i = 0; i < count; i++) {
+                auto c = scroll->content->child(FILL_SPACE, 400);
+                struct TData : UserData {
+                    int i = 0;
+                    TData(int i) : i(i) {}
+                };
+                c->user_data = new TData(i);
+                c->when_paint = [](Container *r, Container *c) {
+                    auto data = (TData *) c->user_data;
+                    rect(c->real_bounds, {1, 1, 1, .1});
+                    auto b = c->real_bounds;
+                    b.shrink(20);
+                    for (int i = 0; i < alt_tab_menu.options.size(); i++) {
+                        if (i == data->i) {
+                            auto o = alt_tab_menu.options[i];
+                            hypriso->draw_thumbnail(o.window, b, 20, 2.0f, 3);
+                        }
+                    }
+
+                    //border(c->real_bounds, {1, 1, 0, 1}, 10);
+                    //if (c->state.mouse_pressing) {
+                        //border(c->real_bounds, {0, 1, 1, 1}, 10);
+                    //}
+                };
+            }
             for (auto r: roots) {
                 auto rdata = (RootData *) r->user_data;
                 b->exists = alt_tab_menu.is_showing();
-                auto count = alt_tab_menu.options.size();
-                if (count == 0)
-                    count++;
-                float w = 500;
-                float h = tab_menu_font_h * count * scale(rdata->id);
+
+                float w = 600;
+                float h = 400;
                 b->real_bounds = Bounds(
                     r->real_bounds.x + r->real_bounds.w * .5 - w * .5, 
                     r->real_bounds.y + r->real_bounds.h * .5 - h * .5, 
@@ -900,17 +932,22 @@ void on_window_open(int id) {
         if (cname == class_name) {
             auto b = real_bounds(tc);
             auto m = m_from_id(monitor);
+            auto s = scale(m->id);
             auto b2 = bounds_reserved(m);
-            if (b.w >= b2.w * .9) {
-                b.w = b2.w * .9;
-            }
-            if (b.h >= b2.h * .9) {
-                b.h = b2.h * .9;
-            }
             b.w = b2.w * info.box.w;
             b.h = b2.h * info.box.h;
+            if (b.w >= b2.w - 60 * s) {
+                b.w = b2.w - 60 * s;
+            }
+            bool fix = false;
+            if (b.h >= b2.h - 60 * s) {
+                b.h = b2.h - 60 * s;
+                fix = true;
+            }
             b.x = b2.x + b2.w * .5 - b.w * .5;
             b.y = b2.y + b2.h * .5 - b.h * .5;
+            if (fix)
+                b.y += (titlebar_h * s) * .5;
 
             hypriso->move_resize(tc->id, b.x, b.y, b.w, b.h);
         }
@@ -1302,13 +1339,19 @@ void on_window_open(int id) {
             auto close = title->child(100, FILL_SPACE);
             close->user_data = new IconData;
             close->when_mouse_down = title->when_mouse_down;
-            close->when_paint = [](Container *root, Container *c) {
+            close->when_paint = [](Container *root, Container *c) {                
                 auto data = (ClientData *) c->parent->parent->user_data;
                 auto client = c_from_id(data->id);
                 auto rdata = (RootData *) root->user_data;
                 auto cdata = (IconData *) c->user_data;
                 auto s = scale(rdata->id);
                 if (data->id == rdata->active_id) {
+                    if (c->state.mouse_pressing || c->state.mouse_hovering) {
+                        c->real_bounds.w += 1;
+                        c->real_bounds.y -= 1;
+                        c->real_bounds.h += 1;
+                    }
+                    
                     int mask = 13;
                     float round = 10 * scale(rdata->id);
                     if (client->snapped) {
@@ -1392,17 +1435,11 @@ void on_monitor_open(int id) {
     tab_menu->when_mouse_motion = [](Container *root, Container *c) {
         root->consumed_event = true;
     };
+    tab_menu->when_fine_scrolled = [](Container* root, Container* self, int scroll_x, int scroll_y, bool came_from_touchpad) {
+        root->consumed_event = true;
+    };
     ScrollPaneSettings settings(1.0);
     ScrollContainer *scroll = make_newscrollpane_as_child(tab_menu, settings);
-    for (int i = 0; i < 40; i++) {
-        auto c = scroll->content->child(100, 100);
-        c->when_paint = [](Container *r, Container *c) {
-            border(c->real_bounds, {1, 1, 0, 1}, 10);
-            if (c->state.mouse_pressing) {
-                border(c->real_bounds, {0, 1, 1, 1}, 10);
-            }
-        };
-    }
     tab_menu->when_paint = [](Container *root, Container *c) {
         rect(c->real_bounds, {1, 0, 1, 1});
     };
