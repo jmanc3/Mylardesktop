@@ -21,6 +21,42 @@
 
 #endif
 
+#define paint [](Container *root, Container *c)
+
+struct Datas {
+    std::unordered_map<std::string, std::any> datas;
+};
+std::unordered_map<std::string, Datas> datas;
+
+template<typename T>
+std::optional<std::reference_wrapper<T>>
+get_data(const std::string& uuid, const std::string& name) {
+    // Locate uuid
+    auto it_uuid = datas.find(uuid);
+    if (it_uuid == datas.end())
+        return std::nullopt;
+
+    // Locate name
+    auto it_name = it_uuid->second.datas.find(name);
+    if (it_name == it_uuid->second.datas.end())
+        return std::nullopt;
+
+    // Attempt safe cast
+    if (auto* ptr = std::any_cast<T>(&it_name->second))
+        return std::ref(*ptr);
+
+    return std::nullopt; // type mismatch
+}
+
+template<typename T>
+void set_data(const std::string& uuid, const std::string& name, T&& value) {
+    datas[uuid].datas[name] = std::forward<T>(value);
+}
+
+void remove_data(const std::string& uuid) {
+    datas.erase(uuid);
+}
+
 static std::vector<Container *> roots; // monitors
 static int titlebar_text_h = 15;
 static int titlebar_icon_button_h = 13;
@@ -125,13 +161,16 @@ Timer* start_producing_thumbnails() {
     return timer;
 }
 
+struct TabData : UserData {
+    int wid = -1;  
+};
+
 class AltTabMenu {
   public:
     bool showing = false;
 
-    Container* root  = nullptr;
     int index = 0;
-    std::vector<AltTabOption> options;
+    Container *root = new Container(::hbox, FILL_SPACE, FILL_SPACE);
     Timer *timer = nullptr;
 
     long switch_time = 0;
@@ -140,69 +179,23 @@ class AltTabMenu {
     long time_when_change = 0;
 
     void change_showing(bool state) {
-        auto m_windows = get_window_stacking_order();
-        for (int i = options.size() - 1; i >= 0; i--) {
-            auto& o = options[i];
-            bool  found = false;
-            for (auto w : m_windows)
-                if (o.window == w)
-                    found = true;
-            if (!found) {
-                options.erase(options.begin() + i);
-            }
-        }
-        // todo get rid of those who exist in options but not in m_windows
-        for (auto w : m_windows) {
-            bool has_mylar_bar = false;
-            for (auto r: roots) {
-                for (auto c: r->children) {
-                    if (c->custom_type == (int) TYPE::CLIENT) {
-                        auto data = (ClientData *) c->user_data;
-                        if (data->id == w) {
-                            has_mylar_bar = hypriso->has_decorations(data->id);
-                        }
-                    }
-                }
-            }
-
-            if (has_mylar_bar) {
-                AltTabOption o;
-                bool skip = false;
-                for (auto option : options)
-                    if (option.window == w)
-                        skip = true;
-                if (skip)
-                    continue;
-                auto c = c_from_id(w);
-                o.class_name = class_name(c);
-                o.title = title_name(c);
-                o.window = w;
-                options.insert(options.begin(), o);
-            }
-        }
-        
         if (showing != state) {
-            if (root && state) {
-                delete root;
-                root = nullptr;
-            }
             if (state) {
                 index = 0;
                 time_when_open = get_current_time_in_ms();
                 time_when_change = time_when_open - 80;
             } else {
-                //activate option at index
-                if (!options.empty() && index < options.size()) {
-                    auto& o = options[index];
-                    auto w = o.window;
-                    auto client = c_from_id(w);
-                    if (client->iconified) { // problem with preview making it not hidden when it is
-                        hypriso->iconify(w, false);
-                        //iconify(w, false);
+                if (index <= root->children.size()) {
+                    if (auto c = root->children[index]) {
+                        auto tab_data = (TabData *) c->user_data;
+                        auto w = tab_data->wid;
+                        auto client = c_from_id(w);
+                        if (client->iconified) { // problem with preview making it not hidden when it is
+                            hypriso->iconify(w, false);
+                        }
+                        hypriso->bring_to_front(w);
                     }
-                    hypriso->bring_to_front(w);
                 }
-                options.clear();
             }
 
             if (state) {
@@ -211,11 +204,9 @@ class AltTabMenu {
                 timer = start_producing_thumbnails();
                 timer->keep_running = true;
             } else {
-                // stop taking screenshots
                 if (timer)
                     timer->keep_running = false;
 
-                // go through windows and set iconify based on perwindow data
                 reset_visible_window();
             }
 
@@ -241,20 +232,36 @@ void reset_visible_window() {
 
 void update_visible_window() {
     return;
-    for (auto& w : get_window_stacking_order()) {
-        auto client = c_from_id(w);
-        auto& o = alt_tab_menu.options[alt_tab_menu.index];
-        bool is_hidden = client->iconified;
-        if (w == o.window && is_hidden) {
-            hypriso->iconify(w, false);
-        } else if (!is_hidden) {
-            hypriso->iconify(w, true);
-        }
-        if (w == o.window) {
-            hypriso->iconify(w, false);
-        }
+}
+
+void paint_thumbnail(Container *root, Container *c) {
+    auto tdata = (TabData *) c->user_data;
+    auto rdata = (RootData *) root->user_data;
+    auto s = scale(rdata->id);
+    hypriso->draw_thumbnail(tdata->wid, c->real_bounds, 16 * s, 2.0f, 3);
+    border(c->real_bounds, {1, 1, 0, 1}, 10);
+}
+
+void paint_titlebar(Container *root, Container *c) {
+    auto tdata = (TabData *) c->user_data;
+    auto rdata = (RootData *) root->user_data;
+    auto s = scale(rdata->id);
+    rect(c->real_bounds, color_titlebar, 12, 16 * s);
+}
+
+void paint_titlebar_close(Container *root, Container *c) {
+    auto tdata = (TabData *) c->user_data;
+    auto rdata = (RootData *) root->user_data;
+    auto s = scale(rdata->id);
+    if (c->state.mouse_pressing) {
+        rect(c->real_bounds, color_titlebar_pressed_closed, 12, 16 * s);
+    } else {
+        rect(c->real_bounds, color_titlebar_hovered_closed, 12, 16 * s);
     }
 }
+
+
+
 
 void layout_every_single_root();
 
@@ -513,7 +520,7 @@ bool on_mouse_move(int id, float x, float y) {
 void tab_next_window() {
     alt_tab_menu.previous_index = alt_tab_menu.index;
     alt_tab_menu.index++;
-    if (alt_tab_menu.index >= alt_tab_menu.options.size()) {
+    if (alt_tab_menu.index >= alt_tab_menu.root->children.size()) {
         alt_tab_menu.index = 0;
     }
     update_visible_window();
@@ -528,7 +535,7 @@ void tab_next_window() {
 void tab_previous_window() {
     alt_tab_menu.index--;
     if (alt_tab_menu.index < 0) {
-        alt_tab_menu.index = alt_tab_menu.options.size() - 1;
+        alt_tab_menu.index = alt_tab_menu.root->children.size() - 1;
     }
     update_visible_window();
     alt_tab_menu.time_when_change = get_current_time_in_ms();
@@ -703,7 +710,21 @@ void layout_every_single_root() {
             }
         } else if (b->custom_type == (int) TYPE::RESIZE_HANDLE) {            
         } else if (b->custom_type == (int) TYPE::ALT_TAB) {
-            auto count = alt_tab_menu.options.size();
+            auto scroll = (ScrollContainer *) b->children[0];
+            scroll->content = alt_tab_menu.root;
+
+            b->real_bounds = Bounds(0, 0, 1000, 300);
+            b->exists = alt_tab_menu.is_showing();
+            
+            for (auto r: roots) {
+                ::layout(r, b, b->real_bounds);
+                r->children.insert(r->children.begin() + 0, b);
+                break;
+            }
+            
+            
+            /*
+            auto count = alt_tab_menu.root->children.size();
             if (count == 0)
                 count++;
             auto scroll = (ScrollContainer *) b->children[0];
@@ -717,44 +738,22 @@ void layout_every_single_root() {
                 //float w = max_thumb.w * s * count;
                 float h = max_thumb.h * s;
                 auto mb = bounds(m_from_id(rdata->id));
-                for (auto o : alt_tab_menu.options) {
-                    auto wb = bounds(c_from_id(o.window));
+                //notify(std::to_string(alt_tab_menu.root->children.size()));
+                for (auto o : alt_tab_menu.root->children) {
+                    auto tab_data = (TabData *) o->user_data;
+                    auto wb = bounds(c_from_id(tab_data->wid));
                     auto rw = wb.w / mb.w;
                     w += max_thumb.w * rw * s;
                 }
-                b->real_bounds = Bounds(
-                    r->real_bounds.x + r->real_bounds.w * .5 - w * .5, 
+                b->real_bounds = Bounds(r->real_bounds.x + r->real_bounds.w * .5 - w * .5, 
                     r->real_bounds.y + r->real_bounds.h * .5 - h * .5, 
                     w, h);
-                b->when_paint = [](Container *root, Container *c) {
-                    auto rdata = (RootData *) root->user_data;
-                    auto mb = bounds(m_from_id(rdata->id));
-                    auto s = scale(rdata->id);
-                    int xoff = 0;
-                    for (int i = 0; i < alt_tab_menu.options.size(); i++) {
-                        auto o = alt_tab_menu.options[i];
-                        auto wb = bounds(c_from_id(o.window));
-                        auto rw = wb.w / mb.w;
-                        auto rh = wb.h / mb.h;
-                        auto te = c->real_bounds;
-                        auto pp = max_thumb.w * rw * s;
-                        te.x += xoff;
-                        te.w = pp;
-                        te.h = max_thumb.h * rh * s;
-                        hypriso->draw_thumbnail(o.window, te);
-                        if (i == alt_tab_menu.index) {
-                            rect(te, {1, 1, 1, .1}, 0, 0, 2.0, false);
-                            //border(te, {0, 0, 1, 1}, 5 * s);
-                        }
-                        xoff += pp;
-                    }
-                         
-                };
                 ::layout(r, b, b->real_bounds);
                 r->children.insert(r->children.begin() + 0, b);
                 // TODO maybe show alt tab menu on active monitor?
                 break;
             }
+            */
         } 
     }
     /*for (auto r : roots) {
@@ -937,6 +936,14 @@ void on_window_open(int id) {
     hypriso->windows.push_back(tc);
     hypriso->reserve_titlebar(tc, titlebar_h);
     set_window_corner_mask(id, 3);
+
+    if (hypriso->has_decorations(id)) {
+        auto thumbnail_parent = alt_tab_menu.root->child(::vbox, 100, 100);
+        auto td = new TabData;
+        td->wid = id;
+        thumbnail_parent->user_data = td;
+        thumbnail_parent->when_paint = paint_thumbnail;
+    }
 
     int monitor = monitor_overlapping(id);
     if (monitor == -1) {
@@ -1418,6 +1425,15 @@ void on_window_open(int id) {
 void on_window_closed(int id) {
     auto client = c_from_id(id);
     
+    for (int i = 0; i < alt_tab_menu.root->children.size(); i++) {
+        auto t = alt_tab_menu.root->children[i];
+        auto tab_data = (TabData *) t->user_data;
+        if (tab_data->wid == id) {
+            delete t;
+            alt_tab_menu.root->children.erase(alt_tab_menu.root->children.begin() + i);
+        }
+    }
+  
     for (auto r : roots) {
         for (int i = 0; i < r->children.size(); i++) {
             auto child = r->children[i];
@@ -1460,35 +1476,8 @@ void on_monitor_open(int id) {
     ScrollPaneSettings settings(1.0);
     ScrollContainer *scroll = make_newscrollpane_as_child(tab_menu, settings);
     tab_menu->when_paint = [](Container *root, Container *c) {
-        rect(c->real_bounds, {1, 0, 1, 1});
+        //rect(c->real_bounds, {1, 1, 1, .5});
     };
-   
-   /*tab_menu->when_paint = [](Container *root, Container *c) {
-        auto rdata = (RootData *) root->user_data;
-        auto s = scale(rdata->id);
-        if (RENDER_LAST_MOMENT == rdata->stage) {
-            rect(c->real_bounds, {1, 1, 1, 1}); 
-            int off = 0;
-            for (int i = 0; i < alt_tab_menu.options.size(); i++) {
-                auto o = alt_tab_menu.options[i];
-                // TODO: slow (should be cached)
-                RGBA color = {0, 0, 0, 1};
-                float h = tab_menu_font_h * s;
-                if (alt_tab_menu.index == i) {
-                    color = {.1, .1, .8, 1};
-                }
-                auto info = gen_text_texture("Segoe UI Variable", o.title, h - 5, color);
-                draw_texture(info, c->real_bounds.x + c->real_bounds.h, c->real_bounds.y + off); 
-                free_text_texture(info.id);
-                auto b = c->real_bounds;
-                b.y += off;
-                b.w = h;
-                b.h = h;
-                hypriso->draw_thumbnail(o.window, b);
-                off += h;
-            }
-        }
-   };*/
 }
 
 void on_monitor_closed(int id) {

@@ -590,8 +590,8 @@ SDispatchResult hook_onCircleNext(void* thisptr, std::string arg) {
 void disable_default_alt_tab_behaviour() {
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "circleNext");
-        g_pOnCircleNextHook       = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_onCircleNext);
-        g_pOnCircleNextHook->hook();
+        //g_pOnCircleNextHook       = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_onCircleNext);
+        //g_pOnCircleNextHook->hook();
     }
 }
 
