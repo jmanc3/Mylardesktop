@@ -14,6 +14,7 @@
 #include <cassert>
 #include <filesystem>
 #include <linux/input-event-codes.h>
+#include <hyprland/src/SharedDefs.hpp>
 
 #ifdef TRACY_ENABLE
 
@@ -57,6 +58,22 @@ void remove_data(const std::string& uuid) {
     datas.erase(uuid);
 }
 
+struct TitleData : UserData {
+    long previous = 0;
+
+    TextureInfo main;
+    std::string cached_text;
+
+    TextureInfo icon;
+};
+
+struct IconData : UserData {
+    bool attempted = false;
+    TextureInfo main;
+    TextureInfo secondary;
+};
+
+
 static std::vector<Container *> roots; // monitors
 static int titlebar_text_h = 15;
 static int titlebar_icon_button_h = 13;
@@ -79,6 +96,7 @@ RGBA color_titlebar_icon = {0.0, 0.0, 0.0, 1.0};
 RGBA color_titlebar_icon_close_pressed = {1.0, 1.0, 1.0, 1.0};
 static float title_button_wratio = 1.4375f;
 static float rounding = 10.0f;
+static float thumb_rounding = 10.0f;
 
 ThinClient *c_from_id(int id);
 ThinMonitor *m_from_id(int id);
@@ -163,6 +181,7 @@ Timer* start_producing_thumbnails() {
 
 struct TabData : UserData {
     int wid = -1;  
+    int index = 0;
 };
 
 class AltTabMenu {
@@ -170,7 +189,8 @@ class AltTabMenu {
     bool showing = false;
 
     int index = 0;
-    Container *root = new Container(::hbox, FILL_SPACE, FILL_SPACE);
+
+    Container *root = nullptr;
     Timer *timer = nullptr;
 
     long switch_time = 0;
@@ -178,12 +198,52 @@ class AltTabMenu {
     long time_when_open = 0;
     long time_when_change = 0;
 
+    AltTabMenu() {
+        root = new Container(::absolute, FILL_SPACE, FILL_SPACE);
+        root->custom_type = (int) TYPE::ALT_TAB;
+        root->pre_layout = [](Container* root, Container* self, const Bounds& bounds) {
+            // set position of all children
+            auto rdata = (RootData *) root->user_data;
+            auto s = scale(rdata->id);
+            float max_w = max_thumb.w * s;
+            float max_h = max_thumb.h * s;
+            float interthumb_spacing = 20 * s;
+            int pen_x = 400;
+            int pen_y = 400;
+            for (auto t: root->children) {
+               auto tdata = (TabData *) t->user_data;
+               t->real_bounds = Bounds(pen_x, pen_y, max_w, max_h);
+               
+               pen_x += max_w + interthumb_spacing;
+            }
+
+            //self->real_bounds = Bounds(200, 200 * s, self->wanted_bounds.w, self->wanted_bounds.h);
+        };
+    }
+
     void change_showing(bool state) {
         if (showing != state) {
             if (state) {
+                // TODO: order needs to change on change showing based on actual stacking order 
                 index = 0;
                 time_when_open = get_current_time_in_ms();
                 time_when_change = time_when_open - 80;
+
+                auto wids = get_window_stacking_order();
+                for (auto t: root->children) {
+                   auto tdata = (TabData *) t->user_data;
+                   for (int i = 0; i < wids.size(); i++) {
+                       if (wids[i] == tdata->wid) {
+                           tdata->index = i;
+                       }
+                   }
+                }
+
+                std::sort(root->children.begin(), root->children.end(), [](Container *a, Container *b) {
+                    auto adata = (TabData *) a->user_data; 
+                    auto bdata = (TabData *) b->user_data; 
+                    return adata->index > bdata->index; 
+                });
             } else {
                 if (index <= root->children.size()) {
                     if (auto c = root->children[index]) {
@@ -218,6 +278,15 @@ class AltTabMenu {
     bool is_showing() {
         return showing;
     }
+
+    void fix_index() {
+        if (index >= root->children.size()) {
+            index = root->children.size() - 1;
+            if (index < 0) {
+                index = 0;
+            }
+        }
+    }
 };
 
 static AltTabMenu alt_tab_menu;
@@ -238,15 +307,48 @@ void paint_thumbnail(Container *root, Container *c) {
     auto tdata = (TabData *) c->user_data;
     auto rdata = (RootData *) root->user_data;
     auto s = scale(rdata->id);
-    hypriso->draw_thumbnail(tdata->wid, c->real_bounds, 16 * s, 2.0f, 3);
-    border(c->real_bounds, {1, 1, 0, 1}, 10);
+    hypriso->draw_thumbnail(tdata->wid, c->real_bounds, thumb_rounding * s, 2.0f, 3);
+    if (alt_tab_menu.index <= alt_tab_menu.root->children.size()) {
+        auto r = alt_tab_menu.root->children[alt_tab_menu.index];
+        if (r == c->parent) {
+            rect(c->real_bounds, {1, 1, 1, .2}, 3, thumb_rounding * s, 2.0f, 0.0);
+        }
+    }
 }
 
 void paint_titlebar(Container *root, Container *c) {
     auto tdata = (TabData *) c->user_data;
     auto rdata = (RootData *) root->user_data;
     auto s = scale(rdata->id);
-    rect(c->real_bounds, color_titlebar, 12, 16 * s);
+    rect(c->real_bounds, color_titlebar, 12, thumb_rounding * s);
+    Container *cdata = nullptr;
+    for (auto r : roots) {
+        for (auto ch : r->children) {
+           if (ch->custom_type == (int) TYPE::CLIENT) {
+               auto chdata = (ClientData *) ch->user_data;
+               if (chdata->id == tdata->wid) {
+                   cdata = ch;
+                   break;
+               }
+           } 
+        }
+    }
+
+    if (cdata) {
+        if (auto title = container_by_name("title", cdata)) {
+            auto td = (TitleData *) title->user_data;
+            int xoff = 0;
+            if (td->icon.id != -1) {
+                xoff += titlebar_icon_pad * s;
+                draw_texture(td->icon, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->icon.h * .5);
+                xoff += titlebar_icon_pad * s + td->icon.w;
+            }
+            if (td->main.id != -1) {
+                draw_texture(td->main, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->main.h * .5, 1.0,
+                             c->real_bounds.w - xoff - c->real_bounds.h * title_button_wratio);
+            }
+        }
+    }
 }
 
 void paint_titlebar_close(Container *root, Container *c) {
@@ -254,14 +356,39 @@ void paint_titlebar_close(Container *root, Container *c) {
     auto rdata = (RootData *) root->user_data;
     auto s = scale(rdata->id);
     if (c->state.mouse_pressing) {
-        rect(c->real_bounds, color_titlebar_pressed_closed, 12, 16 * s);
-    } else {
-        rect(c->real_bounds, color_titlebar_hovered_closed, 12, 16 * s);
+        rect(c->real_bounds, color_titlebar_pressed_closed, 13, thumb_rounding * s);
+    } else if (c->state.mouse_hovering) {
+        rect(c->real_bounds, color_titlebar_hovered_closed, 13, thumb_rounding * s);
+    }
+
+    Container *cdata = nullptr;
+    for (auto r : roots) {
+        for (auto ch : r->children) {
+           if (ch->custom_type == (int) TYPE::CLIENT) {
+               auto chdata = (ClientData *) ch->user_data;
+               if (chdata->id == tdata->wid) {
+                   cdata = ch;
+                   break;
+               }
+           } 
+        }
+    }
+
+    if (cdata) {
+        if (auto close = container_by_name("close", cdata)) {
+            auto td = (IconData *) close->user_data;
+            if (td->main.id != -1) {
+                auto texid = td->main;
+                if (c->state.mouse_pressing || c->state.mouse_hovering) {
+                    texid = td->secondary;
+                }
+                draw_texture(texid,
+                    c->real_bounds.x + c->real_bounds.w * .5 - td->main.w * .5,
+                    c->real_bounds.y + c->real_bounds.h * .5 - td->main.h * .5);
+            }
+        }
     }
 }
-
-
-
 
 void layout_every_single_root();
 
@@ -710,58 +837,34 @@ void layout_every_single_root() {
             }
         } else if (b->custom_type == (int) TYPE::RESIZE_HANDLE) {            
         } else if (b->custom_type == (int) TYPE::ALT_TAB) {
-            auto scroll = (ScrollContainer *) b->children[0];
-            scroll->content = alt_tab_menu.root;
-
-            b->real_bounds = Bounds(0, 0, 1000, 300);
+            alt_tab_menu.fix_index();
+            //scroll->content = alt_tab_menu.root;
             b->exists = alt_tab_menu.is_showing();
-            
-            for (auto r: roots) {
-                ::layout(r, b, b->real_bounds);
-                r->children.insert(r->children.begin() + 0, b);
-                break;
-            }
-            
-            
-            /*
-            auto count = alt_tab_menu.root->children.size();
-            if (count == 0)
-                count++;
-            auto scroll = (ScrollContainer *) b->children[0];
 
             for (auto r: roots) {
                 auto rdata = (RootData *) r->user_data;
                 auto s = scale(rdata->id);
-                b->exists = alt_tab_menu.is_showing();
 
-                float w = 0;
-                //float w = max_thumb.w * s * count;
-                float h = max_thumb.h * s;
-                auto mb = bounds(m_from_id(rdata->id));
-                //notify(std::to_string(alt_tab_menu.root->children.size()));
-                for (auto o : alt_tab_menu.root->children) {
-                    auto tab_data = (TabData *) o->user_data;
-                    auto wb = bounds(c_from_id(tab_data->wid));
-                    auto rw = wb.w / mb.w;
-                    w += max_thumb.w * rw * s;
-                }
-                b->real_bounds = Bounds(r->real_bounds.x + r->real_bounds.w * .5 - w * .5, 
-                    r->real_bounds.y + r->real_bounds.h * .5 - h * .5, 
-                    w, h);
-                ::layout(r, b, b->real_bounds);
+                ::layout(r, alt_tab_menu.root, r->real_bounds);
+
+                //rect(r->real_bounds, {0, 0, 0, .3});
+                float interthumb_spacing = 20 * s;
+
+                b->children.clear();
+                b->children.push_back(alt_tab_menu.root);
+
+                b->real_bounds = r->real_bounds;
+
+                // b->real_bounds.w = alt_tab_menu.root->wanted_bounds.w;
+                // b->real_bounds.h = alt_tab_menu.root->wanted_bounds.h;
+                // b->real_bounds.x = r->real_bounds.x + r->real_bounds.w * .5 - b->real_bounds.w * .5;
+                // b->real_bounds.y = r->real_bounds.y + r->real_bounds.h * .5 - b->real_bounds.h * .5;
+
                 r->children.insert(r->children.begin() + 0, b);
-                // TODO maybe show alt tab menu on active monitor?
                 break;
             }
-            */
-        } 
-    }
-    /*for (auto r : roots) {
-        for (int i = r->children.size() - 1; i >= 0; i--) {
-            auto c = r->children[i];
-            
         }
-    }*/
+    }
 }
 
 
@@ -776,11 +879,17 @@ void on_render(int id, int stage) {
     int current_monitor = current_rendering_monitor();
     int current_window = current_rendering_window();
     int active_id = current_window == -1 ? current_monitor : current_window;
- 
+
     for (auto root : roots) {
         auto rdata = (RootData *) root->user_data;
         rdata->stage = stage;
         rdata->active_id = active_id;
+        if (stage == (int) STAGE::RENDER_LAST_MOMENT) {
+            if (alt_tab_menu.is_showing()) {
+                rect(root->real_bounds, {0, 0, 0, .4}, 0, 0, 2.0f, false);
+            }
+        }
+        
         paint_root(root);
     }
     
@@ -937,14 +1046,6 @@ void on_window_open(int id) {
     hypriso->reserve_titlebar(tc, titlebar_h);
     set_window_corner_mask(id, 3);
 
-    if (hypriso->has_decorations(id)) {
-        auto thumbnail_parent = alt_tab_menu.root->child(::vbox, 100, 100);
-        auto td = new TabData;
-        td->wid = id;
-        thumbnail_parent->user_data = td;
-        thumbnail_parent->when_paint = paint_thumbnail;
-    }
-
     int monitor = monitor_overlapping(id);
     if (monitor == -1) {
         for (auto r : roots) {
@@ -953,6 +1054,54 @@ void on_window_open(int id) {
             break;
         }
     }
+    
+    if (hypriso->has_decorations(id)) {
+        auto s = scale(monitor);
+        
+        auto td = new TabData;
+        td->wid = id;
+        
+        auto thumbnail_parent = alt_tab_menu.root->child(::vbox, max_thumb.w, max_thumb.h + titlebar_h * s);
+        thumbnail_parent->user_data = td;
+
+        auto titlebar = thumbnail_parent->child(::hbox, FILL_SPACE, titlebar_h * s);
+        titlebar->alignment = ALIGN_RIGHT;
+        titlebar->skip_delete = true;
+        titlebar->when_paint = paint_titlebar; 
+        titlebar->user_data = td;
+        
+        auto close = titlebar->child(::hbox, titlebar_h * s * title_button_wratio, FILL_SPACE);
+        close->skip_delete = true;
+        close->when_paint = paint_titlebar_close; 
+        close->user_data = td;
+        close->when_clicked = paint {
+            auto td = (TabData *) c->user_data;
+            if (td->wid != -1) {
+                later(1, [td](Timer *t) { // crashes because results in this very container being deleted in while this function still running
+                    close_window(td->wid);
+                });
+            }
+        };
+
+        auto thumb_area = thumbnail_parent->child(::hbox, FILL_SPACE, FILL_SPACE);
+        thumb_area->skip_delete = true;
+        thumb_area->when_paint = paint_thumbnail;
+        thumb_area->user_data = td;
+        thumb_area->when_clicked = paint {
+            auto td = (TabData *) c->user_data;
+            for (int i = 0; i < alt_tab_menu.root->children.size(); i++) {
+                auto o = alt_tab_menu.root->children[i];
+                auto data = (TabData *) o->user_data;
+                if (data->wid == td->wid) {
+                    alt_tab_menu.index = i;
+                    alt_tab_menu.change_showing(false);
+                    break;
+                }
+            }
+        };
+        titlebar->when_clicked = thumb_area->when_clicked;
+    }
+    
     auto cname = class_name(tc);
     for (auto [class_name, info] : restore_infos) {
         if (cname == class_name) {
@@ -988,21 +1137,6 @@ void on_window_open(int id) {
     for (auto r : roots) {
         auto data = (RootData *) r->user_data;
         if (data->id == monitor) {
-            struct IconData : UserData {
-                bool attempted = false;
-                TextureInfo main;
-                TextureInfo secondary;
-            };
-
-            struct TitleData : UserData {
-                long previous = 0;
-
-                TextureInfo main;
-                std::string cached_text;
-
-                TextureInfo icon;
-            };
-
             auto resize = r->child(::vbox, FILL_SPACE, FILL_SPACE); // the sizes are set later by layout code
             resize->custom_type = (int) TYPE::CLIENT_RESIZE;
             resize->when_mouse_enters_container = [](Container *root, Container *c) {
@@ -1211,6 +1345,7 @@ void on_window_open(int id) {
             thinc->uuid = c->uuid;
             auto s = scale(((RootData *) r->user_data)->id);
             auto title = c->child(::hbox, FILL_SPACE, titlebar_h * s);
+            title->name = "title";
             title->when_mouse_down = [](Container *root, Container *c) {
                 root->consumed_event = true; 
                 auto cdata = (ClientData *) c->parent->user_data;
@@ -1364,6 +1499,7 @@ void on_window_open(int id) {
             };
             auto close = title->child(100, FILL_SPACE);
             close->user_data = new IconData;
+            close->name = "close";
             close->when_mouse_down = title->when_mouse_down;
             close->when_paint = [](Container *root, Container *c) {                
                 auto data = (ClientData *) c->parent->parent->user_data;
@@ -1460,8 +1596,6 @@ void on_monitor_open(int id) {
 
     auto c = new Container(layout_type::absolute, FILL_SPACE, FILL_SPACE);
     c->user_data = new RootData(id);
-    c->when_paint = [](Container *root, Container *c) {
-    };
     roots.push_back(c);
 
     auto tab_menu = c->child(::vbox, FILL_SPACE, FILL_SPACE); 
@@ -1470,13 +1604,13 @@ void on_monitor_open(int id) {
     tab_menu->when_mouse_motion = [](Container *root, Container *c) {
         root->consumed_event = true;
     };
+    tab_menu->when_mouse_down = tab_menu->when_mouse_motion;
+    tab_menu->when_mouse_up = tab_menu->when_mouse_motion;
     tab_menu->when_fine_scrolled = [](Container* root, Container* self, int scroll_x, int scroll_y, bool came_from_touchpad) {
         root->consumed_event = true;
     };
-    ScrollPaneSettings settings(1.0);
-    ScrollContainer *scroll = make_newscrollpane_as_child(tab_menu, settings);
-    tab_menu->when_paint = [](Container *root, Container *c) {
-        //rect(c->real_bounds, {1, 1, 1, .5});
+    tab_menu->when_paint = paint {
+        rect(c->real_bounds, {.3, .2, 1.0, 1.0});
     };
 }
 

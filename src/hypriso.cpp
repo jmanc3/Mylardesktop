@@ -226,7 +226,8 @@ void on_open_window(PHLWINDOW w) {
     // Validate that we care about the window
     if (w->m_X11DoesntWantBorders)
         return;
-    
+
+    /*
     for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
         if (w->m_xdgSurface && s->m_surf == w->m_xdgSurface) {
             notify(std::to_string((int) s->m_mostRecentlyRequested));
@@ -243,6 +244,7 @@ void on_open_window(PHLWINDOW w) {
             }
         }
     }
+    */
 
     // Or csd client side requested
     
@@ -590,8 +592,8 @@ SDispatchResult hook_onCircleNext(void* thisptr, std::string arg) {
 void disable_default_alt_tab_behaviour() {
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "circleNext");
-        //g_pOnCircleNextHook       = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_onCircleNext);
-        //g_pOnCircleNextHook->hook();
+        g_pOnCircleNextHook       = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_onCircleNext);
+        g_pOnCircleNextHook->hook();
     }
 }
 

@@ -118,7 +118,7 @@ double single_filler_height(Container* container) {
     return single_fill_size;
 }
 
-static void modify_all(Container* container, double x_change, double y_change) {
+void modify_all(Container* container, double x_change, double y_change) {
     for (auto child : container->children) {
         modify_all(child, x_change, y_change);
     }
@@ -129,6 +129,9 @@ static void modify_all(Container* container, double x_change, double y_change) {
 
 
 void layout_absolute(Container* root, Container* container, const Bounds& bounds) {
+    if (container->pre_layout) {
+        container->pre_layout(root, container, bounds);
+    }
     for (auto child : container->children) {
         if (child && child->pre_layout) {
             child->pre_layout(root, child, bounds);
@@ -136,7 +139,7 @@ void layout_absolute(Container* root, Container* container, const Bounds& bounds
     }
     for (auto child : container->children) {
         if (child && child->exists) {
-            layout(root, child, Bounds(child->wanted_bounds.x, child->wanted_bounds.y, child->wanted_bounds.w, child->wanted_bounds.h));
+            layout(root, child, Bounds(child->real_bounds.x, child->real_bounds.y, child->real_bounds.w, child->real_bounds.h));
         }
     }
 }

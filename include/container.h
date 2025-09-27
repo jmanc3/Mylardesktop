@@ -409,4 +409,6 @@ double     actual_true_width(Container* box);
 
 void       clamp_scroll(ScrollContainer* scrollpane);
 
+void       modify_all(Container* container, double x_change, double y_change);
+
 #endif
