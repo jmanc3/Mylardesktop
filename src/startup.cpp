@@ -87,6 +87,8 @@ static bool screenshotting = false;
 static float sd = .65;                  // scale down
 Bounds max_thumb = {510 * sd, 310 * sd, 510 * sd, 310 * sd}; // need to be multiplied by scale
 
+RGBA color_alt_tab = {1.0, 1.0, 1.0, 0.7};
+
 RGBA color_titlebar = {1.0, 1.0, 1.0, 1.0};
 RGBA color_titlebar_hovered = {0.87, 0.87, 0.87, 1.0f};
 RGBA color_titlebar_pressed = {0.69, 0.69, 0.69, 1.0f};
@@ -184,6 +186,10 @@ struct TabData : UserData {
     int index = 0;
 };
 
+struct AltRoot : UserData {
+    Bounds b;  
+};
+
 class AltTabMenu {
   public:
     bool showing = false;
@@ -201,23 +207,69 @@ class AltTabMenu {
     AltTabMenu() {
         root = new Container(::absolute, FILL_SPACE, FILL_SPACE);
         root->custom_type = (int) TYPE::ALT_TAB;
-        root->pre_layout = [](Container* root, Container* self, const Bounds& bounds) {
+        root->when_paint = paint {
+            //rect(c->real_bounds, {1, 0, 0, 1});
+        };
+        root->when_paint = paint {
+            auto altroot = (AltRoot *) c->user_data;
+            auto rdata = (RootData *) root->user_data;
+            auto s = scale(rdata->id);
+            rect(altroot->b, color_alt_tab, 0, thumb_rounding * s);
+        };
+        root->user_data = new AltRoot;
+        root->pre_layout = [](Container* root, Container* self, const Bounds& bound) {
             // set position of all children
             auto rdata = (RootData *) root->user_data;
             auto s = scale(rdata->id);
+            float m_max_w = bound.w * .8;
+            float m_max_h = bound.h * .8;
+            
             float max_w = max_thumb.w * s;
             float max_h = max_thumb.h * s;
             float interthumb_spacing = 20 * s;
-            int pen_x = 400;
-            int pen_y = 400;
-            for (auto t: root->children) {
-               auto tdata = (TabData *) t->user_data;
-               t->real_bounds = Bounds(pen_x, pen_y, max_w, max_h);
+            int pen_x = interthumb_spacing;
+            int pen_y = interthumb_spacing;
+            float hightest_seen_for_row = 0;
+            float highest_w_seen_overall = 0;
+            float highest_h_seen_overall = 0;
+            for (int i = 0; i < self->children.size(); i++) {
+                auto t = self->children[i];
+                auto tdata = (TabData *) t->user_data;
+                auto cdata = c_from_id(tdata->wid);
+                auto cb = bounds(cdata);
+                float t_w = max_w * ((cb.w * s) / bound.w);
+                float t_h = max_h * ((cb.h * s) / bound.h);
+                t_h += titlebar_h * s;
+                if (t_h > hightest_seen_for_row)
+                    hightest_seen_for_row = t_h;
+
+                if (pen_x + t_w > m_max_w) {
+                    pen_x = interthumb_spacing;
+                    pen_y += hightest_seen_for_row + interthumb_spacing;
+                    hightest_seen_for_row = 0;
+                }
+
+                t->real_bounds = Bounds(pen_x, pen_y, t_w, t_h);
+                if (pen_x + t_w > highest_w_seen_overall) {
+                    highest_w_seen_overall = pen_x + t_w;
+                }
+                if (pen_y + t_h > highest_h_seen_overall) {
+                    highest_h_seen_overall = pen_y + t_h;
+                }
+ 
+                ::layout(root, t, t->real_bounds);
                
-               pen_x += max_w + interthumb_spacing;
+                pen_x += t_w + interthumb_spacing;
             }
 
-            //self->real_bounds = Bounds(200, 200 * s, self->wanted_bounds.w, self->wanted_bounds.h);
+            self->real_bounds = Bounds(0, 0, bound.w, bound.h);
+            highest_w_seen_overall += interthumb_spacing;
+            highest_h_seen_overall += interthumb_spacing;
+            modify_all(self, 
+                bound.w * .5 - highest_w_seen_overall * .5, 
+                bound.h * .5 - highest_h_seen_overall * .5);
+            auto altroot = (AltRoot *) self->user_data;
+            altroot->b = Bounds(bound.w * .5 - highest_w_seen_overall * .5, bound.h * .5 - highest_h_seen_overall * .5, highest_w_seen_overall, highest_h_seen_overall);
         };
     }
 
@@ -845,10 +897,9 @@ void layout_every_single_root() {
                 auto rdata = (RootData *) r->user_data;
                 auto s = scale(rdata->id);
 
-                ::layout(r, alt_tab_menu.root, r->real_bounds);
-
+                alt_tab_menu.root->pre_layout(r, alt_tab_menu.root, r->real_bounds);
                 //rect(r->real_bounds, {0, 0, 0, .3});
-                float interthumb_spacing = 20 * s;
+                //float interthumb_spacing = 20 * s;
 
                 b->children.clear();
                 b->children.push_back(alt_tab_menu.root);
@@ -1061,7 +1112,7 @@ void on_window_open(int id) {
         auto td = new TabData;
         td->wid = id;
         
-        auto thumbnail_parent = alt_tab_menu.root->child(::vbox, max_thumb.w, max_thumb.h + titlebar_h * s);
+        auto thumbnail_parent = alt_tab_menu.root->child(::vbox, FILL_SPACE, FILL_SPACE);
         thumbnail_parent->user_data = td;
 
         auto titlebar = thumbnail_parent->child(::hbox, FILL_SPACE, titlebar_h * s);
@@ -1610,7 +1661,7 @@ void on_monitor_open(int id) {
         root->consumed_event = true;
     };
     tab_menu->when_paint = paint {
-        rect(c->real_bounds, {.3, .2, 1.0, 1.0});
+        //rect(c->real_bounds, {.3, .2, 1.0, 1.0});
     };
 }
 
