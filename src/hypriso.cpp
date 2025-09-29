@@ -37,6 +37,7 @@
 #include <hyprland/src/render/pass/RectPassElement.hpp>
 #include <hyprland/src/render/pass/BorderPassElement.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
+#include <hyprland/src/managers/LayoutManager.hpp>
 #include <hyprland/src/SharedDefs.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
@@ -172,7 +173,7 @@ void on_open_window(PHLWINDOW w) {
             auto resource = toplevel->m_resource;
             if (resource) {
                 resource->setMove([](CXdgToplevel*, wl_resource*, uint32_t) {
-                    notify("move requested");
+                    //notify("move requested");
                     if (hypriso->on_drag_start_requested) {
                         if (auto w = get_window_from_mouse()) {
                             for (auto hw : hyprwindows) {
@@ -412,7 +413,7 @@ void recheck_csd_for_all_wayland_windows() {
             bool remove_csd = false;
             for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
                 if (w->m_xdgSurface && s->m_surf == w->m_xdgSurface) {
-                    notify(std::to_string((int) s->m_mostRecentlyRequested));
+                    //notify(std::to_string((int) s->m_mostRecentlyRequested));
                     if (s->m_mostRecentlyRequested == ORG_KDE_KWIN_SERVER_DECORATION_MODE_CLIENT) {
                         remove_csd = true;
                     }
@@ -698,6 +699,13 @@ void HyprIso::create_hooks_and_callbacks() {
             }
         }
     });
+    static auto configReloaded = HyprlandAPI::registerCallbackDynamic(globals->api, "configReloaded", 
+    [](void *self, SCallbackInfo& info, std::any data) {
+        if (hypriso->on_config_reload) {
+            hypriso->on_config_reload();
+        }
+    });
+    
 
     for (auto m : g_pCompositor->m_monitors) {
         on_open_monitor(m);
@@ -1680,3 +1688,14 @@ void HyprIso::draw_thumbnail(int id, Bounds b, int rounding, float roundingPower
     }
 }
 
+
+void HyprIso::set_zoom_factor(float amount) {
+    Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("cursor:zoom_factor");
+    auto zoom_amount = (Hyprlang::FLOAT*)val->dataPtr();
+    *zoom_amount = amount;
+    
+    for (auto const& m : g_pCompositor->m_monitors) {
+        *(m->m_cursorZoom) = amount;
+        g_pLayoutManager->getCurrentLayout()->recalculateMonitor(m->m_id);
+    }    
+}

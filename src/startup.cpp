@@ -73,7 +73,6 @@ struct IconData : UserData {
     TextureInfo secondary;
 };
 
-
 static std::vector<Container *> roots; // monitors
 static int titlebar_text_h = 15;
 static int titlebar_icon_button_h = 13;
@@ -81,6 +80,11 @@ static int titlebar_icon_h = 23;
 static int titlebar_icon_pad = 8;
 static int resize_size = 18;
 static int tab_menu_font_h = 40;
+static float interspace = 20.0f;
+static bool META_PRESSED = false;
+
+static float zoom_factor = 1.0;
+static long zoom_nicely_ended_time = 0;
 
 static bool screenshotting = false;
 
@@ -125,6 +129,7 @@ enum struct TYPE : uint8_t {
     CLIENT_RESIZE, // The resize that exists around a window
     CLIENT, // Windows
     ALT_TAB,
+    SNAP_HELPER,
 };
 
 static std::string to_lower(const std::string& str) {
@@ -173,7 +178,7 @@ void screenshot_all() {
 // The reason we take screenshots like this is because if we try to do it in the render thread, we CRASH for some reason that I don't feel like investigating. PLUS, we need to take screenshots on a perdiodic basis anyways so this solves both problems.
 Timer* start_producing_thumbnails() {
     //static float fps24 = 1000.0f / 24.0f;
-    float fps = 1000.0f / 12.0f;
+    float fps = 1000.0f / 24.0f;
     Timer* timer = later(nullptr, fps, [](Timer* timer) { 
         screenshot_all();
     });
@@ -221,12 +226,12 @@ class AltTabMenu {
             // set position of all children
             auto rdata = (RootData *) root->user_data;
             auto s = scale(rdata->id);
-            float m_max_w = bound.w * .8;
-            float m_max_h = bound.h * .8;
+            float m_max_w = bound.w * .9;
+            float m_max_h = bound.h * .9;
             
             float max_w = max_thumb.w * s;
             float max_h = max_thumb.h * s;
-            float interthumb_spacing = 20 * s;
+            float interthumb_spacing = interspace * s;
             int pen_x = interthumb_spacing;
             int pen_y = interthumb_spacing;
             float hightest_seen_for_row = 0;
@@ -237,8 +242,20 @@ class AltTabMenu {
                 auto tdata = (TabData *) t->user_data;
                 auto cdata = c_from_id(tdata->wid);
                 auto cb = bounds(cdata);
-                float t_w = max_w * ((cb.w * s) / bound.w);
-                float t_h = max_h * ((cb.h * s) / bound.h);
+                // todo needs to set max size and only scale douun to ratio
+                float ratio_w = ((cb.w * s) / bound.w);
+                float ratio_h = ((cb.h * s) / bound.h);
+                if (ratio_h < ratio_w) {
+                    float add = 1.0 - ratio_w;
+                    ratio_w *= 1.0 + add;
+                    ratio_h *= 1.0 + add;
+                } else {
+                    float add = 1.0 - ratio_h;
+                    ratio_w *= 1.0 + add;
+                    ratio_h *= 1.0 + add;
+                }
+                float t_w = max_w * ratio_w;
+                float t_h = max_h * ratio_h;
                 t_h += titlebar_h * s;
                 if (t_h > hightest_seen_for_row)
                     hightest_seen_for_row = t_h;
@@ -270,6 +287,7 @@ class AltTabMenu {
                 bound.h * .5 - highest_h_seen_overall * .5);
             auto altroot = (AltRoot *) self->user_data;
             altroot->b = Bounds(bound.w * .5 - highest_w_seen_overall * .5, bound.h * .5 - highest_h_seen_overall * .5, highest_w_seen_overall, highest_h_seen_overall);
+            altroot->b.grow(interthumb_spacing * .3);
         };
     }
 
@@ -479,7 +497,7 @@ void drag_start(int id) {
         hypriso->should_round(client->id, true);
         auto s = scale(mid);
         float perc = (MOUSECOORDS.x - b.x) / b.w;
-        notify(std::to_string(perc));
+        //notify(std::to_string(perc));
         client->drag_initial_mouse_percentage = perc;
         float x = MOUSECOORDS.x - (perc * (client->pre_snap_bounds.w));
         hypriso->move_resize(client->id, x, b.y, client->pre_snap_bounds.w, client->pre_snap_bounds.h);
@@ -564,6 +582,36 @@ Bounds snap_position_to_bounds(int mon, SnapPosition pos) {
     return out;    
 }
 
+void create_snap_helper(ThinClient *c) {
+   // Create snap helper
+    auto mon = get_monitor(c->id);
+    for (auto r: roots) {
+        auto rdata = (RootData * ) r->user_data;
+        
+        auto snap_helper = r->child(::absolute, FILL_SPACE, FILL_SPACE); 
+        snap_helper->pre_layout = [](Container *root, Container *c, const Bounds &b) {
+            c->real_bounds = Bounds(0, 0, 200, 200);
+        };
+        snap_helper->when_paint = paint {
+            rect(c->real_bounds, {1, 1, 0, 1});
+        };
+        snap_helper->custom_type = (int) TYPE::SNAP_HELPER;
+    } 
+}
+
+void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position) {
+    c->snapped = true;
+    hypriso->should_round(c->id, false);
+    c->pre_snap_bounds = bounds(c);
+    position.y += titlebar_h;
+    position.h -= titlebar_h;
+    hypriso->move_resize(c->id, position.x, position.y, position.w, position.h); 
+
+    if (!(snap_position == SnapPosition::MAX || snap_position == SnapPosition::NONE)) {
+        create_snap_helper(c); 
+    }
+}
+
 void drag_stop() {
     int window = hypriso->dragging_id;
     drag_update();
@@ -584,12 +632,7 @@ void drag_stop() {
         position.y = newy;
         hypriso->move(window, position.x, position.y);
     } else {
-        c->snapped = true;
-        hypriso->should_round(c->id, false);
-        c->pre_snap_bounds = bounds(c);
-        position.y += titlebar_h;
-        position.h -= titlebar_h;
-        hypriso->move_resize(window, position.x, position.y, position.w, position.h);
+        perform_snap(c, position, snap_position);
     }
 }
 
@@ -628,7 +671,9 @@ bool on_mouse_move(int id, float x, float y) {
     if (hypriso->resizing)
         return true;
 
-    {
+    auto current = get_current_time_in_ms();
+    auto time_since = (current - zoom_nicely_ended_time);
+    if (zoom_factor == 1.0 && time_since > 1000) {
         static bool has_done_window_switch = false;
         bool no_fullscreens = true;
         for (auto w : get_window_stacking_order())
@@ -726,6 +771,17 @@ void tab_previous_window() {
     */
 }
 
+void remove_snap_helpers() {
+    for (auto r: roots) {
+        for (int i = r->children.size() - 1; i >= 0; i--) {
+            if (r->children[i]->custom_type == (int) TYPE::SNAP_HELPER) {
+                delete r->children[i];
+                r->children.erase(r->children.begin() + i);
+            }
+        }
+    } 
+}
+
 
 // returning true means consume the event
 bool on_key_press(int id, int key, int state, bool update_mods) {
@@ -739,13 +795,22 @@ bool on_key_press(int id, int key, int state, bool update_mods) {
         if (hypriso->resizing) {
             resize_stop();
         }
+        META_PRESSED = false;
+        zoom_factor = 1.0;
+        // remove snap helper
+        //remove_snap_helpers();
     }
+    remove_snap_helpers();
     
     if (key == KEY_LEFTALT || key == KEY_RIGHTALT) {
         alt_down = state;
         if (state == 0) {
             alt_tab_menu.change_showing(false);
         }
+    }
+    
+    if (key == KEY_LEFTMETA || key == KEY_RIGHTMETA || key == KEY_RIGHTCTRL) {
+        META_PRESSED = state;
     }
 
     if (key == KEY_LEFTSHIFT || key == KEY_RIGHTSHIFT) {
@@ -793,6 +858,24 @@ bool on_scrolled(int id, int source, int axis, int direction, double delta, int 
            root->consumed_event = false;
        } 
     }
+
+    auto current = get_current_time_in_ms();
+    auto time_since = (current - zoom_nicely_ended_time);
+    if (META_PRESSED && time_since > 1000) {
+        zoom_factor -= delta * .05; 
+        if (zoom_factor < 1.0)
+            zoom_factor = 1.0;
+        if (zoom_factor > 10.0)
+            zoom_factor = 10.0;
+        if (delta > 0 && zoom_factor < 1.3 && zoom_factor != 1.0) { // Recognize likely attempted to end zoom and do it cleanly for user
+           zoom_factor = 1.0; 
+           zoom_nicely_ended_time = get_current_time_in_ms();
+        }
+        hypriso->set_zoom_factor(zoom_factor);
+        return true;
+    }
+    if (time_since < 750) // consume scrolls which are likely referring to the zoom effect and not to the window focused
+        return true;
     
     return false; 
 }
@@ -888,6 +971,16 @@ void layout_every_single_root() {
                 }
             }
         } else if (b->custom_type == (int) TYPE::RESIZE_HANDLE) {            
+        } else if (b->custom_type == (int) TYPE::SNAP_HELPER) {
+            for (auto r: roots) {
+                auto rdata = (RootData *) r->user_data;
+                auto s = scale(rdata->id);
+
+                b->pre_layout(r, b, r->real_bounds);
+                
+                r->children.insert(r->children.begin() + 0, b);
+                break;
+            }
         } else if (b->custom_type == (int) TYPE::ALT_TAB) {
             alt_tab_menu.fix_index();
             //scroll->content = alt_tab_menu.root;
@@ -978,6 +1071,21 @@ bool on_mouse_press(int id, int button, int state, float x, float y) {
         }
     }
 
+    // remove snap helper if not hit
+    if (state == 1) {
+        for (auto r: roots) {
+            for (int i = r->children.size() - 1; i >= 0; i--) {
+                auto c = r->children[i];
+                if (c->custom_type == (int) TYPE::SNAP_HELPER) {
+                    if (!bounds_contains(c->real_bounds, event.x, event.y)) {
+                        delete c;
+                        r->children.erase(r->children.begin() + i);                        
+                    }
+                }
+            }
+        }
+    }
+
     return consumed;
 }
 
@@ -1057,6 +1165,7 @@ void update_restore_info_for(int w) {
     if (m && c) {
         Bounds cb = bounds(c);
         Bounds cm = bounds(m);
+        auto s = scale(mid);
         info.box = {
             cb.x / cm.w,
             cb.y / cm.h,
@@ -1503,7 +1612,7 @@ void on_window_open(int id) {
                 c->wanted_bounds.w = b.h * title_button_wratio;
             };
             min->when_clicked = [](Container *root, Container *C)  {
-                notify("min");
+                //notify("min");
             };
             auto max = title->child(100, FILL_SPACE);
             max->user_data = new IconData;
@@ -1690,6 +1799,10 @@ void on_resize_start_requested(int id, RESIZE_TYPE type) {
     resize_start(id, type);
 }
 
+void on_config_reload() {
+    hypriso->set_zoom_factor(zoom_factor);
+}
+
 void startup::begin() {
     hypriso->on_mouse_press = on_mouse_press;
     hypriso->on_mouse_move = on_mouse_move;
@@ -1702,6 +1815,7 @@ void startup::begin() {
     hypriso->on_monitor_closed = on_monitor_closed;
     hypriso->on_drag_start_requested = on_drag_start_requested;
     hypriso->on_resize_start_requested = on_resize_start_requested;
+    hypriso->on_config_reload = on_config_reload;
 
     load_restore_infos();
 	// The two most important callbacks we hook are mouse move and mouse events
@@ -1712,11 +1826,11 @@ void startup::begin() {
 	hypriso->create_hooks_and_callbacks(); 
     if (icon_cache_needs_update()) {
         icon_cache_generate();
-        notify("generated");
+        //notify("generated");
     }
     
     {
-        notify("icon load");
+        //notify("icon load");
         icon_cache_load();
     }
 }

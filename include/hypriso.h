@@ -165,6 +165,8 @@ struct HyprIso {
     std::function<void(int id)> on_drag_start_requested = nullptr;
     std::function<void(int id, RESIZE_TYPE type)> on_resize_start_requested = nullptr;
 
+    std::function<void()> on_config_reload = nullptr;
+
     std::vector<ThinClient *> windows;
     std::vector<ThinMonitor *> monitors;
 
@@ -190,6 +192,8 @@ struct HyprIso {
 
     void screenshot_all();
     void draw_thumbnail(int id, Bounds b, int rounding = 0, float roundingPower = 2.0f, int cornermask = 0);
+
+    void set_zoom_factor(float amount);
 };
 
 extern HyprIso *hypriso;
