@@ -725,6 +725,7 @@ void HyprIso::create_hooks_and_callbacks() {
 
 void HyprIso::end() {
     g_pHyprRenderer->m_renderPass.removeAllOfType("CRectPassElement");
+    g_pHyprRenderer->m_renderPass.removeAllOfType("CBorderPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CTexPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CAnyPassElement");
     remove_request_listeners();
@@ -771,8 +772,12 @@ void border(Bounds box, RGBA color, float size, int cornermask, float round, flo
 
 void shadow(Bounds box, RGBA color, float rounding, float roundingPower, float size) {
     AnyPass::AnyData anydata([box, color, rounding, roundingPower, size](AnyPass* pass) {
-        g_pHyprOpenGL->m_renderData.currentWindow = g_pCompositor->m_lastWindow;
-        g_pHyprOpenGL->renderRoundedShadow(tocbox(box), rounding, roundingPower, size, CHyprColor(color.r, color.g, color.b, color.a), 1.0);
+        if (g_pCompositor->m_lastWindow.get()) {
+            auto current = g_pHyprOpenGL->m_renderData.currentWindow;
+            g_pHyprOpenGL->m_renderData.currentWindow = g_pCompositor->m_lastWindow;
+            g_pHyprOpenGL->renderRoundedShadow(tocbox(box), rounding, roundingPower, size, CHyprColor(color.r, color.g, color.b, color.a), 1.0);
+            g_pHyprOpenGL->m_renderData.currentWindow = current;
+        }
     });
     g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
 }
@@ -1727,3 +1732,19 @@ int HyprIso::parent(int id) {
     }
     return -1;
 }
+
+void HyprIso::set_reserved_edge(int side, int amount) {
+    SMonitorAdditionalReservedArea value;
+    if (side == (int) RESIZE_TYPE::TOP) {
+        value.top = amount;
+    } else if (side == (int) RESIZE_TYPE::LEFT) {
+        value.left = amount;
+    } else if (side == (int) RESIZE_TYPE::RIGHT) {
+        value.right = amount;
+    } else if (side == (int) RESIZE_TYPE::BOTTOM) {
+        value.bottom = amount;
+    }
+    g_pConfigManager->m_mAdditionalReservedAreas["Mylardesktop"] = value;
+}
+
+

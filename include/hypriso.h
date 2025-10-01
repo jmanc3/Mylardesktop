@@ -195,6 +195,8 @@ struct HyprIso {
 
     void set_zoom_factor(float amount);
     int parent(int id);
+
+    void set_reserved_edge(int side, int amount);
 };
 
 extern HyprIso *hypriso;

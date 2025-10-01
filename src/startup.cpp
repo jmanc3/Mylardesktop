@@ -615,13 +615,19 @@ SnapPosition opposite_snap_position(SnapPosition pos) {
 }
 
 struct SnapHelperData : UserData {
-    int id;
     SnapPosition pos;
-
-    SnapHelperData(SnapPosition pos, int id) : pos(pos), id(id) {}
+    int id;
 };
 
 void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
+    int count = 0;
+    for (auto w: hypriso->windows) {
+        if (hypriso->has_decorations(w->id))
+            count++;
+    }
+    if (count <= 1) // Don't create snap helper if there is only one window open
+        return;
+    
     if (alt_tab_menu.timer == nullptr)
         alt_tab_menu.timer = start_producing_thumbnails();
    // Create snap helper
@@ -703,10 +709,12 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                     };
                     thumbnail_area->when_clicked = paint {
                         auto tt = (TabData *) c->user_data;
-                        auto shd = (SnapHelperData * ) c->parent->user_data;
+                        auto shd = (SnapHelperData * ) c->parent->parent->user_data;
                         auto mon = ((RootData *) root->user_data)->id;
-                        auto pos = snap_position_to_bounds(mon, shd->pos);
-                        perform_snap(c_from_id(tt->wid), pos, shd->pos, false);
+                        SnapPosition snop = shd->pos;
+                        notify(std::to_string((int) snop));
+                        auto pos = snap_position_to_bounds(mon, snop);
+                        perform_snap(c_from_id(tt->wid), pos, snop, false);
                         hypriso->bring_to_front(tt->wid);
                         later(1, [](Timer *t) {
                             remove_snap_helpers();
@@ -723,12 +731,19 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
             }
             float max_w = max_thumb.w * s;
             float max_h = max_thumb.h * s;
- 
+
             // Manually layout children bounds
             int pen_x = c->real_bounds.x + interspace * s;
             int pen_y = c->real_bounds.y + interspace * s;
+            float highest_h = 0;
             for (auto ch : c->children) {
                 auto tdata = (TabData *) ch->user_data;
+                ch->exists = true; 
+                if (tdata->wid == shd->id) {
+                    // Don't include the creating window as an option
+                    ch->exists = false; // So that it isn't painted
+                    continue;
+                } 
                 auto cdata = c_from_id(tdata->wid);
                 auto cb = bounds(cdata);
                 // todo needs to set max size and only scale douun to ratio
@@ -749,11 +764,24 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                 float final_h = t_h + titlebar_h * s;
                 if (pen_x + (t_w + interspace * s) > c->real_bounds.x + c->real_bounds.w) {
                     pen_x = c->real_bounds.x + interspace * s;
-                    pen_y += final_h + interspace * s;
+                    pen_y += (highest_h) + interspace * s;
+                    highest_h = 0;
                 }
+                if (final_h > highest_h)
+                    highest_h = final_h;
                 ch->real_bounds = Bounds(pen_x, pen_y, t_w, final_h);
                 ::layout(root, ch, ch->real_bounds);
                 pen_x += t_w + interspace * s;
+            }
+
+            if (c->children.size() <= 1) { // Remove the snap helper if there are no windows to show
+                later(1, [](Timer *t) {
+                    remove_snap_helpers();
+                    if (alt_tab_menu.timer) {
+                        alt_tab_menu.timer->keep_running = false;
+                        alt_tab_menu.timer = nullptr;
+                    }
+                });
             }
         };
         snap_helper->when_paint = paint {
@@ -777,14 +805,22 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
             root->consumed_event = true;
         };
         snap_helper->custom_type = (int) TYPE::SNAP_HELPER;
-        snap_helper->user_data = new SnapHelperData(opposite_snap_position(window_snap_target), c->id);
+        SnapPosition op = opposite_snap_position(window_snap_target);
+        notify(std::to_string((int) window_snap_target));
+        notify(std::to_string((int) op));
+        auto shd = new SnapHelperData;
+        shd->pos = op;
+        shd->id = c->id;
+        snap_helper->user_data = shd;
     } 
 }
 
 void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position, bool create_helper) {
+    bool already_snapped = c->snapped;
     c->snapped = true;
     hypriso->should_round(c->id, false);
-    c->pre_snap_bounds = bounds(c);
+    if (!already_snapped)
+        c->pre_snap_bounds = bounds(c);
     position.y += titlebar_h;
     position.h -= titlebar_h;
     hypriso->move_resize(c->id, position.x, position.y, position.w, position.h); 
@@ -1938,7 +1974,19 @@ void on_window_closed(int id) {
     for (auto r : roots) {
         for (int i = 0; i < r->children.size(); i++) {
             auto child = r->children[i];
-            if (child->uuid == client->uuid) {
+            if (child->custom_type == (int) TYPE::SNAP_HELPER) {
+                // Close snap helper if the window that created it is closed
+                auto shd = (SnapHelperData *) child->user_data;
+                if (shd->id == id) {
+                    later(1, [](Timer *t) {
+                        remove_snap_helpers();
+                        if (alt_tab_menu.timer) {
+                            alt_tab_menu.timer->keep_running = false;
+                            alt_tab_menu.timer = nullptr;
+                        }
+                    });
+                }
+            } else if (child->uuid == client->uuid) {
                 delete r->children[i];
                 r->children.erase(r->children.begin() + i);
             }
