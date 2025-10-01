@@ -189,6 +189,7 @@ struct HyprIso {
     void should_round(int id, bool state);
 
     void damage_entire(int monitor);
+    void damage_box(Bounds b);
 
     void screenshot_all();
     void draw_thumbnail(int id, Bounds b, int rounding = 0, float roundingPower = 2.0f, int cornermask = 0);
@@ -210,8 +211,6 @@ static long get_current_time_in_ms() {
     milliseconds currentTime = duration_cast<milliseconds>(system_clock::now().time_since_epoch());
     return currentTime.count();
 }
-
-void request_refresh();
 
 // ThinClient props
 Bounds bounds(ThinClient *w);
@@ -253,5 +252,7 @@ Bounds mouse();
 Timer* later(void* data, float time_ms, const std::function<void(Timer*)>& fn);
 
 Timer* later(float time_ms, const std::function<void(Timer*)>& fn);
+
+void request_refresh();
 
 #endif // hypriso_h_INCLUDED

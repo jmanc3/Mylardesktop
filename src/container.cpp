@@ -24,6 +24,8 @@
 #include <tracy/Tracy.hpp>
 #endif
 
+std::function<void(Container *)> on_any_container_close = nullptr;
+
 // Sum of non filler child height and spacing
 double reserved_height(Container* box) {
     double space = 0;
@@ -1011,6 +1013,9 @@ Container::~Container() {
         } else {
             delete child;
         }
+    }
+    if (on_any_container_close) {
+        on_any_container_close(this);
     }
     //    auto data = static_cast<UserData *>(user_data);
     if (skip_delete)

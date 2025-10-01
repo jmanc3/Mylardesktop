@@ -14,7 +14,6 @@
 #include <cassert>
 #include <filesystem>
 #include <linux/input-event-codes.h>
-#include <regex>
 
 #ifdef TRACY_ENABLE
 
@@ -23,6 +22,10 @@
 #endif
 
 #define paint [](Container *root, Container *c)
+#define fz std::format
+#define nz notify
+
+bool force_damage_all = false;
 
 struct Datas {
     std::unordered_map<std::string, std::any> datas;
@@ -30,23 +33,22 @@ struct Datas {
 std::unordered_map<std::string, Datas> datas;
 
 template<typename T>
-std::optional<std::reference_wrapper<T>>
-get_data(const std::string& uuid, const std::string& name) {
+T *get_data(const std::string& uuid, const std::string& name) {
     // Locate uuid
     auto it_uuid = datas.find(uuid);
     if (it_uuid == datas.end())
-        return std::nullopt;
+        return nullptr;
 
     // Locate name
     auto it_name = it_uuid->second.datas.find(name);
     if (it_name == it_uuid->second.datas.end())
-        return std::nullopt;
+        return nullptr;
 
     // Attempt safe cast
-    if (auto* ptr = std::any_cast<T>(&it_name->second))
-        return std::ref(*ptr);
+    if (auto ptr = std::any_cast<T>(&it_name->second))
+        return ptr;
 
-    return std::nullopt; // type mismatch
+    return nullptr; // type mismatch
 }
 
 template<typename T>
@@ -300,7 +302,7 @@ class AltTabMenu {
         };
     }
 
-    void change_showing(bool state) {
+    void change_showing(bool state, bool change_index = true) {
         if (showing != state) {
             if (state) {
                 // TODO: order needs to change on change showing based on actual stacking order 
@@ -324,15 +326,17 @@ class AltTabMenu {
                     return adata->index > bdata->index; 
                 });
             } else {
-                if (index <= root->children.size()) {
-                    if (auto c = root->children[index]) {
-                        auto tab_data = (TabData *) c->user_data;
-                        auto w = tab_data->wid;
-                        auto client = c_from_id(w);
-                        if (client->iconified) { // problem with preview making it not hidden when it is
-                            hypriso->iconify(w, false);
+                if (change_index) {
+                    if (index <= root->children.size()) {
+                        if (auto c = root->children[index]) {
+                            auto tab_data = (TabData *) c->user_data;
+                            auto w = tab_data->wid;
+                            auto client = c_from_id(w);
+                            if (client->iconified) { // problem with preview making it not hidden when it is
+                                hypriso->iconify(w, false);
+                            }
+                            hypriso->bring_to_front(w);
                         }
-                        hypriso->bring_to_front(w);
                     }
                 }
             }
@@ -507,11 +511,38 @@ void drag_start(int id) {
         client->snapped = false;
         hypriso->should_round(client->id, true);
         auto s = scale(mid);
+        //client->drag_initial_mouse_percentage = perc;
         float perc = (MOUSECOORDS.x - b.x) / b.w;
-        //notify(std::to_string(perc));
-        client->drag_initial_mouse_percentage = perc;
-        float x = MOUSECOORDS.x - (perc * (client->pre_snap_bounds.w));
-        hypriso->move_resize(client->id, x, b.y, client->pre_snap_bounds.w, client->pre_snap_bounds.h);
+        bool window_left_side = b.x < mb.x + b.w * .5;
+        bool click_left_side = perc <= .5;
+        float size_from_left = b.w * perc;
+        float size_from_right = b.w - size_from_left;
+        bool window_smaller_after = b.w > client->pre_snap_bounds.w;
+        float x = MOUSECOORDS.x - (perc * (client->pre_snap_bounds.w)); // perc based relocation
+        // keep window fully on screen
+        if (!window_smaller_after) {
+            if (click_left_side) {
+                if (window_left_side) {
+                    x = MOUSECOORDS.x - size_from_left;
+                } else {
+                    x = MOUSECOORDS.x - client->pre_snap_bounds.w + size_from_right;
+                }
+            } else {
+                if (window_left_side) {
+                    x = b.x;
+                } else {
+                    x = MOUSECOORDS.x - client->pre_snap_bounds.w + size_from_right;
+                }
+            }
+        } else {
+            // if offset larger than resulting window use percentage
+        }
+
+        hypriso->move_resize(client->id, 
+            x, 
+            b.y, 
+            client->pre_snap_bounds.w, 
+            client->pre_snap_bounds.h);
         b = bounds(client);
     } else {
         client->pre_snap_bounds = b;
@@ -712,7 +743,6 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                         auto shd = (SnapHelperData * ) c->parent->parent->user_data;
                         auto mon = ((RootData *) root->user_data)->id;
                         SnapPosition snop = shd->pos;
-                        notify(std::to_string((int) snop));
                         auto pos = snap_position_to_bounds(mon, snop);
                         perform_snap(c_from_id(tt->wid), pos, snop, false);
                         hypriso->bring_to_front(tt->wid);
@@ -725,6 +755,7 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                         });
                         root->consumed_event = true;
                     };
+                    titlebar->when_clicked = thumbnail_area->when_clicked;
                     thumbnail_area->user_data = td;
                     thumbnail_area->skip_delete = true;
                 }
@@ -806,8 +837,6 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
         };
         snap_helper->custom_type = (int) TYPE::SNAP_HELPER;
         SnapPosition op = opposite_snap_position(window_snap_target);
-        notify(std::to_string((int) window_snap_target));
-        notify(std::to_string((int) op));
         auto shd = new SnapHelperData;
         shd->pos = op;
         shd->id = c->id;
@@ -829,6 +858,10 @@ void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position, bo
         if (!(snap_position == SnapPosition::MAX || snap_position == SnapPosition::NONE)) {
             create_snap_helper(c, snap_position); 
         }
+    }
+    for (auto root : roots) {
+        auto rdata = (RootData *) root->user_data;
+        hypriso->damage_entire(rdata->id);
     }
 }
 
@@ -879,6 +912,10 @@ void toggle_maximize(int id) {
     }
     c->snapped = !c->snapped;
     hypriso->should_round(c->id, !c->snapped);
+    for (auto root : roots) {
+        auto rdata = (RootData *) root->user_data;
+        hypriso->damage_entire(rdata->id);
+    } 
 }
 
 // returning true means consume the event
@@ -1267,12 +1304,25 @@ void on_render(int id, int stage) {
     }
     
     if (stage == (int) STAGE::RENDER_LAST_MOMENT) {
+        bool max_request = false;
         for (auto root : roots) {
             auto rdata = (RootData *) root->user_data;
             // TODO: how costly is this exactly?
-            hypriso->damage_entire(rdata->id);
+            bool should_damage = false;
+            if (alt_tab_menu.is_showing())
+                should_damage = true;
+            for (auto c: root->children)
+                if (c->custom_type == (int)TYPE::SNAP_HELPER)
+                    should_damage = true;
+
+            if (should_damage || force_damage_all) {
+                max_request = true;
+            }
         }
- 
+        if (max_request) {
+            request_refresh();
+        }
+        force_damage_all = false;
         //request_refresh();
     }
 }
@@ -1312,6 +1362,20 @@ bool on_mouse_press(int id, int button, int state, float x, float y) {
                     }
                 }
             }
+        }
+
+        if (alt_tab_menu.is_showing()) {
+            for (auto r: roots) {
+                for (int i = r->children.size() - 1; i >= 0; i--) {
+                    auto c = r->children[i];
+                    if (c->custom_type == (int) TYPE::ALT_TAB) {
+                        auto altroot = (AltRoot *) c->children[0]->user_data;
+                        if (!bounds_contains(altroot->b, event.x, event.y)) {
+                            alt_tab_menu.change_showing(false, false);
+                        }
+                    }
+                }
+            } 
         }
     }
 
@@ -1404,6 +1468,37 @@ void update_restore_info_for(int w) {
         restore_infos[class_name(c_from_id(w))] = info;
         save_restore_infos(); // I believe it's okay to call this here because it only happens on resize end, and drag end
     }
+}
+
+struct PreviousData {
+    std::vector<float> old;
+};
+
+bool any_change(std::string uuid, std::string id, std::vector<float> newer) {
+    bool change = false;
+    PreviousData *data = get_data<PreviousData>(uuid, id);
+    if (!data) {
+       set_data<PreviousData>(uuid, id, PreviousData()); 
+       data = get_data<PreviousData>(uuid, id);
+    }
+    if (data) {
+        PreviousData *pd = data;
+        if (pd->old.size() != newer.size()) {
+            change = true;
+        } else {
+            for (int i = 0; i < pd->old.size(); i++) {
+                if (pd->old[i] != newer[i]) {
+                    change = true;
+                }
+            }
+        }
+        pd->old.clear();
+        for (auto f : newer)
+            pd->old.push_back(f);
+    }
+    //if (change)
+        //nz(fz("{}", change));
+    return change; 
 }
 
 void update_cursor(int type) {
@@ -1530,7 +1625,6 @@ void on_window_open(int id) {
     }
     
 
-   //notify(std::to_string(monitor));
 
     // TODO: We should put these windows in a limbo vector until a monitor opens and then move them over
     //assert(monitor != -1 && "window opened and there were no monitors avaialable (Mylardesktop bug!)");
@@ -1712,7 +1806,8 @@ void on_window_open(int id) {
                 auto cdata = (ClientData *) container->user_data;
                 auto client = c_from_id(cdata->id);                
                 if (client->snapped) {
-                    return false; 
+                    // TODO resize edge should be enabled
+                    //return false; 
                 }
                 auto b = container->real_bounds;
                 auto s = 1.0f;
@@ -1813,6 +1908,7 @@ void on_window_open(int id) {
             title->alignment = ALIGN_RIGHT;
             title->when_clicked = [](Container *root, Container *c) {
                 auto cdata = (ClientData *) c->parent->user_data;
+                auto rdata = (RootData *) root->user_data;
                 auto data = (TitleData *) c->user_data;
                 long current = get_current_time_in_ms();
                 if (current - data->previous < 300) {
@@ -1831,6 +1927,17 @@ void on_window_open(int id) {
                 auto cdata = (IconData *) c->user_data;
                 auto s = scale(rdata->id);
                 if (data->id == rdata->active_id) {
+                    bool needs_damage = any_change(c->uuid, "min", {(float) c->state.mouse_hovering, (float) c->state.mouse_pressing});               
+                    if (needs_damage) {
+                        request_refresh();
+                        force_damage_all = true;
+                        //hypriso->damage_entire(rdata->id);
+                        /*auto b = c->real_bounds;
+                        b.scale(1.0 / s);
+                        b.grow(2 * s);
+                        hypriso->damage_box(b);*/
+                    }
+ 
                     if (c->state.mouse_pressing) {
                         rect(c->real_bounds, color_titlebar_pressed);
                     } else if (c->state.mouse_hovering) {
@@ -1853,7 +1960,6 @@ void on_window_open(int id) {
                 c->wanted_bounds.w = b.h * title_button_wratio;
             };
             min->when_clicked = [](Container *root, Container *C)  {
-                //notify("min");
             };
             auto max = title->child(100, FILL_SPACE);
             max->user_data = new IconData;
@@ -1862,9 +1968,19 @@ void on_window_open(int id) {
                 auto data = (ClientData *) c->parent->parent->user_data;
                 auto rdata = (RootData *) root->user_data;
                 auto cdata = (IconData *) c->user_data;
-                auto s = scale(rdata->id);
+                auto s = scale(rdata->id); 
                 auto client = c_from_id(data->id);
                 if (data->id == rdata->active_id) {
+                    bool needs_damage = any_change(c->uuid, "max", {(float) c->state.mouse_hovering, (float) c->state.mouse_pressing});               
+                    if (needs_damage) {
+                        request_refresh();
+                        force_damage_all = true;
+                        //hypriso->damage_entire(rdata->id);
+                        /*auto b = c->real_bounds;
+                        b.scale(1.0 / s);
+                        b.grow(2 * s);
+                        hypriso->damage_box(b);*/
+                    }
                     if (c->state.mouse_pressing) {
                         rect(c->real_bounds, color_titlebar_pressed);
                     } else if (c->state.mouse_hovering) {
@@ -1913,6 +2029,16 @@ void on_window_open(int id) {
                         c->real_bounds.w += 1;
                         c->real_bounds.y -= 1;
                         c->real_bounds.h += 1;
+                    }
+                    bool needs_damage = any_change(c->uuid, "close", {(float) c->state.mouse_hovering, (float) c->state.mouse_pressing});               
+                    if (needs_damage) {
+                        request_refresh();
+                        force_damage_all = true;
+                        //hypriso->damage_entire(rdata->id);
+                        /*auto b = c->real_bounds;
+                        b.scale(1.0 / s);
+                        b.grow(2 * s);
+                        hypriso->damage_box(b);*/
                     }
                     
                     int mask = 13;
@@ -2066,7 +2192,14 @@ void on_config_reload() {
     hypriso->set_zoom_factor(zoom_factor);
 }
 
+void any_container_closed(Container *c) {
+    // delete all related datas
+    remove_data(c->uuid); 
+}
+
 void startup::begin() {
+    on_any_container_close = any_container_closed;
+    
     hypriso->on_mouse_press = on_mouse_press;
     hypriso->on_mouse_move = on_mouse_move;
     hypriso->on_key_press = on_key_press;

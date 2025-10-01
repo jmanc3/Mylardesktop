@@ -13,9 +13,14 @@
 #include <xkbcommon/xkbcommon.h>
 #undef explicit
 
+#include <functional>
+
 static int FILL_SPACE     = -1;
 static int USE_CHILD_SIZE = -2;
 static int DYNAMIC        = -3;
+
+struct Container;
+extern std::function<void(Container *)> on_any_container_close;
 
 struct Bounds {
     double x = 0;
@@ -126,7 +131,6 @@ struct MouseState {
     }
 };
 
-struct Container;
 struct ScrollContainer;
 struct ScrollPaneSettings;
 

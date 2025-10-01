@@ -749,6 +749,7 @@ void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPow
         rectdata.round         = std::round(round);
         rectdata.roundingPower = roundingPower;
         rectdata.xray = false;
+        // TODO: who is responsible for cleaning up this damage?
         set_rounding(cornermask); // only top side
         g_pHyprOpenGL->renderRect(tocbox(box), CHyprColor(color.r, color.g, color.b, color.a), rectdata);
         set_rounding(0);
@@ -1527,6 +1528,10 @@ void HyprIso::damage_entire(int monitor) {
     }
 }
 
+void HyprIso::damage_box(Bounds b) {
+    g_pHyprRenderer->damageBox(b.x, b.y, b.w, b.h);
+}
+
 int later_action(void* user_data) {
     auto timer = (Timer*)user_data;
     if (timer->func)
@@ -1746,5 +1751,4 @@ void HyprIso::set_reserved_edge(int side, int amount) {
     }
     g_pConfigManager->m_mAdditionalReservedAreas["Mylardesktop"] = value;
 }
-
 
