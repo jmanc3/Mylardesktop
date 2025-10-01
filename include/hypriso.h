@@ -194,12 +194,14 @@ struct HyprIso {
     void draw_thumbnail(int id, Bounds b, int rounding = 0, float roundingPower = 2.0f, int cornermask = 0);
 
     void set_zoom_factor(float amount);
+    int parent(int id);
 };
 
 extern HyprIso *hypriso;
 
 void rect(Bounds box, RGBA color, int conrnermask = 0, float round = 0.0, float roundingPower = 2.0, bool blur = true, float blurA = 1.0);
 void border(Bounds box, RGBA color, float size, int cornermask = 0, float round = 0.0, float roundingPower = 2.0, bool blur = true, float blurA = 1.0);
+void shadow(Bounds box, RGBA color, float rounding, float roundingPower, float size);
 
 static long get_current_time_in_ms() {
     using namespace std::chrono;

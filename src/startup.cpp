@@ -14,7 +14,6 @@
 #include <cassert>
 #include <filesystem>
 #include <linux/input-event-codes.h>
-#include <hyprland/src/SharedDefs.hpp>
 #include <regex>
 
 #ifdef TRACY_ENABLE
@@ -93,6 +92,7 @@ static float sd = .65;                  // scale down
 Bounds max_thumb = {510 * sd, 310 * sd, 510 * sd, 310 * sd}; // need to be multiplied by scale
 
 RGBA color_alt_tab = {1.0, 1.0, 1.0, 0.7};
+RGBA color_snap_helper = {1.0, 1.0, 1.0, 0.35};
 
 RGBA color_titlebar = {1.0, 1.0, 1.0, 1.0};
 RGBA color_titlebar_hovered = {0.87, 0.87, 0.87, 1.0f};
@@ -215,14 +215,20 @@ class AltTabMenu {
     AltTabMenu() {
         root = new Container(::absolute, FILL_SPACE, FILL_SPACE);
         root->custom_type = (int) TYPE::ALT_TAB;
-        root->when_paint = paint {
+        //root->when_paint = paint {
             //rect(c->real_bounds, {1, 0, 0, 1});
-        };
+        //};
+        root->automatically_paint_children = false;
         root->when_paint = paint {
-            auto altroot = (AltRoot *) c->user_data;
             auto rdata = (RootData *) root->user_data;
+            if (rdata->stage != (int) STAGE::RENDER_LAST_MOMENT)
+                return;
             auto s = scale(rdata->id);
+            auto altroot = (AltRoot *) c->user_data;
             rect(altroot->b, color_alt_tab, 0, thumb_rounding * s);
+            for (auto ch : c->children) {
+                paint_outline(root, ch);
+            }
         };
         root->user_data = new AltRoot;
         root->pre_layout = [](Container* root, Container* self, const Bounds& bound) {
@@ -265,7 +271,7 @@ class AltTabMenu {
 
                 if (pen_x + t_w > m_max_w) {
                     pen_x = interthumb_spacing;
-                    pen_y += hightest_seen_for_row + interthumb_spacing;
+                    pen_y += hightest_seen_for_row + interthumb_spacing + titlebar_h * s;
                     hightest_seen_for_row = 0;
                 }
 
@@ -336,10 +342,11 @@ class AltTabMenu {
                 screenshot_all();
                 if (timer == nullptr)
                     timer = start_producing_thumbnails();
-                timer->keep_running = true;
             } else {
-                if (timer)
+                if (timer) {
                     timer->keep_running = false;
+                    timer = nullptr;
+                }
 
                 reset_visible_window();
             }
@@ -404,7 +411,7 @@ void paint_titlebar(Container *root, Container *c) {
                    cdata = ch;
                    break;
                }
-           } 
+           }
         }
     }
 
@@ -444,7 +451,7 @@ void paint_titlebar_close(Container *root, Container *c) {
                    cdata = ch;
                    break;
                }
-           } 
+           }
         }
     }
 
@@ -476,20 +483,20 @@ void drag_update() {
 }
 
 void resize_start(int id, RESIZE_TYPE type) {
-    
+
 }
 
 void resize_update() {
-    
+
 }
 
 void resize_stop() {
-    
+
 }
 
 void drag_start(int id) {
     hypriso->dragging_id = id;
-    hypriso->dragging = true; 
+    hypriso->dragging = true;
     auto client = c_from_id(hypriso->dragging_id);
     auto b = bounds(client);
     auto MOUSECOORDS = mouse();
@@ -559,7 +566,7 @@ SnapPosition mouse_to_snap_position(int mon, int x, int y) {
 
 Bounds snap_position_to_bounds(int mon, SnapPosition pos) {
     Bounds screen = bounds_reserved(m_from_id(mon));
-    
+
     float x = screen.x;
     float y = screen.y;
     float w = screen.w;
@@ -583,7 +590,7 @@ Bounds snap_position_to_bounds(int mon, SnapPosition pos) {
         return {x + w * .5, y + h * .5, w * .5, h * .5};
     }
 
-    return out;    
+    return out;
 }
 
 SnapPosition opposite_snap_position(SnapPosition pos) {
@@ -608,9 +615,10 @@ SnapPosition opposite_snap_position(SnapPosition pos) {
 }
 
 struct SnapHelperData : UserData {
-    SnapPosition pos; 
+    int id;
+    SnapPosition pos;
 
-    SnapHelperData(SnapPosition pos) : pos(pos) {}
+    SnapHelperData(SnapPosition pos, int id) : pos(pos), id(id) {}
 };
 
 void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
@@ -620,11 +628,11 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
     auto mon = get_monitor(c->id);
     for (auto r: roots) {
         auto rdata = (RootData * ) r->user_data;
-        
-        auto snap_helper = r->child(::absolute, FILL_SPACE, FILL_SPACE); 
+
+        auto snap_helper = r->child(::absolute, FILL_SPACE, FILL_SPACE);
         snap_helper->receive_events_even_if_obstructed = true;
         snap_helper->pre_layout = [](Container *root, Container *c, const Bounds &b) {
-            auto shd = (SnapHelperData * ) c->user_data;
+            auto shd = (SnapHelperData *) c->user_data;
             auto rdata = ((RootData *) root->user_data);
             auto mon = rdata->id;
             auto s = scale(rdata->id);
@@ -649,7 +657,7 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                     c->children.erase(c->children.begin() + i);
                 }
             }
-            
+
             // Add children who don't exist yet
            for (auto t: alt_tab_menu.root->children) {
                 auto tdata = (TabData *) t->user_data;
@@ -662,9 +670,38 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                     }
                 }
                 if (!found) {
-                    auto ch = c->child(::vbox, FILL_SPACE, FILL_SPACE);
-                    ch->when_paint = paint_thumbnail;
-                    ch->when_clicked = paint {
+                    auto td = new TabData;
+                    td->wid = tdata->wid;
+                    
+                    auto thumbnail_parent = c->child(::vbox, FILL_SPACE, FILL_SPACE);
+                    thumbnail_parent->user_data = td;
+
+                    auto titlebar = thumbnail_parent->child(::hbox, FILL_SPACE, titlebar_h * s);
+                    titlebar->alignment = ALIGN_RIGHT;
+                    titlebar->skip_delete = true;
+                    titlebar->when_paint = paint_titlebar; 
+                    titlebar->user_data = td;
+                    
+                    auto close = titlebar->child(::hbox, titlebar_h * s * title_button_wratio, FILL_SPACE);
+                    close->skip_delete = true;
+                    close->when_paint = paint_titlebar_close; 
+                    close->user_data = td;
+                    close->when_clicked = paint {
+                        auto td = (TabData *) c->user_data;
+                        if (td->wid != -1) {
+                            later(1, [td](Timer *t) { // crashes because results in this very container being deleted in while this function still running
+                                close_window(td->wid);
+                            });
+                        }
+                    };
+                    
+                    auto thumbnail_area = thumbnail_parent->child(::vbox, FILL_SPACE, FILL_SPACE);
+                    thumbnail_area->when_paint = paint {
+                        auto rdata = (RootData *) root->user_data;
+                        auto shd = (SnapHelperData *) c->user_data;
+                        paint_thumbnail(root, c);
+                    };
+                    thumbnail_area->when_clicked = paint {
                         auto tt = (TabData *) c->user_data;
                         auto shd = (SnapHelperData * ) c->parent->user_data;
                         auto mon = ((RootData *) root->user_data)->id;
@@ -673,43 +710,74 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                         hypriso->bring_to_front(tt->wid);
                         later(1, [](Timer *t) {
                             remove_snap_helpers();
-                            if (alt_tab_menu.timer)
-                                alt_tab_menu.timer->keep_running = false; 
+                            if (alt_tab_menu.timer) {
+                                alt_tab_menu.timer->keep_running = false;
+                                alt_tab_menu.timer = nullptr;
+                            }
                         });
                         root->consumed_event = true;
                     };
-                    auto tt = new TabData;
-                    tt->wid = tdata->wid;
-                    ch->user_data = tt;
+                    thumbnail_area->user_data = td;
+                    thumbnail_area->skip_delete = true;
                 }
             }
-
+            float max_w = max_thumb.w * s;
+            float max_h = max_thumb.h * s;
+ 
             // Manually layout children bounds
-            int pen_x = c->real_bounds.x;
-            int pen_y = c->real_bounds.y;
+            int pen_x = c->real_bounds.x + interspace * s;
+            int pen_y = c->real_bounds.y + interspace * s;
             for (auto ch : c->children) {
-                if (pen_x + max_thumb.w > c->real_bounds.x + c->real_bounds.w) {
-                    pen_y += max_thumb.h;
-                    pen_x = c->real_bounds.x;
+                auto tdata = (TabData *) ch->user_data;
+                auto cdata = c_from_id(tdata->wid);
+                auto cb = bounds(cdata);
+                // todo needs to set max size and only scale douun to ratio
+                float ratio_w = ((cb.w * s) / root->real_bounds.w);
+                float ratio_h = ((cb.h * s) / root->real_bounds.h);
+                if (ratio_h < ratio_w) {
+                    float add = 1.0 - ratio_w;
+                    ratio_w *= 1.0 + add;
+                    ratio_h *= 1.0 + add;
+                } else {
+                    float add = 1.0 - ratio_h;
+                    ratio_w *= 1.0 + add;
+                    ratio_h *= 1.0 + add;
                 }
-                ch->real_bounds = Bounds(pen_x, pen_y, max_thumb.w, max_thumb.h);                
-                pen_x += max_thumb.w;
+                float t_w = max_w * ratio_w;
+                float t_h = max_h * ratio_h;
+                
+                float final_h = t_h + titlebar_h * s;
+                if (pen_x + (t_w + interspace * s) > c->real_bounds.x + c->real_bounds.w) {
+                    pen_x = c->real_bounds.x + interspace * s;
+                    pen_y += final_h + interspace * s;
+                }
+                ch->real_bounds = Bounds(pen_x, pen_y, t_w, final_h);
+                ::layout(root, ch, ch->real_bounds);
+                pen_x += t_w + interspace * s;
             }
         };
         snap_helper->when_paint = paint {
-            auto color = color_alt_tab;
+            auto color = color_snap_helper;
             auto rdata = (RootData *) root->user_data;
+            auto shd = (SnapHelperData *) c->user_data;
+            //if (rdata->active_id != shd->id)
+//                return;
+            if (rdata->stage != (int) STAGE::RENDER_LAST_MOMENT)
+                return;
             auto s = scale(rdata->id);
+            auto b = c->real_bounds;
+            b.grow(interspace* s);
+            shadow(b, {0, 0, 0, 1}, thumb_rounding * s, 2.0, interspace* s);
             rect(c->real_bounds, color, 0, thumb_rounding * s);
         };
         snap_helper->when_mouse_motion = paint { root->consumed_event = true; };
         snap_helper->when_mouse_down = paint { root->consumed_event = true; };
         snap_helper->when_mouse_up = paint { root->consumed_event = true; };
-        snap_helper->when_fine_scrolled = [](Container* root, Container* self, int scroll_x, int scroll_y, bool came_from_touchpad) { 
-            root->consumed_event = true; 
+        snap_helper->when_fine_scrolled = [](Container* root, Container* self, int scroll_x, int scroll_y, bool came_from_touchpad) {
+            root->consumed_event = true;
         };
         snap_helper->custom_type = (int) TYPE::SNAP_HELPER;
-        snap_helper->user_data = new SnapHelperData(opposite_snap_position(window_snap_target));
+        snap_helper->user_data = new SnapHelperData(opposite_snap_position(window_snap_target), c->id);
     } 
 }
 
@@ -726,6 +794,11 @@ void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position, bo
             create_snap_helper(c, snap_position); 
         }
     }
+}
+
+void open_overview() {
+    // TODO this is a fake overview right now piggy-backing off alt tab menu
+    alt_tab_menu.change_showing(true);
 }
 
 void drag_stop() {
@@ -811,8 +884,10 @@ bool on_mouse_move(int id, float x, float y) {
             if (current_coords.x <= r->real_bounds.x + 1) {
                 if (!has_done_window_switch && no_fullscreens && enough_time) {
                     has_done_window_switch = true;
-
-                    if (current_coords.y < r->real_bounds.h * .4) {
+                    
+                    if (current_coords.y < r->real_bounds.h * .1) {
+                        open_overview();
+                    } else if (current_coords.y < r->real_bounds.h * .4) {
                         // focus spotify
                         bool found = false;
                         for (auto w : get_window_stacking_order()) {
@@ -823,7 +898,7 @@ bool on_mouse_move(int id, float x, float y) {
                             }
                         }
                         if (!found) {
-                            system("nohup bash -c 'spotify &'");
+                            system("nohup bash -c '/home/jmanc3/Scripts/./spotifytoggle.sh &'");
                         } else {
                             later(nullptr, 100, [](Timer* data) {
                                 hypriso->send_key(KEY_SPACE);
@@ -913,6 +988,8 @@ bool on_key_press(int id, int key, int state, bool update_mods) {
         }
         META_PRESSED = false;
         zoom_factor = 1.0;
+        
+        alt_tab_menu.change_showing(false);
         // remove snap helper
         //remove_snap_helpers();
     }
@@ -1361,7 +1438,10 @@ void on_window_open(int id) {
 
         auto thumb_area = thumbnail_parent->child(::hbox, FILL_SPACE, FILL_SPACE);
         thumb_area->skip_delete = true;
-        thumb_area->when_paint = paint_thumbnail;
+        thumb_area->when_paint = paint {
+            auto rdata = (RootData *) root->user_data;
+            paint_thumbnail(root, c);
+        };
         thumb_area->user_data = td;
         thumb_area->when_clicked = paint {
             auto td = (TabData *) c->user_data;
@@ -1379,8 +1459,17 @@ void on_window_open(int id) {
     }
     
     auto cname = class_name(tc);
-    for (auto [class_name, info] : restore_infos) {
-        if (cname == class_name) {
+    for (auto [class_n, info] : restore_infos) {
+        if (cname == class_n) {
+            // Skip restore info if class name is same as parent class name (dialogs)
+            int parent = hypriso->parent(id);
+            if (parent != -1) {
+                auto pname = class_name(c_from_id(parent));
+                if (pname == cname) {
+                    continue;
+                }
+            }
+            
             auto b = real_bounds(tc);
             auto m = m_from_id(monitor);
             auto s = scale(m->id);
@@ -1872,6 +1961,16 @@ void on_monitor_open(int id) {
 
     auto c = new Container(layout_type::absolute, FILL_SPACE, FILL_SPACE);
     c->user_data = new RootData(id);
+    c->when_paint = paint {
+        auto rdata = (RootData *) root->user_data;
+        if (rdata->stage != (int) STAGE::RENDER_LAST_MOMENT)
+            return;
+        Bounds box = {100, 100, 400, 400};
+        auto b = box;
+        b.grow(40);
+        //shadow(b, {0, 0, 0, 1}, 0, 2.0, 40);
+        //rect(box, {1, 1, 0, 1});
+    };
     roots.push_back(c);
 
     auto tab_menu = c->child(::vbox, FILL_SPACE, FILL_SPACE); 

@@ -34,3 +34,5 @@ void move_event(Container*, const Event&);
 void mouse_event(Container*, const Event&);
 
 void paint_root(Container*);
+void paint_outline(Container*, Container*);
+

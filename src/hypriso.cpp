@@ -18,6 +18,8 @@
 #include <kde-server-decoration.hpp>
 //#include <hyprland/protocols/kde-server-decoration.hpp>
 
+#include <hyprland/src/render/pass/ShadowPassElement.hpp>
+
 #define private public
 #include <hyprland/src/render/pass/SurfacePassElement.hpp>
 #include <hyprland/src/protocols/ServerDecorationKDE.hpp>
@@ -737,7 +739,7 @@ Bounds tobounds(CBox box) {
 }
 
 void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPower, bool blur, float blurA) {
-    if (box.h < 0 || box.w < 0)
+    if (box.h <= 0 || box.w <= 0)
         return;
     AnyPass::AnyData anydata([box, color, cornermask, round, roundingPower, blur, blurA](AnyPass* pass) {
         CHyprOpenGLImpl::SRectRenderData rectdata;
@@ -754,7 +756,7 @@ void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPow
 }
 
 void border(Bounds box, RGBA color, float size, int cornermask, float round, float roundingPower, bool blur, float blurA) {
-    if (box.h < 0 || box.w < 0)
+    if (box.h <= 0 || box.w <= 0)
         return;
     CBorderPassElement::SBorderData rectdata;
     rectdata.grad1         = CHyprColor(color.r, color.g, color.b, color.a);
@@ -766,6 +768,15 @@ void border(Bounds box, RGBA color, float size, int cornermask, float round, flo
     rectdata.roundingPower = roundingPower;
     g_pHyprRenderer->m_renderPass.add(makeUnique<CBorderPassElement>(rectdata));
 }
+
+void shadow(Bounds box, RGBA color, float rounding, float roundingPower, float size) {
+    AnyPass::AnyData anydata([box, color, rounding, roundingPower, size](AnyPass* pass) {
+        g_pHyprOpenGL->m_renderData.currentWindow = g_pCompositor->m_lastWindow;
+        g_pHyprOpenGL->renderRoundedShadow(tocbox(box), rounding, roundingPower, size, CHyprColor(color.r, color.g, color.b, color.a), 1.0);
+    });
+    g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
+}
+
 
 struct MylarBar : public IHyprWindowDecoration {
     PHLWINDOW m_window;
@@ -1287,6 +1298,7 @@ void free_text_texture(int id) {
         auto h = hyprtextures[i];
         if (h->info.id == id) {
             h->texture.reset();
+            printf("free: %d\n", h->info.id);
             hyprtextures.erase(hyprtextures.begin() + i);
             delete h;
         }
@@ -1302,13 +1314,14 @@ TextureInfo gen_texture(std::string path, float h) {
         info.id = unique_id++;
         info.w = t->texture->m_size.x;
         info.h = t->texture->m_size.y;
+        printf("generate pic: %d\n", info.id);
         t->info = info;
         hyprtextures.push_back(t);
         return t->info;
     }
     return {};
 }
-     
+
 TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA color) {
     auto tex = g_pHyprOpenGL->renderText(text, CHyprColor(color.r, color.g, color.b, color.a), h, false, font, 0);
     if (tex.get()) {
@@ -1320,6 +1333,7 @@ TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA c
         info.h = t->texture->m_size.y;
         t->info = info;
         hyprtextures.push_back(t);
+        printf("generate text: %d\n", info.id);
         return t->info;
     }
     return {};
@@ -1688,7 +1702,6 @@ void HyprIso::draw_thumbnail(int id, Bounds b, int rounding, float roundingPower
     }
 }
 
-
 void HyprIso::set_zoom_factor(float amount) {
     Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("cursor:zoom_factor");
     auto zoom_amount = (Hyprlang::FLOAT*)val->dataPtr();
@@ -1698,4 +1711,19 @@ void HyprIso::set_zoom_factor(float amount) {
         *(m->m_cursorZoom) = amount;
         g_pLayoutManager->getCurrentLayout()->recalculateMonitor(m->m_id);
     }    
+}
+
+int HyprIso::parent(int id) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            if (auto w = hw->w->parent()) {
+                for (auto hw : hyprwindows) {
+                    if (hw->w == w) {
+                        return hw->id;
+                    }
+                }
+            }            
+        }
+    }
+    return -1;
 }

@@ -5,4 +5,7 @@
 
 extern Globals *globals;
 
+void init_mylar(void* h);
+void exit_mylar(void* h);
+
 #endif // first_h_INCLUDED
