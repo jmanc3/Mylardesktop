@@ -202,6 +202,8 @@ struct HyprIso {
     void show_desktop();
     void hide_desktop();
     void move_to_workspace(int id, int workspace);
+
+    std::vector<int> get_workspaces(int monitor);
 };
 
 extern HyprIso *hypriso;

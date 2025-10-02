@@ -12,6 +12,7 @@
 #include "first.h"
 
 #include <algorithm>
+#include <librsvg/rsvg.h>
 #include <any>
 
 #include <hyprland/src/helpers/Color.hpp>
@@ -25,6 +26,7 @@
 #include <hyprland/src/protocols/ServerDecorationKDE.hpp>
 #include <hyprland/src/protocols/XDGDecoration.hpp>
 #include <hyprland/src/protocols/XDGShell.hpp>
+#include <hyprland/src/Compositor.hpp>
 #undef private
 
 #include <hyprland/src/xwayland/XWayland.hpp>
@@ -34,7 +36,6 @@
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/devices/IPointer.hpp>
 #include <hyprland/src/render/Renderer.hpp>
-#include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/render/pass/TexPassElement.hpp>
 #include <hyprland/src/render/pass/RectPassElement.hpp>
 #include <hyprland/src/render/pass/BorderPassElement.hpp>
@@ -45,7 +46,6 @@
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/decorations/DecorationPositioner.hpp>
 #include <hyprland/src/render/decorations/IHyprWindowDecoration.hpp>
-#include <librsvg/rsvg.h>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
 
@@ -961,6 +961,19 @@ float scale(int id) {
     return 1.0;
 }
 
+std::vector<int> HyprIso::get_workspaces(int monitor) {
+    std::vector<int> vec;
+    for (auto hm : hyprmonitors) {
+        if (hm->id == monitor) {
+            for (auto e : g_pCompositor->m_workspaces) {
+                if (hm->m == e->m_monitor) {
+                    vec.push_back(e->m_id);
+                }
+            }
+        }
+    }
+    return vec;
+}
 
 std::vector<int> get_window_stacking_order() {
     std::vector<int> vec;

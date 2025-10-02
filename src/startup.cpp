@@ -56,6 +56,16 @@ void set_data(const std::string& uuid, const std::string& name, T&& value) {
     datas[uuid].datas[name] = std::forward<T>(value);
 }
 
+template<typename T>
+T *get_or_create(const std::string& uuid, const std::string& name) {
+    T *data = get_data<T>(uuid, name);
+    if (!data) {
+        set_data<T>(uuid, name, T());
+        data = get_data<T>(uuid, name);
+    }
+    return data;
+}
+
 void remove_data(const std::string& uuid) {
     datas.erase(uuid);
 }
@@ -955,7 +965,7 @@ bool on_mouse_move(int id, float x, float y) {
                 if (!has_done_window_switch && no_fullscreens && enough_time) {
                     has_done_window_switch = true;
                     
-                    if (current_coords.y < r->real_bounds.h * .1) {
+                    if (current_coords.y < r->real_bounds.h * .2) {
                         open_overview();
                     } else if (current_coords.y < r->real_bounds.h * .4) {
                         // focus spotify
@@ -2188,15 +2198,51 @@ void on_monitor_open(int id) {
     };
     roots.push_back(c);
 
-    auto workspace = c->child(::vbox, FILL_SPACE, FILL_SPACE); 
+    auto workspace = c->child(::hbox, FILL_SPACE, FILL_SPACE); 
     workspace->custom_type = (int) TYPE::WORKSPACE_SWITCHER;
     workspace->receive_events_even_if_obstructed = true;
-    workspace->pre_layout = [](Container* root, Container* self, const Bounds& bound) {
+    workspace->pre_layout = [](Container* root, Container* c, const Bounds& bound) {
         auto rdata = (RootData *) root->user_data;
         auto s = scale(rdata->id);
-        self->real_bounds = root->real_bounds;
-        self->real_bounds.w = 100;
-        self->real_bounds.h = 100;
+
+        auto spaces = hypriso->get_workspaces(rdata->id);
+        // if child not represented in spaces, remove it
+        for (int i = c->children.size() - 1; i >= 0; i--) {
+            auto ch = c->children[i];
+            TabData d;
+            auto tdata = get_or_create<TabData>(ch->uuid, "tdata");
+            bool found = false;
+            for (auto space : spaces)
+                if (space == tdata->wid)
+                    found = true;
+            if (!found) {
+                // remove it
+                delete ch;
+                c->children.erase(c->children.begin() + i);
+            }
+        }
+        // if space not represented in children, create it
+        for (auto space : spaces) {
+            bool found = false;
+            for (auto ch : c->children) {
+                auto tdata = get_or_create<TabData>(ch->uuid, "tdata");
+                if (tdata->wid == space) 
+                    found = true;
+            }
+            if (!found) {
+                auto ch = c->child(40, 40);
+                ch->when_paint = paint {
+                    border(c->real_bounds, {1, 0, 0, 1}, 10);
+                };
+            }
+        }
+        // sort children based on order 
+        
+        c->real_bounds = root->real_bounds;
+        c->real_bounds.w = 400;
+        c->real_bounds.h = 100;
+
+        layout(root, c, c->real_bounds);
     };
     workspace->when_paint = paint {
         rect(c->real_bounds, {1, 1, 0, 1});
