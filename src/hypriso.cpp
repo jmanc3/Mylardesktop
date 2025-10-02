@@ -67,10 +67,12 @@ typedef void (*tRenderWorkspaceWindowsFullscreen)(void *, PHLMONITOR, PHLWORKSPA
 struct HyprWindow {
     int id;  
     PHLWINDOW w;
+
+    bool is_hidden = false; // used in show/hide desktop
+    bool was_hidden = false; // used in show/hide desktop
     
     CFramebuffer *fb = nullptr;
     Bounds w_size; // 0 -> 1, percentage of fb taken up by the actual window used for drawing
-    
     int cornermask = 0; // when rendering the surface, what corners should be rounded
     bool no_rounding = false;
 };
@@ -1408,11 +1410,21 @@ int HyprIso::monitor_from_cursor() {
     return -1;
 }
 
+bool HyprIso::is_hidden(int id) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            return hw->is_hidden;
+        }
+    }
+    return false; 
+}
+
 void HyprIso::iconify(int id, bool state) {
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             hw->w->updateWindowDecos();
             hw->w->setHidden(state);
+            hw->is_hidden = state;
         }
     }
  
@@ -1750,5 +1762,94 @@ void HyprIso::set_reserved_edge(int side, int amount) {
         value.bottom = amount;
     }
     g_pConfigManager->m_mAdditionalReservedAreas["Mylardesktop"] = value;
+}
+
+void HyprIso::show_desktop() {
+    for (auto hw : hyprwindows) {
+        hypriso->iconify(hw->id, hw->was_hidden);
+    }
+    for (auto r : hyprmonitors) {
+        hypriso->damage_entire(r->id);
+    }
+}
+
+void HyprIso::hide_desktop() {
+    for (auto hw : hyprwindows) {
+        hw->was_hidden = hw->is_hidden;
+        hypriso->iconify(hw->id, true);
+    }
+    for (auto r : hyprmonitors) {
+        hypriso->damage_entire(r->id);
+    }
+}
+
+static void updateRelativeCursorCoords() {
+    static auto PNOWARPS = CConfigValue<Hyprlang::INT>("cursor:no_warps");
+
+    if (*PNOWARPS)
+        return;
+
+    if (g_pCompositor->m_lastWindow)
+        g_pCompositor->m_lastWindow->m_relativeCursorCoordsOnLastWarp = g_pInputManager->getMouseCoordsInternal() - g_pCompositor->m_lastWindow->m_position;
+}
+
+void HyprIso::move_to_workspace(int id, int workspace) {
+    PHLWINDOW PWINDOW;
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            PWINDOW = hw->w;
+            break;
+        }
+    }
+    if (!PWINDOW.get())
+        return;        
+    std::string args = std::to_string(workspace);
+    
+    const auto& [WORKSPACEID, workspaceName] = getWorkspaceIDNameFromString(args);
+    if (WORKSPACEID == WORKSPACE_INVALID) {
+        Debug::log(LOG, "Invalid workspace in moveActiveToWorkspace");
+        return;
+    }
+
+    if (WORKSPACEID == PWINDOW->workspaceID()) {
+        Debug::log(LOG, "Not moving to workspace because it didn't change.");
+        return;
+    }
+
+    auto        pWorkspace            = g_pCompositor->getWorkspaceByID(WORKSPACEID);
+    PHLMONITOR  pMonitor              = nullptr;
+    const auto  POLDWS                = PWINDOW->m_workspace;
+    static auto PALLOWWORKSPACECYCLES = CConfigValue<Hyprlang::INT>("binds:allow_workspace_cycles");
+
+    updateRelativeCursorCoords();
+
+    g_pHyprRenderer->damageWindow(PWINDOW);
+
+    if (pWorkspace) {
+        const auto FULLSCREENMODE = PWINDOW->m_fullscreenState.internal;
+        g_pCompositor->moveWindowToWorkspaceSafe(PWINDOW, pWorkspace);
+        pMonitor = pWorkspace->m_monitor.lock();
+        g_pCompositor->setActiveMonitor(pMonitor);
+        g_pCompositor->setWindowFullscreenInternal(PWINDOW, FULLSCREENMODE);
+    } else {
+        pWorkspace = g_pCompositor->createNewWorkspace(WORKSPACEID, PWINDOW->monitorID(), workspaceName, false);
+        pMonitor   = pWorkspace->m_monitor.lock();
+        g_pCompositor->moveWindowToWorkspaceSafe(PWINDOW, pWorkspace);
+    }
+
+    POLDWS->m_lastFocusedWindow = POLDWS->getFirstWindow();
+
+    if (pWorkspace->m_isSpecialWorkspace)
+        pMonitor->setSpecialWorkspace(pWorkspace);
+    else if (POLDWS->m_isSpecialWorkspace)
+        POLDWS->m_monitor.lock()->setSpecialWorkspace(nullptr);
+
+    if (*PALLOWWORKSPACECYCLES)
+        pWorkspace->rememberPrevWorkspace(POLDWS);
+
+    pMonitor->changeWorkspace(pWorkspace);
+
+    g_pCompositor->focusWindow(PWINDOW);
+    PWINDOW->warpCursor();
 }
 

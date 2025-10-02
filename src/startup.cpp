@@ -135,6 +135,7 @@ enum struct TYPE : uint8_t {
     CLIENT, // Windows
     ALT_TAB,
     SNAP_HELPER,
+    WORKSPACE_SWITCHER,
 };
 
 static std::string to_lower(const std::string& str) {
@@ -332,7 +333,7 @@ class AltTabMenu {
                             auto tab_data = (TabData *) c->user_data;
                             auto w = tab_data->wid;
                             auto client = c_from_id(w);
-                            if (client->iconified) { // problem with preview making it not hidden when it is
+                            if (hypriso->is_hidden(w)) { // problem with preview making it not hidden when it is
                                 hypriso->iconify(w, false);
                             }
                             hypriso->bring_to_front(w);
@@ -378,10 +379,6 @@ static AltTabMenu alt_tab_menu;
 
 void reset_visible_window() {
     return;
-    for (auto& w : get_window_stacking_order()) {
-        auto client = c_from_id(w);
-        hypriso->iconify(client->id, client->iconified) ;
-    }
 }
 
 void update_visible_window() {
@@ -988,7 +985,7 @@ bool on_mouse_move(int id, float x, float y) {
                         alt_tab_menu.change_showing(false);
                     }
                 }
-            } else {
+            } else { 
                 has_done_window_switch = false;
             }
         }
@@ -1237,6 +1234,16 @@ void layout_every_single_root() {
                 }
             }
         } else if (b->custom_type == (int) TYPE::RESIZE_HANDLE) {            
+        } else if (b->custom_type == (int) TYPE::WORKSPACE_SWITCHER) {
+            for (auto r: roots) {
+                auto rdata = (RootData *) r->user_data;
+                auto s = scale(rdata->id);
+                b->exists = hypriso->dragging;
+                if (b->pre_layout)
+                    b->pre_layout(r, b, r->real_bounds);
+                r->children.insert(r->children.begin() + 0, b);
+                break;
+            } 
         } else if (b->custom_type == (int) TYPE::SNAP_HELPER) {
             for (auto r: roots) {
                 auto rdata = (RootData *) r->user_data;
@@ -1959,7 +1966,20 @@ void on_window_open(int id) {
             min->pre_layout = [](Container *root, Container *c, const Bounds &b) {
                 c->wanted_bounds.w = b.h * title_button_wratio;
             };
-            min->when_clicked = [](Container *root, Container *C)  {
+            min->when_clicked = paint  {
+                auto data = (ClientData *) c->parent->parent->user_data;
+                auto rdata = (RootData *) root->user_data;
+                auto cdata = (IconData *) c->user_data;
+                auto cc = c_from_id(data->id); 
+                if (cc->snapped) {
+                   toggle_maximize(cc->id); 
+                } else {
+                    //hypriso->move_to_workspace(data->id, 2);
+                    hypriso->iconify(data->id, true);
+                    alt_tab_menu.change_showing(true);
+                    tab_next_window();
+                    alt_tab_menu.change_showing(false);
+                }
             };
             auto max = title->child(100, FILL_SPACE);
             max->user_data = new IconData;
@@ -2135,6 +2155,27 @@ void on_monitor_open(int id) {
 
     auto c = new Container(layout_type::absolute, FILL_SPACE, FILL_SPACE);
     c->user_data = new RootData(id);
+    c->receive_events_even_if_obstructed = true;
+    c->when_clicked = paint {
+        auto rdata = (RootData *) root->user_data;
+        auto s = scale(rdata->id);
+        auto m = mouse();
+        m.scale(s);
+        auto b = c->real_bounds;
+        b.x += b.w - 2;
+        b.y += b.h - 2;
+        b.w = 2;
+        b.h = 2;
+        if (bounds_contains(b, m.x, m.y)) {
+            static bool showing = true;
+            if (showing) {
+                hypriso->hide_desktop();
+            } else {
+                hypriso->show_desktop();
+            }
+            showing = !showing;
+        }
+    };
     c->when_paint = paint {
         auto rdata = (RootData *) root->user_data;
         if (rdata->stage != (int) STAGE::RENDER_LAST_MOMENT)
@@ -2146,6 +2187,20 @@ void on_monitor_open(int id) {
         //rect(box, {1, 1, 0, 1});
     };
     roots.push_back(c);
+
+    auto workspace = c->child(::vbox, FILL_SPACE, FILL_SPACE); 
+    workspace->custom_type = (int) TYPE::WORKSPACE_SWITCHER;
+    workspace->receive_events_even_if_obstructed = true;
+    workspace->pre_layout = [](Container* root, Container* self, const Bounds& bound) {
+        auto rdata = (RootData *) root->user_data;
+        auto s = scale(rdata->id);
+        self->real_bounds = root->real_bounds;
+        self->real_bounds.w = 100;
+        self->real_bounds.h = 100;
+    };
+    workspace->when_paint = paint {
+        rect(c->real_bounds, {1, 1, 0, 1});
+    };
 
     auto tab_menu = c->child(::vbox, FILL_SPACE, FILL_SPACE); 
     tab_menu->custom_type = (int) TYPE::ALT_TAB;

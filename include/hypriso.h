@@ -115,8 +115,6 @@ struct ThinClient {
     int resize_type = 0;
     Bounds initial_win_box;
 
-    bool iconified = false;
-
     std::string uuid;
 
     ThinClient(int _id) : id(_id) {}
@@ -185,6 +183,8 @@ struct HyprIso {
     
     void bring_to_front(int id);
     void iconify(int id, bool state);
+    
+    bool is_hidden(int id);
 
     void should_round(int id, bool state);
 
@@ -198,6 +198,10 @@ struct HyprIso {
     int parent(int id);
 
     void set_reserved_edge(int side, int amount);
+
+    void show_desktop();
+    void hide_desktop();
+    void move_to_workspace(int id, int workspace);
 };
 
 extern HyprIso *hypriso;
