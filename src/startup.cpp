@@ -102,6 +102,9 @@ static bool screenshotting = false;
 
 static float sd = .65;                  // scale down
 Bounds max_thumb = {510 * sd, 310 * sd, 510 * sd, 310 * sd}; // need to be multiplied by scale
+static float sdd = .3;
+Bounds max_space = {510 * sdd, 310 * sdd, 510 * sdd, 310 * sdd}; // need to be multiplied by scale
+
 
 RGBA color_alt_tab = {1.0, 1.0, 1.0, 0.7};
 RGBA color_snap_helper = {1.0, 1.0, 1.0, 0.35};
@@ -146,6 +149,7 @@ enum struct TYPE : uint8_t {
     ALT_TAB,
     SNAP_HELPER,
     WORKSPACE_SWITCHER,
+    WORKSPACE_THUMB,
 };
 
 static std::string to_lower(const std::string& str) {
@@ -877,7 +881,7 @@ void open_overview() {
     alt_tab_menu.change_showing(true);
 }
 
-void drag_stop() {
+void drag_stop() {    
     int window = hypriso->dragging_id;
     drag_update();
     hypriso->dragging_id = -1;
@@ -898,6 +902,24 @@ void drag_stop() {
         hypriso->move(window, position.x, position.y);
     } else {
         perform_snap(c, position, snap_position);
+    }
+
+    if (!c->snapped) {
+        for (auto r : roots) {
+            auto rdata = (RootData *) r->user_data;
+            // todo not really correct should be based on window i think
+            if (mon == rdata->id) {
+                auto s = scale(rdata->id);
+                std::vector<Container*> pierced = pierced_containers(r, m.x * s, m.y * s);
+                for (auto p : pierced) {
+                    if (p->custom_type == (int) TYPE::WORKSPACE_THUMB) {
+                        auto tdata = get_or_create<TabData>(p->uuid, "tdata");
+                        hypriso->move_to_workspace(c->id, tdata->wid);
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -2209,7 +2231,6 @@ void on_monitor_open(int id) {
         // if child not represented in spaces, remove it
         for (int i = c->children.size() - 1; i >= 0; i--) {
             auto ch = c->children[i];
-            TabData d;
             auto tdata = get_or_create<TabData>(ch->uuid, "tdata");
             bool found = false;
             for (auto space : spaces)
@@ -2230,17 +2251,26 @@ void on_monitor_open(int id) {
                     found = true;
             }
             if (!found) {
-                auto ch = c->child(40, 40);
+                auto ch = c->child(max_space.w * s, max_space.h * s);
+                ch->custom_type = (int) TYPE::WORKSPACE_THUMB;
+                auto tdata = get_or_create<TabData>(ch->uuid, "tdata");
+                tdata->wid = space;
                 ch->when_paint = paint {
-                    border(c->real_bounds, {1, 0, 0, 1}, 10);
+                    auto b = c->real_bounds;
+                    b.shrink(10);
+                    border(b, {1, 0, 0, 1}, 10);
                 };
             }
         }
         // sort children based on order 
-        
+
+        c->spacing = interspace * s;
+        c->wanted_pad = Bounds(c->spacing, c->spacing, 0, 0);
         c->real_bounds = root->real_bounds;
-        c->real_bounds.w = 400;
-        c->real_bounds.h = 100;
+        c->real_bounds.y += interspace * s; 
+        c->real_bounds.w = (max_space.w * s + c->spacing) * c->children.size() + c->spacing;
+        c->real_bounds.x += root->real_bounds.w * .5 - c->real_bounds.w * .5;
+        c->real_bounds.h = max_space.h * s + c->spacing * 2;
 
         layout(root, c, c->real_bounds);
     };
