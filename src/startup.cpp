@@ -14,6 +14,7 @@
 #include <cassert>
 #include <filesystem>
 #include <linux/input-event-codes.h>
+#include <locale>
 
 #ifdef TRACY_ENABLE
 
@@ -108,6 +109,8 @@ Bounds max_space = {510 * sdd, 310 * sdd, 510 * sdd, 310 * sdd}; // need to be m
 
 RGBA color_alt_tab = {1.0, 1.0, 1.0, 0.7};
 RGBA color_snap_helper = {1.0, 1.0, 1.0, 0.35};
+RGBA color_workspace_switcher = {1.0, 1.0, 1.0, 0.55};
+RGBA color_workspace_thumb = {0.59, 0.59, 0.59, 1.0f};
 
 RGBA color_titlebar = {1.0, 1.0, 1.0, 1.0};
 RGBA color_titlebar_hovered = {0.87, 0.87, 0.87, 1.0f};
@@ -150,6 +153,10 @@ enum struct TYPE : uint8_t {
     SNAP_HELPER,
     WORKSPACE_SWITCHER,
     WORKSPACE_THUMB,
+};
+
+struct SpaceSwitcher {
+    bool expanded = false;  
 };
 
 static std::string to_lower(const std::string& str) {
@@ -906,7 +913,16 @@ void drag_stop() {
 
     if (!c->snapped) {
         for (auto r : roots) {
+            for (auto c : r->children) {
+                if (c->custom_type == (int) TYPE::WORKSPACE_SWITCHER) {
+                    auto space_data = get_or_create<SpaceSwitcher>(c->uuid, "space_data");
+                    space_data->expanded = false;
+                }
+            }
+        }
+        for (auto r : roots) {
             auto rdata = (RootData *) r->user_data;
+
             // todo not really correct should be based on window i think
             if (mon == rdata->id) {
                 auto s = scale(rdata->id);
@@ -2226,8 +2242,21 @@ void on_monitor_open(int id) {
     workspace->pre_layout = [](Container* root, Container* c, const Bounds& bound) {
         auto rdata = (RootData *) root->user_data;
         auto s = scale(rdata->id);
+        auto space_data = get_or_create<SpaceSwitcher>(c->uuid, "space_data");
 
         auto spaces = hypriso->get_workspaces(rdata->id);
+        // we add a fake space which is one greater to allow creating a new workspace 
+        int highest = 1;
+        if (!spaces.empty())
+            highest = spaces[0];                   
+        for (auto s : spaces)
+            if (highest < s)
+                highest = s;
+        if (highest <= 0) // this is a fix if all spaces are named (and therefore negative)?
+            highest = 0;
+        highest++;
+        spaces.push_back(highest);
+
         // if child not represented in spaces, remove it
         for (int i = c->children.size() - 1; i >= 0; i--) {
             auto ch = c->children[i];
@@ -2257,8 +2286,9 @@ void on_monitor_open(int id) {
                 tdata->wid = space;
                 ch->when_paint = paint {
                     auto b = c->real_bounds;
-                    b.shrink(10);
-                    border(b, {1, 0, 0, 1}, 10);
+                    //b.shrink(10);
+                    auto s = scale(((RootData *) root->user_data)->id);
+                    rect(b, color_workspace_thumb, 0, interspace * s);
                 };
             }
         }
@@ -2272,10 +2302,29 @@ void on_monitor_open(int id) {
         c->real_bounds.x += root->real_bounds.w * .5 - c->real_bounds.w * .5;
         c->real_bounds.h = max_space.h * s + c->spacing * 2;
 
+        if (!space_data->expanded) {
+           c->real_bounds.y = bound.y - (interspace * s * 2); 
+           c->real_bounds.h = interspace * s + (interspace * s * 2);
+        }
+        for (auto ch : c->children) {
+            ch->exists = space_data->expanded;
+        }
+
+        // determine if expanded
+        auto b = c->real_bounds;
+        b.grow(interspace * s);
+        auto m = mouse();
+        space_data->expanded = bounds_contains(b, m.x * s, m.y * s);
+
         layout(root, c, c->real_bounds);
     };
     workspace->when_paint = paint {
-        rect(c->real_bounds, {1, 1, 0, 1});
+        auto s = scale(((RootData *) root->user_data)->id);
+        auto space_data = get_or_create<SpaceSwitcher>(c->uuid, "space_data");
+        int mask = 3;
+        if (space_data->expanded)
+            mask = 0;
+        rect(c->real_bounds, color_workspace_switcher, mask, interspace * s);
     };
 
     auto tab_menu = c->child(::vbox, FILL_SPACE, FILL_SPACE); 
