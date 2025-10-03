@@ -804,8 +804,20 @@ struct MylarBar : public IHyprWindowDecoration {
         info.desiredExtents = {{0, m_size}, {0, 0}};
         return info;
     }
-    void                       onPositioningReply(const SDecorationPositioningReply& reply) { }
-    void                       draw(PHLMONITOR, float const& a) { }
+    void onPositioningReply(const SDecorationPositioningReply& reply) { }
+    void draw(PHLMONITOR monitor, float const& a) { 
+        if (!hypriso->on_draw_decos)
+           return; 
+        for (auto m : hyprmonitors) {
+            if (m->m == monitor) {
+                for (auto w : hyprwindows) {
+                   if (w->w == m_window)  {
+                       hypriso->on_draw_decos(getDisplayName(), m->id, w->id, a);
+                   }
+                }
+            }
+        }
+    }
     eDecorationType            getDecorationType() { return eDecorationType::DECORATION_GROUPBAR; }
     void                       updateWindow(PHLWINDOW) { }
     void                       damageEntire() { } 
@@ -833,6 +845,12 @@ void HyprIso::reserve_titlebar(ThinClient *c, int size) {
 void request_refresh() {
     for (auto m : g_pCompositor->m_monitors) {
         g_pHyprRenderer->damageMonitor(m);
+        g_pCompositor->scheduleFrameForMonitor(m);
+    }
+}
+
+void request_refresh_only() {
+    for (auto m : g_pCompositor->m_monitors) {
         g_pCompositor->scheduleFrameForMonitor(m);
     }
 }

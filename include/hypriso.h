@@ -135,6 +135,7 @@ struct HyprIso {
     Bounds drag_initial_window_pos;
     
     bool resizing = false;
+    int resizing_id = false;
 
     // The main workhorse of the program which pumps events from hyprland to mylar
     void create_hooks_and_callbacks();
@@ -157,6 +158,8 @@ struct HyprIso {
     std::function<void(int id)> on_monitor_open = nullptr;
     
     std::function<void(int id)> on_monitor_closed = nullptr;
+    
+    std::function<void(std::string name, int monitor, int w, float a)> on_draw_decos = nullptr;
     
     std::function<void(int id, int stage)> on_render = nullptr;
 
@@ -204,6 +207,7 @@ struct HyprIso {
     void move_to_workspace(int id, int workspace);
 
     std::vector<int> get_workspaces(int monitor);
+        
 };
 
 extern HyprIso *hypriso;
@@ -260,5 +264,6 @@ Timer* later(void* data, float time_ms, const std::function<void(Timer*)>& fn);
 Timer* later(float time_ms, const std::function<void(Timer*)>& fn);
 
 void request_refresh();
+void request_refresh_only();
 
 #endif // hypriso_h_INCLUDED

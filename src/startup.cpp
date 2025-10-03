@@ -26,7 +26,7 @@
 #define fz std::format
 #define nz notify
 
-bool force_damage_all = false;
+static bool force_damage_all = false;
 
 struct Datas {
     std::unordered_map<std::string, std::any> datas;
@@ -180,6 +180,7 @@ struct RootData : UserData {
 struct ClientData : UserData {
     int id = 0;
     int index = 0; // for reordering based on the stacking order
+    float alpha = 1.0;
 
     ClientData(int id) : id(id) {
        ; 
@@ -387,10 +388,12 @@ class AltTabMenu {
     }
 
     void fix_index() {
-        if (index >= root->children.size()) {
-            index = root->children.size() - 1;
-            if (index < 0) {
-                index = 0;
+        if (root) {
+            if (index >= root->children.size()) {
+                index = root->children.size() - 1;
+                if (index < 0) {
+                    index = 0;
+                }
             }
         }
     }
@@ -505,15 +508,120 @@ void drag_update() {
 }
 
 void resize_start(int id, RESIZE_TYPE type) {
-
+    hypriso->resizing = true;
+    hypriso->resizing_id = id;
+    auto client = c_from_id(hypriso->resizing_id);
+    if (!client)
+        return;
+    client->resizing = true;
+    auto m = mouse();
+    client->initial_x = m.x;
+    client->initial_y = m.y;
+    client->initial_win_box = bounds(client);
 }
 
 void resize_update() {
+    //auto cdata = (ClientData *) c->user_data;
+    //auto rdata = (RootData *) c->user_data;
+    //auto s = scale(rdata->id);
+    auto client = c_from_id(hypriso->resizing_id);
+    if (client) {
+        auto monitor = get_monitor(client->id);
+        auto s = scale(monitor);
+        auto m = mouse();
+        Bounds diff = {m.x - client->initial_x, m.y - client->initial_y, 0, 0};
+        int change_x = 0;
+        int change_y = 0;
+        int change_w = 0;
+        int change_h = 0;
 
+        if (client->resize_type == (int) RESIZE_TYPE::NONE) {
+        } else if (client->resize_type == (int) RESIZE_TYPE::BOTTOM) {
+            change_h += diff.y;
+        } else if (client->resize_type == (int) RESIZE_TYPE::BOTTOM_LEFT) {
+            change_w -= diff.x;
+            change_x += diff.x;
+            change_h += diff.y;
+        } else if (client->resize_type == (int) RESIZE_TYPE::BOTTOM_RIGHT) {
+            change_w += diff.x;
+            change_h += diff.y;
+        } else if (client->resize_type == (int) RESIZE_TYPE::TOP) {
+            change_y += diff.y;
+            change_h -= diff.y;
+        } else if (client->resize_type == (int) RESIZE_TYPE::TOP_LEFT) {
+            change_y += diff.y;
+            change_h -= diff.y;
+            change_w -= diff.x;
+            change_x += diff.x;
+        } else if (client->resize_type == (int) RESIZE_TYPE::TOP_RIGHT) {
+            change_y += diff.y;
+            change_h -= diff.y;
+            change_w += diff.x;
+        } else if (client->resize_type == (int) RESIZE_TYPE::LEFT) {
+            change_w -= diff.x;
+            change_x += diff.x;
+        } else if (client->resize_type == (int) RESIZE_TYPE::RIGHT) {
+            change_w += diff.x;
+        }
+
+        // change in x and y shouldn't happen if size is going to be clipped
+        auto size = client->initial_win_box;
+        size.w += change_w;
+        size.h += change_h;
+        bool y_clipped = false;
+        bool x_clipped = false;
+        if (size.w < 100) {
+            size.w    = 100;
+            x_clipped = true;
+        }
+        if (size.h < 50) {
+            size.h    = 50;
+            y_clipped = true;
+        }
+        auto min = hypriso->min_size(client->id);
+        auto mini = titlebar_h * s * 3 * title_button_wratio + titlebar_icon_button_h * s + titlebar_icon_pad * s * 2;
+        if (min.w < mini) {
+            min.w = mini;
+        }
+        
+        if (hypriso->is_x11(client->id)) {
+            min.x /= s;
+            min.y /= s;
+        }
+        if (size.w < min.w) {
+            size.w    = min.w;
+            x_clipped = true;
+        }
+        if (size.h < min.h) {
+            size.h    = min.h;
+            y_clipped = true;
+        }
+
+        auto pos = client->initial_win_box;
+        auto real = bounds(client);
+        if (x_clipped) {
+            pos.x = real.x;
+        } else {
+            pos.x += change_x;
+        }
+        if (y_clipped) {
+            pos.y = real.y;
+        } else {
+            pos.y += change_y;
+        }
+        auto fb = Bounds(pos.x, pos.y, size.w, size.h);
+        hypriso->move_resize(client->id, fb.x, fb.y, fb.w, fb.h);
+    }
 }
 
 void resize_stop() {
-
+    resize_update();
+    hypriso->resizing = false;
+    update_restore_info_for(hypriso->resizing_id);
+    auto client = c_from_id(hypriso->resizing_id);
+    if (client) {
+        client->resizing = false;
+    }
 }
 
 void drag_start(int id) {
@@ -901,6 +1009,10 @@ void drag_stop() {
     auto snap_position = mouse_to_snap_position(mon, m.x, m.y);
     Bounds position = snap_position_to_bounds(mon, snap_position);
     auto c = c_from_id(window);
+    auto init_drag_pos = hypriso->drag_initial_window_pos;
+    if (c->snapped)
+        init_drag_pos = c->pre_snap_bounds;
+    
     if (snap_position == SnapPosition::NONE) {
         auto newx = hypriso->drag_initial_window_pos.x + (m.x - hypriso->drag_initial_mouse_pos.x);
         auto newy = hypriso->drag_initial_window_pos.y + (m.y - hypriso->drag_initial_mouse_pos.y);
@@ -931,6 +1043,7 @@ void drag_stop() {
                     if (p->custom_type == (int) TYPE::WORKSPACE_THUMB) {
                         auto tdata = get_or_create<TabData>(p->uuid, "tdata");
                         hypriso->move_to_workspace(c->id, tdata->wid);
+                        hypriso->move_resize(c->id, init_drag_pos.x, init_drag_pos.y, init_drag_pos.w, init_drag_pos.h);
                         break;
                     }
                 }
@@ -967,7 +1080,9 @@ void toggle_maximize(int id) {
 bool on_mouse_move(int id, float x, float y) {
     if (hypriso->dragging)
         drag_update();
-    
+    if (hypriso->resizing)
+        resize_update();
+
     Event event(x, y);
     layout_every_single_root();
     for (auto root : roots)
@@ -1206,6 +1321,8 @@ ThinClient *c_from_id(int id) {
 }
 
 void layout_every_single_root() {
+    if (roots.empty())
+        return;
     std::vector<Container *> backup;
     for (auto r : roots) {
         for (int i = r->children.size() - 1; i >= 0; i--) {
@@ -1750,112 +1867,35 @@ void on_window_open(int id) {
                 root->consumed_event = true;
             };
             resize->when_drag = [](Container *root, Container *c) {
-                auto cdata = (ClientData *) c->user_data;
-                auto rdata = (RootData *) c->user_data;
-                auto s = scale(rdata->id); 
-                auto client = c_from_id(cdata->id); 
-                if (client->resizing) {
-                    auto m = mouse();
-                    Bounds diff = {m.x - client->initial_x, m.y - client->initial_y, 0, 0};
-                    int change_x = 0;
-                    int change_y = 0;
-                    int change_w = 0;
-                    int change_h = 0;
-
-                    if (client->resize_type == (int) RESIZE_TYPE::NONE) {
-                    } else if (client->resize_type == (int) RESIZE_TYPE::BOTTOM) {
-                        change_h += diff.y;
-                    } else if (client->resize_type == (int) RESIZE_TYPE::BOTTOM_LEFT) {
-                        change_w -= diff.x;
-                        change_x += diff.x;
-                        change_h += diff.y;
-                    } else if (client->resize_type == (int) RESIZE_TYPE::BOTTOM_RIGHT) {
-                        change_w += diff.x;
-                        change_h += diff.y;
-                    } else if (client->resize_type == (int) RESIZE_TYPE::TOP) {
-                        change_y += diff.y;
-                        change_h -= diff.y;
-                    } else if (client->resize_type == (int) RESIZE_TYPE::TOP_LEFT) {
-                        change_y += diff.y;
-                        change_h -= diff.y;
-                        change_w -= diff.x;
-                        change_x += diff.x;
-                    } else if (client->resize_type == (int) RESIZE_TYPE::TOP_RIGHT) {
-                        change_y += diff.y;
-                        change_h -= diff.y;
-                        change_w += diff.x;
-                    } else if (client->resize_type == (int) RESIZE_TYPE::LEFT) {
-                        change_w -= diff.x;
-                        change_x += diff.x;
-                    } else if (client->resize_type == (int) RESIZE_TYPE::RIGHT) {
-                        change_w += diff.x;
-                    }
-
-                    // change in x and y shouldn't happen if size is going to be clipped
-                    auto size = client->initial_win_box;
-                    size.w += change_w;
-                    size.h += change_h;
-                    bool y_clipped = false;
-                    bool x_clipped = false;
-                    if (size.w < 100) {
-                        size.w    = 100;
-                        x_clipped = true;
-                    }
-                    if (size.h < 50) {
-                        size.h    = 50;
-                        y_clipped = true;
-                    }
-                    auto min = hypriso->min_size(client->id);
-                    auto mini = titlebar_h * s * 3 * title_button_wratio + titlebar_icon_button_h * s + titlebar_icon_pad * s * 2;
-                    if (min.w < mini) {
-                        min.w = mini;
-                    }
-                    
-                    if (hypriso->is_x11(client->id)) {
-                        min.x /= s;
-                        min.y /= s;
-                    }
-                    if (size.w < min.w) {
-                        size.w    = min.w;
-                        x_clipped = true;
-                    }
-                    if (size.h < min.h) {
-                        size.h    = min.h;
-                        y_clipped = true;
-                    }
-
-                    auto pos = client->initial_win_box;
-                    auto real = bounds(client);
-                    if (x_clipped) {
-                        pos.x = real.x;
-                    } else {
-                        pos.x += change_x;
-                    }
-                    if (y_clipped) {
-                        pos.y = real.y;
-                    } else {
-                        pos.y += change_y;
-                    }
-                    auto fb = Bounds(pos.x, pos.y, size.w, size.h);
-                    hypriso->move_resize(client->id, fb.x, fb.y, fb.w, fb.h);
-                }
+                resize_update();
             };
             resize->when_drag_start = [](Container *root, Container *c) {
+                //auto cdata = (ClientData *) c->user_data;
+                //auto client = c_from_id(cdata->id);
+                //client->resizing = true;
+                //auto m = mouse();
+                //client->initial_x = m.x;
+                //client->initial_y = m.y;
+                //client->initial_win_box = bounds(client);
+                //c->when_drag(root, c);
                 auto cdata = (ClientData *) c->user_data;
                 auto client = c_from_id(cdata->id);
-                client->resizing = true;
-                auto m = mouse();
-                client->initial_x = m.x;
-                client->initial_y = m.y;
-                client->initial_win_box = bounds(client);
-                c->when_drag(root, c);
+                //client->resizing = true;
+                //auto m = mouse();
+                //client->initial_x = m.x;
+                //client->initial_y = m.y;
+                //client->initial_win_box = bounds(client);
+                //c->when_drag(root, c);
+                resize_start(cdata->id, (RESIZE_TYPE) client->resize_type);
+                resize_update();
             };
             resize->when_drag_end = [](Container *root, Container *c) {
-                auto cdata = (ClientData *) c->user_data;
-                auto client = c_from_id(cdata->id);
-                client->resizing = false;
-                c->when_drag(root, c);
-                update_restore_info_for(client->id);
+                resize_stop();
+                //auto cdata = (ClientData *) c->user_data;
+                //auto client = c_from_id(cdata->id);
+                //client->resizing = false;
+                //c->when_drag(root, c);
+                //update_restore_info_for(client->id);
             };
             resize->handles_pierced = [](Container* container, int mouse_x, int mouse_y) {
                 auto cdata = (ClientData *) container->user_data;
@@ -1890,6 +1930,7 @@ void on_window_open(int id) {
             auto c = r->child(::vbox, FILL_SPACE, FILL_SPACE); // the sizes are set later by layout code
             c->custom_type = (int) TYPE::CLIENT;
             c->user_data = new ClientData(id);            
+            c->automatically_paint_children = false;
             resize->user_data = c->user_data;
             
             auto thinc = c_from_id(id);
@@ -1923,10 +1964,12 @@ void on_window_open(int id) {
                 auto client = c_from_id(data->id);
                 auto titledata = (TitleData *) c->user_data;
                 if (data->id == rdata->active_id) {
+                    auto color = color_titlebar;
+                    color.a = data->alpha;
                     if (client->snapped) {
-                        rect(c->real_bounds, color_titlebar, 0, 0);
+                        rect(c->real_bounds, color, 0, 0);
                     } else {
-                        rect(c->real_bounds, color_titlebar, 12, rounding * scale(rdata->id));
+                        rect(c->real_bounds, color, 12, rounding * scale(rdata->id));
                     }
                     auto text = title_name(client);
                     if (titledata->cached_text != text) {
@@ -1949,14 +1992,14 @@ void on_window_open(int id) {
                     } else {
                         draw_texture(titledata->icon,
                             c->real_bounds.x + titlebar_icon_pad * s,
-                            c->real_bounds.y + (c->real_bounds.h - titledata->icon.h) * .5);
+                            c->real_bounds.y + (c->real_bounds.h - titledata->icon.h) * .5, data->alpha);
                     }
 
                     double xoff = c->real_bounds.x + (titledata->icon.id == -1 ? titlebar_icon_pad * s : titlebar_icon_pad * s * 2 + titledata->icon.w);
                     double clip_w = c->real_bounds.w - (xoff - c->real_bounds.x) - (c->real_bounds.h * 3 * title_button_wratio);
                     if (clip_w <= 0.0)
                         clip_w = 1.0;
-                    draw_texture(titledata->main, xoff, c->real_bounds.y + (c->real_bounds.h - titledata->main.h) * .5, 1.0, clip_w);
+                    draw_texture(titledata->main, xoff, c->real_bounds.y + (c->real_bounds.h - titledata->main.h) * .5, data->alpha, clip_w);
                 }
                 c->real_bounds = backup;
             };
@@ -1976,28 +2019,32 @@ void on_window_open(int id) {
             auto min = title->child(100, FILL_SPACE);
             min->user_data = new IconData;
             min->when_mouse_down = title->when_mouse_down;
+            min->when_mouse_motion = paint {
+                auto rdata = (RootData *) root->user_data;
+                auto s = scale(rdata->id);
+                bool needs_damage = any_change(c->uuid, "min", {(float) c->state.mouse_hovering, (float) c->state.mouse_pressing});               
+                if (needs_damage) {
+                    force_damage_all = true;
+                    //hypriso->damage_entire(rdata->id);
+                    //auto b = c->real_bounds;
+                    //b.scale(1.0 / s);
+                    //b.grow(2 * s);
+                    //hypriso->damage_box(b);
+                    request_refresh();
+                }
+            };
             min->when_paint = [](Container *root, Container *c) {
                 auto data = (ClientData *) c->parent->parent->user_data;
                 auto rdata = (RootData *) root->user_data;
                 auto cdata = (IconData *) c->user_data;
                 auto s = scale(rdata->id);
-                if (data->id == rdata->active_id) {
-                    bool needs_damage = any_change(c->uuid, "min", {(float) c->state.mouse_hovering, (float) c->state.mouse_pressing});               
-                    if (needs_damage) {
-                        request_refresh();
-                        force_damage_all = true;
-                        //hypriso->damage_entire(rdata->id);
-                        /*auto b = c->real_bounds;
-                        b.scale(1.0 / s);
-                        b.grow(2 * s);
-                        hypriso->damage_box(b);*/
-                    }
- 
-                    if (c->state.mouse_pressing) {
-                        rect(c->real_bounds, color_titlebar_pressed);
-                    } else if (c->state.mouse_hovering) {
-                        rect(c->real_bounds, color_titlebar_hovered);
-                    }
+                if (data->id == rdata->active_id) { 
+                    auto color = color_titlebar_pressed;
+                    if (c->state.mouse_hovering)
+                        color = color_titlebar_hovered;
+                    color.a = data->alpha;
+                    if (c->state.mouse_hovering || c->state.mouse_pressing)
+                        rect(c->real_bounds, color);
 
                     if (!cdata->attempted) {
                         cdata->attempted = true;
@@ -2007,7 +2054,7 @@ void on_window_open(int id) {
                     if (cdata->main.id != -1) {
                         draw_texture(cdata->main,
                             c->real_bounds.x + c->real_bounds.w * .5 - cdata->main.w * .5,
-                            c->real_bounds.y + c->real_bounds.h * .5 - cdata->main.h * .5);
+                            c->real_bounds.y + c->real_bounds.h * .5 - cdata->main.h * .5, data->alpha);
                     }
                 }
             };
@@ -2049,11 +2096,12 @@ void on_window_open(int id) {
                         b.grow(2 * s);
                         hypriso->damage_box(b);*/
                     }
-                    if (c->state.mouse_pressing) {
-                        rect(c->real_bounds, color_titlebar_pressed);
-                    } else if (c->state.mouse_hovering) {
-                        rect(c->real_bounds, color_titlebar_hovered);
-                    }
+                    auto color = color_titlebar_pressed;
+                    if (c->state.mouse_hovering)
+                        color = color_titlebar_hovered;
+                    color.a = data->alpha;
+                    if (c->state.mouse_hovering || c->state.mouse_pressing)
+                        rect(c->real_bounds, color);
 
                     if (!cdata->attempted) {
                         cdata->attempted = true;
@@ -2069,7 +2117,7 @@ void on_window_open(int id) {
                            texid = cdata->secondary; 
                         draw_texture(texid,
                             c->real_bounds.x + c->real_bounds.w * .5 - cdata->main.w * .5,
-                            c->real_bounds.y + c->real_bounds.h * .5 - cdata->main.h * .5);
+                            c->real_bounds.y + c->real_bounds.h * .5 - cdata->main.h * .5, data->alpha);
                     }
                 }
             };
@@ -2115,11 +2163,12 @@ void on_window_open(int id) {
                        mask = 0; 
                        round = 0.0;
                     }
-                    if (c->state.mouse_pressing) {
-                        rect(c->real_bounds, color_titlebar_pressed_closed, mask, round);
-                    } else if (c->state.mouse_hovering) {
-                        rect(c->real_bounds, color_titlebar_hovered_closed, mask, round);
-                    }
+                    auto color = color_titlebar_pressed_closed;
+                    if (c->state.mouse_hovering)
+                        color = color_titlebar_hovered_closed;
+                    color.a = data->alpha;
+                    if (c->state.mouse_hovering || c->state.mouse_pressing)
+                        rect(c->real_bounds, color, mask, round);
 
                     if (!cdata->attempted) {
                         cdata->attempted = true;
@@ -2135,7 +2184,7 @@ void on_window_open(int id) {
                         }
                         draw_texture(texid,
                             c->real_bounds.x + c->real_bounds.w * .5 - cdata->main.w * .5,
-                            c->real_bounds.y + c->real_bounds.h * .5 - cdata->main.h * .5);
+                            c->real_bounds.y + c->real_bounds.h * .5 - cdata->main.h * .5, data->alpha);
                     }
                 }
             };
@@ -2312,7 +2361,9 @@ void on_monitor_open(int id) {
 
         // determine if expanded
         auto b = c->real_bounds;
-        b.grow(interspace * s);
+        if (space_data->expanded) {
+            b.grow(interspace * s * 1.5);
+        }
         auto m = mouse();
         space_data->expanded = bounds_contains(b, m.x * s, m.y * s);
 
@@ -2344,20 +2395,20 @@ void on_monitor_open(int id) {
 }
 
 void on_monitor_closed(int id) {
-    for (int i = 0; i < hypriso->monitors.size(); i++) {
-        auto m = hypriso->monitors[i];
-        if (m->id == id) {
-            delete m;
-            hypriso->monitors.erase(hypriso->monitors.begin() + i); 
-        }
-    } 
     for (int i = 0; i < roots.size(); i++) {
         auto data = (RootData *) roots[i]->user_data;
         if (data->id == id) {
             delete roots[i];
             roots.erase(roots.begin() + i);
         }
-    } 
+    }
+    for (int i = 0; i < hypriso->monitors.size(); i++) {
+        auto m = hypriso->monitors[i];
+        if (m->id == id) {
+            delete m;
+            hypriso->monitors.erase(hypriso->monitors.begin() + i); 
+        }
+    }  
 }
 
 void on_drag_start_requested(int id) {
@@ -2377,6 +2428,29 @@ void any_container_closed(Container *c) {
     remove_data(c->uuid); 
 }
 
+void on_draw_decos(std::string name, int m, int w, float a) {
+    if (name != "MylarBar")
+        return;
+
+    for (auto r : roots) {
+        for (auto c : r->children) {
+            if (c->custom_type == (int) TYPE::CLIENT) {
+               auto chdata = (ClientData *) c->user_data;
+               if (chdata->id == w) {
+                   // todo @speed
+                   layout_every_single_root();
+                   c->automatically_paint_children = true;
+                   chdata->alpha = a;
+                   paint_outline(r, c);
+                   chdata->alpha = 1.0;
+                   c->automatically_paint_children = false;
+                   return;
+               }
+            }
+        }
+    }
+};
+
 void startup::begin() {
     on_any_container_close = any_container_closed;
     
@@ -2384,6 +2458,7 @@ void startup::begin() {
     hypriso->on_mouse_move = on_mouse_move;
     hypriso->on_key_press = on_key_press;
     hypriso->on_scrolled = on_scrolled;
+    hypriso->on_draw_decos = on_draw_decos;
     hypriso->on_render = on_render;
     hypriso->on_window_open = on_window_open;
     hypriso->on_window_closed = on_window_closed;
