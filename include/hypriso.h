@@ -108,6 +108,7 @@ struct ThinClient {
     int initial_y = 0; // before drag start
 
     bool snapped = false;
+    SnapPosition snap_type = SnapPosition::NONE;
     Bounds pre_snap_bounds;
     float drag_initial_mouse_percentage = 0;
 

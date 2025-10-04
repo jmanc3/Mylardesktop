@@ -128,6 +128,7 @@ ThinMonitor *m_from_id(int id);
 void update_restore_info_for(int w);
 void remove_snap_helpers();
 void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position, bool create_helper = true);
+void clear_snap_groups(int id);
 
 struct WindowRestoreLocation {
     Bounds box; // all values are 0-1 and supposed to be scaled to monitor
@@ -181,6 +182,7 @@ struct ClientData : UserData {
     int id = 0;
     int index = 0; // for reordering based on the stacking order
     float alpha = 1.0;
+    std::vector<int> grouped_with;
 
     ClientData(int id) : id(id) {
        ; 
@@ -520,6 +522,20 @@ void resize_start(int id, RESIZE_TYPE type) {
     client->initial_win_box = bounds(client);
 }
 
+bool is_part_of_snap_group(int id) {
+    for (auto r: roots) {
+        for (auto c : r->children) {
+           if (c->custom_type == (int) TYPE::CLIENT) {
+               auto cdata = (ClientData *) c->user_data;
+               if (cdata->id == id) {
+                   return !cdata->grouped_with.empty();
+               }
+           } 
+        }
+    }
+    return false;
+}
+
 void resize_update() {
     //auto cdata = (ClientData *) c->user_data;
     //auto rdata = (RootData *) c->user_data;
@@ -611,7 +627,14 @@ void resize_update() {
         }
         auto fb = Bounds(pos.x, pos.y, size.w, size.h);
         hypriso->move_resize(client->id, fb.x, fb.y, fb.w, fb.h);
+
+        bool grouped = is_part_of_snap_group(client->id);
+        if (grouped) {
+            // todo resize others based on us
+            notify("resize group");
+        }
     }
+    request_refresh();
 }
 
 void resize_stop() {
@@ -635,6 +658,7 @@ void drag_start(int id) {
     auto mb = bounds(monitor);
     if (client->snapped) {
         client->snapped = false;
+        client->snap_type = SnapPosition::NONE;
         hypriso->should_round(client->id, true);
         auto s = scale(mid);
         //client->drag_initial_mouse_percentage = perc;
@@ -970,15 +994,112 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
     } 
 }
 
+bool groupable_types(SnapPosition a, SnapPosition b) {
+    if (a == b)
+        return false;
+    if (a == SnapPosition::MAX || b == SnapPosition::MAX)
+        return false;
+    bool a_on_left = a == SnapPosition::LEFT || a == SnapPosition::TOP_LEFT || a == SnapPosition::BOTTOM_LEFT;
+    bool b_on_left = b == SnapPosition::LEFT || b == SnapPosition::TOP_LEFT || b == SnapPosition::BOTTOM_LEFT;
+    if (a_on_left != b_on_left) {
+        return true;
+    } else {
+        bool a_on_top = a == SnapPosition::TOP_LEFT || a == SnapPosition::TOP_RIGHT;
+        bool b_on_top = b == SnapPosition::TOP_LEFT || b == SnapPosition::TOP_RIGHT;
+        if (a_on_top != b_on_top) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool groupable(SnapPosition position, const std::vector<int> ids) {
+    std::vector<SnapPosition> positions;
+    for (auto id : ids)
+        if (auto client = c_from_id(id))
+            positions.push_back(client->snap_type); 
+
+    // have to check in with group represented by b and see if all are mergable friendships
+    for (auto p : positions)
+        if (!groupable_types(position, p)) 
+            return false;
+
+    return true; 
+}
+
+void add_to_snap_group(int id, int other, const std::vector<int> &grouped) {
+    nz(fz("add to snap group: {} to {}", id, other));
+    // go through all current groups of other, and add id to those as well
+    for (auto r : roots) {
+        for (auto c : r->children) {
+            if (c->custom_type == (int) TYPE::CLIENT) {
+                auto cdata = (ClientData *) c->user_data;
+                auto client = c_from_id(cdata->id);
+                bool part_of_group = false;
+                for (auto g : grouped)
+                    if (g == cdata->id)        
+                        part_of_group = true;
+                if (cdata->id == other || part_of_group) {
+                    cdata->grouped_with.push_back(id);
+                }
+                if (cdata->id == id) {
+                    cdata->grouped_with.push_back(other);
+                    for (auto g : grouped) {
+                        cdata->grouped_with.push_back(g);
+                    }
+                }
+            }
+        }
+    } 
+}
+
+
 void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position, bool create_helper) {
     bool already_snapped = c->snapped;
     c->snapped = true;
+    c->snap_type = snap_position;
     hypriso->should_round(c->id, false);
     if (!already_snapped)
         c->pre_snap_bounds = bounds(c);
     position.y += titlebar_h;
     position.h -= titlebar_h;
     hypriso->move_resize(c->id, position.x, position.y, position.w, position.h); 
+
+    // if not snapped anymore, remove from all snap groups and clear self groups
+    if (!c->snapped)
+        clear_snap_groups(c->id);
+    // attempt to group snapped window with other snapped windows
+    if (c->snapped) {
+        // find first top to bottom snapped client that is not self
+        // if not mergeble, don't do anything special
+        // if can be merged, then merge by adding to itself and other to each other groups
+        for (auto r: roots) {
+            for (auto ch : r->children) {
+                if (ch->custom_type == (int) TYPE::CLIENT) {
+                    auto other_cdata = (ClientData *) ch->user_data;
+                    if (other_cdata->id == c->id)
+                        continue; // skip self
+                    auto other_client = c_from_id(other_cdata->id);
+                    if (!other_client->snapped)
+                        continue; // skip non snapped
+                    std::vector<int> ids;
+                    ids.push_back(other_client->id);
+                    for (auto grouped_id : other_cdata->grouped_with)
+                        ids.push_back(grouped_id);
+                    bool mergable = groupable(c->snap_type, ids);
+                    if (mergable) {
+                        add_to_snap_group(c->id, other_cdata->id, other_cdata->grouped_with);
+                    } else {
+                        // if first merge attempt fails, we don't seek deeper layers
+                        goto out;
+                    }
+                }
+            }
+            out: 
+            break; // todo logic bug needs to be on actual root not first one
+        }
+    }
 
     if (create_helper) {
         if (!(snap_position == SnapPosition::MAX || snap_position == SnapPosition::NONE)) {
@@ -1050,6 +1171,9 @@ void drag_stop() {
             }
         }
     }
+    if (!c->snapped) {
+        clear_snap_groups(window);
+    }
 }
 
 void toggle_maximize(int id) {
@@ -1114,6 +1238,7 @@ bool on_mouse_move(int id, float x, float y) {
             auto rdata = (RootData *) r->user_data;
             if (rdata->id != m)
                 continue;
+
             if (current_coords.x <= r->real_bounds.x + 1) {
                 if (!has_done_window_switch && no_fullscreens && enough_time) {
                     has_done_window_switch = true;
@@ -2202,9 +2327,30 @@ void on_window_open(int id) {
     }
 }
 
+void clear_snap_groups(int id) {
+    nz(fz("clear {}", id));
+    
+    for (auto r: roots) {
+        for (auto c : r->children) {
+           if (c->custom_type == (int) TYPE::CLIENT) {
+               auto cdata = (ClientData *) c->user_data;
+               if (cdata->id == id) {
+                   cdata->grouped_with.clear();
+               }
+               for (int i = cdata->grouped_with.size() - 1; i >= 0; i--) {
+                   if (cdata->grouped_with[i] == id) {
+                       nz(fz("clear other {}", cdata->grouped_with[i]));
+                       cdata->grouped_with.erase(cdata->grouped_with.begin() + i);
+                   } 
+               }
+           }
+        }
+    }
+}
+
 void on_window_closed(int id) {
     auto client = c_from_id(id);
-    
+
     for (int i = 0; i < alt_tab_menu.root->children.size(); i++) {
         auto t = alt_tab_menu.root->children[i];
         auto tab_data = (TabData *) t->user_data;
