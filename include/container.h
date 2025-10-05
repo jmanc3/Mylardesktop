@@ -41,6 +41,61 @@ struct Bounds {
     void grow(double amount);
 
     Bounds scale(double amount);
+    
+    double right() const { return x + w; }
+    double bottom() const { return y + h; }
+    bool empty() const { return w <= 0 || h <= 0; }
+
+    void subtract(const Bounds& other) {
+        // Compute intersection
+        double ix = std::max(x, other.x);
+        double iy = std::max(y, other.y);
+        double ir = std::min(right(), other.right());
+        double ib = std::min(bottom(), other.bottom());
+        double iw = ir - ix;
+        double ih = ib - iy;
+
+        // No overlap
+        if (iw <= 0 || ih <= 0)
+            return;
+
+        // Full coverage
+        if (ix <= x && iy <= y && ir >= right() && ib >= bottom()) {
+            *this = {}; // empty
+            return;
+        }
+
+        // Check if the overlap touches only one side (and spans fully in the other axis)
+        bool covers_vertically = iy <= y && ib >= bottom();   // touches full vertical span
+        bool covers_horizontally = ix <= x && ir >= right();  // touches full horizontal span
+
+        if (covers_vertically) {
+            // Trim horizontally
+            if (ix <= x) {
+                // trim left
+                double newX = ir;
+                double newW = right() - newX;
+                if (newW > 0) { x = newX; w = newW; }
+            } else if (ir >= right()) {
+                // trim right
+                w = ix - x;
+            }
+        } else if (covers_horizontally) {
+            // Trim vertically
+            if (iy <= y) {
+                // trim top
+                double newY = ib;
+                double newH = bottom() - newY;
+                if (newH > 0) { y = newY; h = newH; }
+            } else if (ib >= bottom()) {
+                // trim bottom
+                h = iy - y;
+            }
+        } else {
+            // Overlap cuts through — would make disjoint regions
+            // => do nothing
+        }
+    }
 };
 
 enum layout_type {

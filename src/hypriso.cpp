@@ -12,6 +12,7 @@
 #include "first.h"
 
 #include <algorithm>
+#include <hyprutils/math/Vector2D.hpp>
 #include <librsvg/rsvg.h>
 #include <any>
 
@@ -404,6 +405,23 @@ void remove_request_listeners() {
     }
 }
 
+inline CFunctionHook* g_pOnRMS = nullptr;
+typedef Vector2D (*origOnRMS)(void*);
+Vector2D hook_OnRMS(void* thisptr) {
+    //recheck_csd_for_all_wayland_windows();
+    return Vector2D(10, 10);
+    //return (*(origOnRMS)g_pOnRMS->m_original)(thisptr);
+}
+
+void overwrite_min() {
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "requestedMinSize");
+        g_pOnRMS = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_OnRMS);
+        g_pOnRMS->hook();
+    }
+    
+}
+
 void recheck_csd_for_all_wayland_windows() {
     if (source)    
         return;
@@ -723,6 +741,7 @@ void HyprIso::create_hooks_and_callbacks() {
     detect_move_resize_requests();    
     disable_default_alt_tab_behaviour();
     hook_render_functions();
+    overwrite_min();
 }
 
 void HyprIso::end() {

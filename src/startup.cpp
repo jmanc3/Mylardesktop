@@ -129,6 +129,7 @@ void update_restore_info_for(int w);
 void remove_snap_helpers();
 void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position, bool create_helper = true);
 void clear_snap_groups(int id);
+Bounds snap_position_to_bounds(int mon, SnapPosition pos);
 
 struct WindowRestoreLocation {
     Bounds box; // all values are 0-1 and supposed to be scaled to monitor
@@ -509,6 +510,20 @@ void drag_update() {
     hypriso->bring_to_front(hypriso->dragging_id);
 }
 
+ClientData *get_cdata(int id) {
+    for (auto r: roots) {
+        for (auto c : r->children) {
+           if (c->custom_type == (int) TYPE::CLIENT) {
+               auto cdata = (ClientData *) c->user_data;
+               if (cdata->id == id) {
+                   return cdata;
+               }
+           }
+        }
+    }
+    return nullptr; 
+}
+
 void resize_start(int id, RESIZE_TYPE type) {
     hypriso->resizing = true;
     hypriso->resizing_id = id;
@@ -520,6 +535,14 @@ void resize_start(int id, RESIZE_TYPE type) {
     client->initial_x = m.x;
     client->initial_y = m.y;
     client->initial_win_box = bounds(client);
+    if (auto cc = get_cdata(id)) {
+        for (auto g : cc->grouped_with) {
+            auto gg = c_from_id(g);
+            gg->initial_x = m.x;
+            gg->initial_y = m.y;
+            gg->initial_win_box = bounds(gg);
+        }
+    }
 }
 
 bool is_part_of_snap_group(int id) {
@@ -536,109 +559,261 @@ bool is_part_of_snap_group(int id) {
     return false;
 }
 
+void resize_client(ThinClient *client, int resize_type) {
+    auto monitor = get_monitor(client->id);
+    auto s = scale(monitor);
+    auto m = mouse();
+    Bounds diff = {m.x - client->initial_x, m.y - client->initial_y, 0, 0};
+    int change_x = 0;
+    int change_y = 0;
+    int change_w = 0;
+    int change_h = 0;
+
+    if (resize_type == (int) RESIZE_TYPE::NONE) {
+    } else if (resize_type == (int) RESIZE_TYPE::BOTTOM) {
+        change_h += diff.y;
+    } else if (resize_type == (int) RESIZE_TYPE::BOTTOM_LEFT) {
+        change_w -= diff.x;
+        change_x += diff.x;
+        change_h += diff.y;
+    } else if (resize_type == (int) RESIZE_TYPE::BOTTOM_RIGHT) {
+        change_w += diff.x;
+        change_h += diff.y;
+    } else if (resize_type == (int) RESIZE_TYPE::TOP) {
+        change_y += diff.y;
+        change_h -= diff.y;
+    } else if (resize_type == (int) RESIZE_TYPE::TOP_LEFT) {
+        change_y += diff.y;
+        change_h -= diff.y;
+        change_w -= diff.x;
+        change_x += diff.x;
+    } else if (resize_type == (int) RESIZE_TYPE::TOP_RIGHT) {
+        change_y += diff.y;
+        change_h -= diff.y;
+        change_w += diff.x;
+    } else if (resize_type == (int) RESIZE_TYPE::LEFT) {
+        change_w -= diff.x;
+        change_x += diff.x;
+    } else if (resize_type == (int) RESIZE_TYPE::RIGHT) {
+        change_w += diff.x;
+    }
+
+    // change in x and y shouldn't happen if size is going to be clipped
+    auto size = client->initial_win_box;
+    size.w += change_w;
+    size.h += change_h;
+    bool y_clipped = false;
+    bool x_clipped = false;
+    if (size.w < 100) {
+        size.w    = 100;
+        x_clipped = true;
+    }
+    if (size.h < 50) {
+        size.h    = 50;
+        y_clipped = true;
+    }
+    auto min = hypriso->min_size(client->id);
+    auto mini = titlebar_h * s * 3 * title_button_wratio + titlebar_icon_button_h * s + titlebar_icon_pad * s * 2;
+    if (min.w < mini) {
+        min.w = mini;
+    }
+    min.x = 10;
+    min.y = 10;
+    min.w = 10;
+    min.h = 10;
+    
+    if (hypriso->is_x11(client->id)) {
+        min.x /= s;
+        min.y /= s;
+    }
+    if (size.w < min.w) {
+        size.w    = min.w;
+        x_clipped = true;
+    }
+    if (size.h < min.h) {
+        size.h    = min.h;
+        y_clipped = true;
+    }
+
+    auto pos = client->initial_win_box;
+    auto real = bounds(client);
+    if (x_clipped) {
+        pos.x = real.x;
+    } else {
+        pos.x += change_x;
+    }
+    if (y_clipped) {
+        pos.y = real.y;
+    } else {
+        pos.y += change_y;
+    }
+    auto fb = Bounds(pos.x, pos.y, size.w, size.h);
+    hypriso->move_resize(client->id, fb.x, fb.y, fb.w, fb.h);
+}
+
+bool on_left(ThinClient *c) {
+    if (c->snap_type == SnapPosition::LEFT) {
+        return true;
+    } else if (c->snap_type == SnapPosition::TOP_LEFT) {
+        return true;
+    } else if (c->snap_type == SnapPosition::BOTTOM_LEFT) {
+        return true;
+    }
+    return false;
+}
+
+bool on_top(ThinClient *c) {
+    if (c->snap_type == SnapPosition::TOP_LEFT) {
+        return true;
+    } else if (c->snap_type == SnapPosition::TOP_RIGHT) {
+        return true;
+    }
+    return false;
+}
+
+bool on_bottom(ThinClient *c) {
+    if (c->snap_type == SnapPosition::BOTTOM_LEFT) {
+        return true;
+    } else if (c->snap_type == SnapPosition::BOTTOM_RIGHT) {
+        return true;
+    }
+    return false;
+}
+
+std::vector<ThinClient *> thin_groups(int id) {
+    auto c_data = get_cdata(id);
+    std::vector<ThinClient *> clients;
+    for (auto g : c_data->grouped_with) {
+        if (auto g_data = c_from_id(g)) {
+            clients.push_back(g_data);
+        }
+    }
+    return clients;
+}
+
+void three_type_dragging(int id, bool left_drag, bool middle_drag, bool right_drag, 
+                         float left_perc, float middle_perc, float right_perc,
+                         Bounds reserved, Bounds start, Bounds end) {
+    float y_off = (end.y - start.y) / reserved.h;
+    float x_off = (end.x - start.x) / reserved.w;
+    if (x_off > .5)
+        x_off = .5;
+    if (x_off < -.5)
+        x_off = -.5;
+
+    if (left_drag)
+        left_perc += y_off;
+    if (middle_drag)
+        middle_perc += x_off;
+    if (right_drag)
+        right_perc += y_off;
+
+    auto r = reserved;
+
+    Bounds lt = Bounds(r.x, r.y, r.w * middle_perc, r.h * left_perc);
+    
+    Bounds lb = Bounds(r.x, r.y + r.h * left_perc, r.w * middle_perc, r.h * (1 - left_perc));
+    Bounds rt = Bounds(r.x + r.w * middle_perc, r.y, r.w * (1 - middle_perc), r.h * right_perc);
+    Bounds rb = Bounds(r.x + r.w * middle_perc, r.y + r.h * right_perc, r.w * (1 - middle_perc), r.h * (1 - right_perc));
+    
+    auto gs = thin_groups(id);
+    gs.push_back(c_from_id(id));
+    for (auto g : gs) {
+        if (g->snap_type == SnapPosition::LEFT) {
+            hypriso->move_resize(g->id, reserved.x, reserved.y + titlebar_h, reserved.w * middle_perc, reserved.h - titlebar_h);
+        } else if (g->snap_type == SnapPosition::RIGHT) {
+            hypriso->move_resize(g->id, reserved.x + reserved.w * middle_perc, reserved.y + titlebar_h, reserved.w * (1 - middle_perc), reserved.h - titlebar_h);
+        } else if (g->snap_type == SnapPosition::TOP_LEFT) {
+            hypriso->move_resize(g->id, lt.x, lt.y + titlebar_h, lt.w, lt.h - titlebar_h);
+        } else if (g->snap_type == SnapPosition::BOTTOM_LEFT) {
+            hypriso->move_resize(g->id, lb.x, lb.y + titlebar_h, lb.w, lb.h - titlebar_h);
+        } else if (g->snap_type == SnapPosition::TOP_RIGHT) {
+            hypriso->move_resize(g->id, rt.x, rt.y + titlebar_h, rt.w, rt.h - titlebar_h);
+        } else if (g->snap_type == SnapPosition::BOTTOM_RIGHT) {
+            hypriso->move_resize(g->id, rb.x, rb.y + titlebar_h, rb.w, rb.h - titlebar_h);
+        }
+    }
+}
+
+void fill_snap_area(int a_id) {
+    auto thin_a = c_from_id(a_id);
+    auto a_bounds = bounds(thin_a);
+    auto top = on_top(thin_a);
+    auto left = on_left(thin_a);
+    auto mon = get_monitor(a_id);
+    auto s = scale(mon);
+    auto reserved = bounds_reserved(m_from_id(mon));
+
+    for (auto thin_g : thin_groups(a_id)) {
+        auto b_bounds = bounds(thin_g);
+        bool b_top = on_top(thin_g);
+        bool b_left = on_left(thin_g);
+        if (left) {
+            if (!b_left) {
+                a_bounds.w =  b_bounds.x - a_bounds.x;
+            } 
+        }
+        if (left && top) { //tl
+            if (!b_top) {
+                a_bounds.h = (b_bounds.y - a_bounds.y);
+            }
+        } else if (left && !top) { //bl
+            if (b_top) {
+                //a_bounds.y = 0;
+                //a_bounds.h = 0;
+            }                      
+        } else if (!left && top) { //tr
+            
+        } else if (!left && !top) { //br
+            
+        }        
+    }
+    auto b = a_bounds;
+    hypriso->move_resize(a_id, b.x, b.y, b.w, b.h);
+}
+
 void resize_update() {
-    //auto cdata = (ClientData *) c->user_data;
-    //auto rdata = (RootData *) c->user_data;
-    //auto s = scale(rdata->id);
     auto client = c_from_id(hypriso->resizing_id);
     if (client) {
-        auto monitor = get_monitor(client->id);
-        auto s = scale(monitor);
-        auto m = mouse();
-        Bounds diff = {m.x - client->initial_x, m.y - client->initial_y, 0, 0};
-        int change_x = 0;
-        int change_y = 0;
-        int change_w = 0;
-        int change_h = 0;
-
-        if (client->resize_type == (int) RESIZE_TYPE::NONE) {
-        } else if (client->resize_type == (int) RESIZE_TYPE::BOTTOM) {
-            change_h += diff.y;
-        } else if (client->resize_type == (int) RESIZE_TYPE::BOTTOM_LEFT) {
-            change_w -= diff.x;
-            change_x += diff.x;
-            change_h += diff.y;
-        } else if (client->resize_type == (int) RESIZE_TYPE::BOTTOM_RIGHT) {
-            change_w += diff.x;
-            change_h += diff.y;
-        } else if (client->resize_type == (int) RESIZE_TYPE::TOP) {
-            change_y += diff.y;
-            change_h -= diff.y;
-        } else if (client->resize_type == (int) RESIZE_TYPE::TOP_LEFT) {
-            change_y += diff.y;
-            change_h -= diff.y;
-            change_w -= diff.x;
-            change_x += diff.x;
-        } else if (client->resize_type == (int) RESIZE_TYPE::TOP_RIGHT) {
-            change_y += diff.y;
-            change_h -= diff.y;
-            change_w += diff.x;
-        } else if (client->resize_type == (int) RESIZE_TYPE::LEFT) {
-            change_w -= diff.x;
-            change_x += diff.x;
-        } else if (client->resize_type == (int) RESIZE_TYPE::RIGHT) {
-            change_w += diff.x;
-        }
-
-        // change in x and y shouldn't happen if size is going to be clipped
-        auto size = client->initial_win_box;
-        size.w += change_w;
-        size.h += change_h;
-        bool y_clipped = false;
-        bool x_clipped = false;
-        if (size.w < 100) {
-            size.w    = 100;
-            x_clipped = true;
-        }
-        if (size.h < 50) {
-            size.h    = 50;
-            y_clipped = true;
-        }
-        auto min = hypriso->min_size(client->id);
-        auto mini = titlebar_h * s * 3 * title_button_wratio + titlebar_icon_button_h * s + titlebar_icon_pad * s * 2;
-        if (min.w < mini) {
-            min.w = mini;
-        }
-        
-        if (hypriso->is_x11(client->id)) {
-            min.x /= s;
-            min.y /= s;
-        }
-        if (size.w < min.w) {
-            size.w    = min.w;
-            x_clipped = true;
-        }
-        if (size.h < min.h) {
-            size.h    = min.h;
-            y_clipped = true;
-        }
-
-        auto pos = client->initial_win_box;
-        auto real = bounds(client);
-        if (x_clipped) {
-            pos.x = real.x;
-        } else {
-            pos.x += change_x;
-        }
-        if (y_clipped) {
-            pos.y = real.y;
-        } else {
-            pos.y += change_y;
-        }
-        auto fb = Bounds(pos.x, pos.y, size.w, size.h);
-        hypriso->move_resize(client->id, fb.x, fb.y, fb.w, fb.h);
+        resize_client(client, client->resize_type);
 
         bool grouped = is_part_of_snap_group(client->id);
         if (grouped) {
-            // todo resize others based on us
-            notify("resize group");
+            bool left_drag = true;
+            bool middle_drag = true;
+            bool right_drag = true;
+            float left_perc = .5;
+            float middle_perc = .5;
+            float right_perc = .5;
+            Bounds start = Bounds(client->initial_x, client->initial_y, client->initial_x, client->initial_y);
+            int mon = get_monitor(client->id);
+            auto s = scale(mon);
+            Bounds reserved = bounds_reserved(m_from_id(mon));
+            auto gs = thin_groups(client->id);
+            gs.push_back(client);
+            for (auto g : gs) {
+                if (g->snap_type == SnapPosition::TOP_LEFT) {
+                    left_perc = (g->initial_win_box.h + titlebar_h) / reserved.h;
+                } else if (g->snap_type == SnapPosition::TOP_RIGHT) {
+                    right_perc = (g->initial_win_box.h + titlebar_h) / reserved.h;
+                } else if (g->snap_type == SnapPosition::BOTTOM_LEFT) {
+                    left_perc = (g->initial_win_box.y - titlebar_h) / reserved.h;
+                } else if (g->snap_type == SnapPosition::BOTTOM_RIGHT) {
+                    right_perc = (g->initial_win_box.y - titlebar_h) / reserved.h;
+                } 
+            }
+            middle_perc = client->initial_win_box.w / reserved.w;
+            if (!on_left(client)) {
+               middle_perc = 1 - middle_perc;
+            }
+
+            three_type_dragging(client->id, left_drag, middle_drag, right_drag, left_perc, middle_perc, right_perc, reserved, start, mouse());
         }
     }
     request_refresh();
 }
 
 void resize_stop() {
-    resize_update();
     hypriso->resizing = false;
     update_restore_info_for(hypriso->resizing_id);
     auto client = c_from_id(hypriso->resizing_id);
