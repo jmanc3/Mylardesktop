@@ -96,6 +96,9 @@ static int tab_menu_font_h = 40;
 static float interspace = 20.0f;
 static bool META_PRESSED = false;
 
+static float thumb_to_position_time = 200;
+static long thumb_to_position_forward = 20;
+
 static float zoom_factor = 1.0;
 static long zoom_nicely_ended_time = 0;
 
@@ -113,6 +116,8 @@ RGBA color_workspace_switcher = {1.0, 1.0, 1.0, 0.55};
 RGBA color_workspace_thumb = {0.59, 0.59, 0.59, 1.0f};
 
 RGBA color_titlebar = {1.0, 1.0, 1.0, 1.0};
+RGBA color_snap_helper_thumb_bg = {0.95, 0.95, 0.95, 1.0};
+
 RGBA color_titlebar_hovered = {0.87, 0.87, 0.87, 1.0f};
 RGBA color_titlebar_pressed = {0.69, 0.69, 0.69, 1.0f};
 RGBA color_titlebar_hovered_closed = {0.9, 0.1, 0.1, 1.0f};
@@ -153,6 +158,7 @@ enum struct TYPE : uint8_t {
     CLIENT, // Windows
     ALT_TAB,
     SNAP_HELPER,
+    SNAP_THUMB,
     WORKSPACE_SWITCHER,
     WORKSPACE_THUMB,
 };
@@ -426,7 +432,7 @@ void paint_thumbnail(Container *root, Container *c) {
     }
 }
 
-void paint_titlebar(Container *root, Container *c) {
+void paint_titlebar_raw(Container *root, Container *c, float a) {
     auto tdata = (TabData *) c->user_data;
     auto rdata = (RootData *) root->user_data;
     auto s = scale(rdata->id);
@@ -450,15 +456,19 @@ void paint_titlebar(Container *root, Container *c) {
             int xoff = 0;
             if (td->icon.id != -1) {
                 xoff += titlebar_icon_pad * s;
-                draw_texture(td->icon, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->icon.h * .5);
+                draw_texture(td->icon, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->icon.h * .5, a);
                 xoff += titlebar_icon_pad * s + td->icon.w;
             }
             if (td->main.id != -1) {
-                draw_texture(td->main, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->main.h * .5, 1.0,
+                draw_texture(td->main, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->main.h * .5, a,
                              c->real_bounds.w - xoff - c->real_bounds.h * title_button_wratio);
             }
         }
     }
+}
+
+void paint_titlebar(Container *root, Container *c) {
+    paint_titlebar_raw(root, c, 1.0);
 }
 
 void paint_titlebar_close(Container *root, Container *c) {
@@ -1038,11 +1048,65 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                     
                     auto thumbnail_parent = c->child(::vbox, FILL_SPACE, FILL_SPACE);
                     thumbnail_parent->user_data = td;
+                    thumbnail_parent->after_paint = paint {
+                        // lerp between ch->real and b, based on
+                        long *d = get_data<long>(c->uuid, "start");
+                        if (!d) {
+                            set_data<long>(c->uuid, "start", get_current_time_in_ms() - thumb_to_position_forward);
+                            d = get_data<long>(c->uuid, "start");
+                        }
+                        long current = get_current_time_in_ms();
+                        float scalar = ((float)(current - *d)) / thumb_to_position_time;
+                        if (scalar > 1)
+                            scalar = 1.0;
+
+                        for (auto tchild : c->children) {
+                            if (tchild->custom_type == (int) TYPE::SNAP_THUMB) {
+                                auto tt = (TabData *) tchild->user_data;
+                                auto shd = (SnapHelperData * ) tchild->parent->parent->user_data;
+
+                                auto b = tchild->real_bounds;
+                                for (auto r : roots) {
+                                    auto rdata = (RootData *) r->user_data;
+                                    auto s = scale(rdata->id);
+                                    for (auto cc : r->children) {
+                                        if (cc->custom_type == (int) TYPE::CLIENT) {
+                                            auto chdata = (ClientData *) cc->user_data;
+                                            if (chdata->id == tt->wid) {
+                                                auto cb = cc->real_bounds;
+                                                cb.y += titlebar_h * s;
+                                                cb.h -= titlebar_h * s;
+                                                tchild->real_bounds = cb;
+                                            }
+                                        }
+                                    }
+                                }
+                                tchild->real_bounds.x = tchild->real_bounds.x + ((b.x - tchild->real_bounds.x) * scalar);
+                                tchild->real_bounds.y = tchild->real_bounds.y + ((b.y - tchild->real_bounds.y) * scalar);
+                                tchild->real_bounds.w = tchild->real_bounds.w + ((b.w - tchild->real_bounds.w) * scalar);
+                                tchild->real_bounds.h = tchild->real_bounds.h + ((b.h - tchild->real_bounds.h) * scalar);
+
+                                paint_thumbnail(root, tchild);
+                                tchild->real_bounds = b;
+                            }
+                        }
+                    };
 
                     auto titlebar = thumbnail_parent->child(::hbox, FILL_SPACE, titlebar_h * s);
                     titlebar->alignment = ALIGN_RIGHT;
                     titlebar->skip_delete = true;
-                    titlebar->when_paint = paint_titlebar; 
+                    titlebar->when_paint = paint {
+                        long *d = get_data<long>(c->uuid, "start");
+                        if (!d) {
+                            set_data<long>(c->uuid, "start", get_current_time_in_ms() - thumb_to_position_forward);
+                            d = get_data<long>(c->uuid, "start");
+                        }
+                        long current = get_current_time_in_ms();
+                        float scalar = ((float)(current - *d)) / thumb_to_position_time;
+                        if (scalar > 1)
+                            scalar = 1.0;
+                        paint_titlebar_raw(root, c, scalar);
+                    }; 
                     titlebar->user_data = td;
                     
                     auto close = titlebar->child(::hbox, titlebar_h * s * title_button_wratio, FILL_SPACE);
@@ -1059,10 +1123,15 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                     };
                     
                     auto thumbnail_area = thumbnail_parent->child(::vbox, FILL_SPACE, FILL_SPACE);
+                    thumbnail_area->custom_type = (int) TYPE::SNAP_THUMB;
                     thumbnail_area->when_paint = paint {
                         auto rdata = (RootData *) root->user_data;
                         auto shd = (SnapHelperData *) c->user_data;
-                        paint_thumbnail(root, c);
+                        auto tt = (TabData *) c->user_data;
+                        auto b = c->real_bounds;
+                        auto s = scale(rdata->id);
+                        rect(b, color_snap_helper_thumb_bg, 3, thumb_rounding * s);
+                        return;
                     };
                     thumbnail_area->when_clicked = paint {
                         auto tt = (TabData *) c->user_data;
@@ -1147,14 +1216,21 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
             auto color = color_snap_helper;
             auto rdata = (RootData *) root->user_data;
             auto shd = (SnapHelperData *) c->user_data;
-            if (rdata->active_id != shd->id && rdata->stage != (int) STAGE::RENDER_PRE_WINDOW) {
+            c->automatically_paint_children = false;
+            if (rdata->active_id != shd->id || 
+                rdata->stage != (int) STAGE::RENDER_PRE_WINDOW) {
                 return;
             }
+            c->automatically_paint_children = true;
+            
             auto s = scale(rdata->id);
             auto b = c->real_bounds;
             b.grow(interspace* s);
             //shadow(b, {0, 0, 0, 1}, thumb_rounding * s, 2.0, interspace* s);
             rect(c->real_bounds, color, 0, thumb_rounding * s);
+        };
+        snap_helper->after_paint = paint {
+            c->automatically_paint_children = false;
         };
         snap_helper->when_mouse_motion = paint { root->consumed_event = true; };
         snap_helper->when_mouse_down = paint { root->consumed_event = true; };
