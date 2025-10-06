@@ -127,7 +127,7 @@ ThinClient *c_from_id(int id);
 ThinMonitor *m_from_id(int id);
 void update_restore_info_for(int w);
 void remove_snap_helpers();
-void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position, bool create_helper = true);
+void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position, bool create_helper = true, bool instant = true);
 void clear_snap_groups(int id);
 Bounds snap_position_to_bounds(int mon, SnapPosition pos);
 
@@ -184,6 +184,7 @@ struct ClientData : UserData {
     int index = 0; // for reordering based on the stacking order
     float alpha = 1.0;
     std::vector<int> grouped_with;
+    bool was_hidden = false;
 
     ClientData(int id) : id(id) {
        ; 
@@ -359,7 +360,7 @@ class AltTabMenu {
                             auto w = tab_data->wid;
                             auto client = c_from_id(w);
                             if (hypriso->is_hidden(w)) { // problem with preview making it not hidden when it is
-                                hypriso->iconify(w, false);
+                                hypriso->set_hidden(w, false);
                             }
                             hypriso->bring_to_front(w);
                         }
@@ -1069,7 +1070,9 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                         auto mon = ((RootData *) root->user_data)->id;
                         SnapPosition snop = shd->pos;
                         auto pos = snap_position_to_bounds(mon, snop);
-                        perform_snap(c_from_id(tt->wid), pos, snop, false);
+                        // we instant move it so that it looks like it's comint out of the thumbnail
+                        //hypriso->move_resize(tt->wid, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h);
+                        perform_snap(c_from_id(tt->wid), pos, snop, true, true);
                         hypriso->bring_to_front(tt->wid);
                         later(1, [](Timer *t) {
                             remove_snap_helpers();
@@ -1144,14 +1147,13 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
             auto color = color_snap_helper;
             auto rdata = (RootData *) root->user_data;
             auto shd = (SnapHelperData *) c->user_data;
-            //if (rdata->active_id != shd->id)
-//                return;
-            if (rdata->stage != (int) STAGE::RENDER_LAST_MOMENT)
+            if (rdata->active_id != shd->id && rdata->stage != (int) STAGE::RENDER_PRE_WINDOW) {
                 return;
+            }
             auto s = scale(rdata->id);
             auto b = c->real_bounds;
             b.grow(interspace* s);
-            shadow(b, {0, 0, 0, 1}, thumb_rounding * s, 2.0, interspace* s);
+            //shadow(b, {0, 0, 0, 1}, thumb_rounding * s, 2.0, interspace* s);
             rect(c->real_bounds, color, 0, thumb_rounding * s);
         };
         snap_helper->when_mouse_motion = paint { root->consumed_event = true; };
@@ -1167,6 +1169,21 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
         shd->id = c->id;
         snap_helper->user_data = shd;
     } 
+
+    // Save hidden state
+    for (auto r : roots) {
+        for (auto ch : r->children) {
+            if (ch->custom_type == (int) TYPE::CLIENT) {
+                auto cdata = (ClientData *) ch->user_data;
+                cdata->was_hidden = hypriso->is_hidden(cdata->id);
+                // skip self todo
+                if (cdata->id != c->id) {
+                    hypriso->set_hidden(cdata->id, true);
+                }
+            }
+        }
+    } 
+    
 }
 
 bool groupable_types(SnapPosition a, SnapPosition b) {
@@ -1204,7 +1221,6 @@ bool groupable(SnapPosition position, const std::vector<int> ids) {
 }
 
 void add_to_snap_group(int id, int other, const std::vector<int> &grouped) {
-    nz(fz("add to snap group: {} to {}", id, other));
     // go through all current groups of other, and add id to those as well
     for (auto r : roots) {
         for (auto c : r->children) {
@@ -1230,7 +1246,7 @@ void add_to_snap_group(int id, int other, const std::vector<int> &grouped) {
 }
 
 
-void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position, bool create_helper) {
+void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position, bool create_helper, bool instant) {
     bool already_snapped = c->snapped;
     c->snapped = true;
     c->snap_type = snap_position;
@@ -1239,7 +1255,7 @@ void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position, bo
         c->pre_snap_bounds = bounds(c);
     position.y += titlebar_h;
     position.h -= titlebar_h;
-    hypriso->move_resize(c->id, position.x, position.y, position.w, position.h); 
+    hypriso->move_resize(c->id, position.x, position.y, position.w, position.h, instant); 
 
     // if not snapped anymore, remove from all snap groups and clear self groups
     if (!c->snapped)
@@ -1318,7 +1334,7 @@ void drag_stop() {
         position.y = newy;
         hypriso->move(window, position.x, position.y);
     } else {
-        perform_snap(c, position, snap_position);
+        perform_snap(c, position, snap_position, true, false);
 
         auto client = c;
         {
@@ -1360,17 +1376,17 @@ void drag_stop() {
             Bounds rb = Bounds(r.x + r.w * middle_perc, r.y + r.h * right_perc, r.w * (1 - middle_perc), r.h * (1 - right_perc));
             
             if (c->snap_type == SnapPosition::LEFT) {
-                hypriso->move_resize(c->id, reserved.x, reserved.y + titlebar_h, reserved.w * middle_perc, reserved.h - titlebar_h);
+                hypriso->move_resize(c->id, reserved.x, reserved.y + titlebar_h, reserved.w * middle_perc, reserved.h - titlebar_h, false);
             } else if (c->snap_type == SnapPosition::RIGHT) {
-                hypriso->move_resize(c->id, reserved.x + reserved.w * middle_perc, reserved.y + titlebar_h, reserved.w * (1 - middle_perc), reserved.h - titlebar_h);
+                hypriso->move_resize(c->id, reserved.x + reserved.w * middle_perc, reserved.y + titlebar_h, reserved.w * (1 - middle_perc), reserved.h - titlebar_h, false);
             } else if (c->snap_type == SnapPosition::TOP_LEFT) {
-                hypriso->move_resize(c->id, lt.x, lt.y + titlebar_h, lt.w, lt.h - titlebar_h);
+                hypriso->move_resize(c->id, lt.x, lt.y + titlebar_h, lt.w, lt.h - titlebar_h, false);
             } else if (c->snap_type == SnapPosition::BOTTOM_LEFT) {
-                hypriso->move_resize(c->id, lb.x, lb.y + titlebar_h, lb.w, lb.h - titlebar_h);
+                hypriso->move_resize(c->id, lb.x, lb.y + titlebar_h, lb.w, lb.h - titlebar_h, false);
             } else if (c->snap_type == SnapPosition::TOP_RIGHT) {
-                hypriso->move_resize(c->id, rt.x, rt.y + titlebar_h, rt.w, rt.h - titlebar_h);
+                hypriso->move_resize(c->id, rt.x, rt.y + titlebar_h, rt.w, rt.h - titlebar_h, false);
             } else if (c->snap_type == SnapPosition::BOTTOM_RIGHT) {
-                hypriso->move_resize(c->id, rb.x, rb.y + titlebar_h, rb.w, rb.h - titlebar_h);
+                hypriso->move_resize(c->id, rb.x, rb.y + titlebar_h, rb.w, rb.h - titlebar_h, false);
             }
         } 
     }
@@ -1395,7 +1411,7 @@ void drag_stop() {
                     if (p->custom_type == (int) TYPE::WORKSPACE_THUMB) {
                         auto tdata = get_or_create<TabData>(p->uuid, "tdata");
                         hypriso->move_to_workspace(c->id, tdata->wid);
-                        hypriso->move_resize(c->id, init_drag_pos.x, init_drag_pos.y, init_drag_pos.w, init_drag_pos.h);
+                        hypriso->move_resize(c->id, init_drag_pos.x, init_drag_pos.y, init_drag_pos.w, init_drag_pos.h, false);
                         break;
                     }
                 }
@@ -1416,12 +1432,12 @@ void toggle_maximize(int id) {
         hypriso->move_resize(id, 
             b.x + b.w * .5 - c->pre_snap_bounds.w * .5, 
             b.y + b.h * .5 - c->pre_snap_bounds.h * .5, 
-            c->pre_snap_bounds.w, c->pre_snap_bounds.h);
+            c->pre_snap_bounds.w, c->pre_snap_bounds.h, false);
     } else {
         Bounds position = snap_position_to_bounds(mon, SnapPosition::MAX);
         c->pre_snap_bounds = bounds(c);
         update_restore_info_for(c->id);
-        hypriso->move_resize(id, position.x, position.y + titlebar_h, position.w, position.h - titlebar_h);
+        hypriso->move_resize(id, position.x, position.y + titlebar_h, position.w, position.h - titlebar_h, false);
     }
     c->snapped = !c->snapped;
     hypriso->should_round(c->id, !c->snapped);
@@ -1552,14 +1568,28 @@ void tab_previous_window() {
 }
 
 void remove_snap_helpers() {
+    bool update_hidden = false;
     for (auto r: roots) {
         for (int i = r->children.size() - 1; i >= 0; i--) {
             if (r->children[i]->custom_type == (int) TYPE::SNAP_HELPER) {
                 delete r->children[i];
                 r->children.erase(r->children.begin() + i);
+                update_hidden = true;
             }
         }
     } 
+
+    if (update_hidden) {
+        for (auto r : roots) {
+            for (auto ch : r->children) {
+                if (ch->custom_type == (int) TYPE::CLIENT) {
+                    auto cdata = (ClientData *) ch->user_data;
+                    hypriso->set_hidden(cdata->id, false);
+                }
+            }
+        } 
+        request_refresh();
+    }
 }
 
 
@@ -1827,7 +1857,7 @@ void on_render(int id, int stage) {
                 rect(root->real_bounds, {0, 0, 0, .4}, 0, 0, 2.0f, false);
             }
         }
-        
+
         paint_root(root);
     }
     
@@ -1852,6 +1882,31 @@ void on_render(int id, int stage) {
         }
         force_damage_all = false;
         //request_refresh();
+    }
+    if (stage == (int) STAGE::RENDER_LAST_MOMENT) {
+        bool shp = false;
+        for (auto r : roots) {
+           for (auto c : r->children) {
+               if (c->custom_type == (int) TYPE::SNAP_HELPER) {
+                   shp = true;
+               }
+           }
+        }
+        if (shp) {
+            for (auto r : roots) {
+               for (auto c : r->children) {
+                   if (c->custom_type == (int) TYPE::CLIENT) {
+                       auto rdata = (RootData *) r->user_data;
+                       auto cdata = (ClientData *) c->user_data;
+                       auto b = c->real_bounds;
+                       auto s = scale(rdata->id);
+                       b.y += titlebar_h * s;
+                       b.h -= titlebar_h * s;
+                       //hypriso->draw_thumbnail(cdata->id, b);
+                   }
+               }
+            }
+        }
     }
 }
 
@@ -1880,17 +1935,17 @@ bool on_mouse_press(int id, int button, int state, float x, float y) {
 
     // remove snap helper if not hit
     if (state == 1) {
-        for (auto r: roots) {
-            for (int i = r->children.size() - 1; i >= 0; i--) {
-                auto c = r->children[i];
+        bool snap_helper_hit = false;
+        for (auto r : roots) {
+           for (auto c : r->children) {
                 if (c->custom_type == (int) TYPE::SNAP_HELPER) {
-                    if (!bounds_contains(c->real_bounds, event.x, event.y)) {
-                        delete c;
-                        r->children.erase(r->children.begin() + i);                        
-                    }
-                }
-            }
+                    if (bounds_contains(c->real_bounds, event.x, event.y))
+                        snap_helper_hit = true;
+                }   
+           }
         }
+        if (!snap_helper_hit)
+            remove_snap_helpers();
 
         if (alt_tab_menu.is_showing()) {
             for (auto r: roots) {
@@ -2426,7 +2481,7 @@ void on_window_open(int id) {
                    toggle_maximize(cc->id); 
                 } else {
                     //hypriso->move_to_workspace(data->id, 2);
-                    hypriso->iconify(data->id, true);
+                    hypriso->set_hidden(data->id, true);
                     alt_tab_menu.change_showing(true);
                     tab_next_window();
                     alt_tab_menu.change_showing(false);
@@ -2559,8 +2614,6 @@ void on_window_open(int id) {
 }
 
 void clear_snap_groups(int id) {
-    nz(fz("clear {}", id));
-    
     for (auto r: roots) {
         for (auto c : r->children) {
            if (c->custom_type == (int) TYPE::CLIENT) {
@@ -2570,7 +2623,6 @@ void clear_snap_groups(int id) {
                }
                for (int i = cdata->grouped_with.size() - 1; i >= 0; i--) {
                    if (cdata->grouped_with[i] == id) {
-                       nz(fz("clear other {}", cdata->grouped_with[i]));
                        cdata->grouped_with.erase(cdata->grouped_with.begin() + i);
                    } 
                }

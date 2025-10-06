@@ -716,7 +716,8 @@ void HyprIso::create_hooks_and_callbacks() {
         if (hypriso->on_render) {
             for (auto m : hyprmonitors) {
                 if (m->m == g_pHyprOpenGL->m_renderData.pMonitor) {
-                    hypriso->on_render(m->id, (int) std::any_cast<eRenderStage>(data));
+                    auto stage = std::any_cast<eRenderStage>(data);
+                    hypriso->on_render(m->id, (int) stage);
                 }
             }
         }
@@ -1034,12 +1035,17 @@ void HyprIso::move(int id, int x, int y) {
     }
 }
 
-void HyprIso::move_resize(int id, int x, int y, int w, int h) {
+void HyprIso::move_resize(int id, int x, int y, int w, int h, bool instant) {
     auto m = g_pCompositor->getMonitorFromCursor();
     for (auto c : hyprwindows) {
         if (c->id == id) {
-            c->w->m_realPosition->setValueAndWarp({x, y});
-            c->w->m_realSize->setValueAndWarp({w, h});
+            if (instant) {
+                c->w->m_realPosition->setValueAndWarp({x, y});
+                c->w->m_realSize->setValueAndWarp({w, h});
+            } else {
+                *c->w->m_realPosition = {x, y};
+                *c->w->m_realSize = {w, h};
+            }
             c->w->sendWindowSize(true);
             c->w->updateWindowDecos();
         }
@@ -1469,7 +1475,7 @@ bool HyprIso::is_hidden(int id) {
     return false; 
 }
 
-void HyprIso::iconify(int id, bool state) {
+void HyprIso::set_hidden(int id, bool state) {
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             hw->w->updateWindowDecos();
@@ -1816,7 +1822,7 @@ void HyprIso::set_reserved_edge(int side, int amount) {
 
 void HyprIso::show_desktop() {
     for (auto hw : hyprwindows) {
-        hypriso->iconify(hw->id, hw->was_hidden);
+        hypriso->set_hidden(hw->id, hw->was_hidden);
     }
     for (auto r : hyprmonitors) {
         hypriso->damage_entire(r->id);
@@ -1826,7 +1832,7 @@ void HyprIso::show_desktop() {
 void HyprIso::hide_desktop() {
     for (auto hw : hyprwindows) {
         hw->was_hidden = hw->is_hidden;
-        hypriso->iconify(hw->id, true);
+        hypriso->set_hidden(hw->id, true);
     }
     for (auto r : hyprmonitors) {
         hypriso->damage_entire(r->id);

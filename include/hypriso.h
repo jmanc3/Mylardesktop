@@ -16,13 +16,13 @@ enum struct STAGE : uint8_t {
     RENDER_PRE = eRenderStage::RENDER_PRE,        /* Before binding the gl context */
     RENDER_BEGIN = eRenderStage::RENDER_BEGIN,          /* Just when the rendering begins, nothing has been rendered yet. Damage, current render data in opengl valid. */
     RENDER_POST_WALLPAPER = eRenderStage::RENDER_POST_WALLPAPER, /* After background layer, but before bottom and overlay layers */
-    RENDER_PRE_WINDOWS = eRenderStage::RENDER_POST_WALLPAPER,    /* Pre windows, post bottom and overlay layers */
-    RENDER_POST_WINDOWS = eRenderStage::RENDER_PRE_WINDOWS,   /* Post windows, pre top/overlay layers, etc */
-    RENDER_LAST_MOMENT = eRenderStage::RENDER_POST_WINDOWS,    /* Last moment to render with the gl context */
-    RENDER_POST = eRenderStage::RENDER_LAST_MOMENT,           /* After rendering is finished, gl context not available anymore */
-    RENDER_POST_MIRROR = eRenderStage::RENDER_POST,    /* After rendering a mirror */
-    RENDER_PRE_WINDOW = eRenderStage::RENDER_POST_MIRROR,     /* Before rendering a window (any pass) Note some windows (e.g. tiled) may have 2 passes (main & popup) */
-    RENDER_POST_WINDOW = eRenderStage::RENDER_PRE_WINDOW,    /* After rendering a window (any pass) */
+    RENDER_PRE_WINDOWS = eRenderStage::RENDER_PRE_WINDOWS,    /* Pre windows, post bottom and overlay layers */
+    RENDER_POST_WINDOWS = eRenderStage::RENDER_POST_WINDOWS,   /* Post windows, pre top/overlay layers, etc */
+    RENDER_LAST_MOMENT = eRenderStage::RENDER_LAST_MOMENT,    /* Last moment to render with the gl context */
+    RENDER_POST = eRenderStage::RENDER_POST,           /* After rendering is finished, gl context not available anymore */
+    RENDER_POST_MIRROR = eRenderStage::RENDER_POST_MIRROR,    /* After rendering a mirror */
+    RENDER_PRE_WINDOW = eRenderStage::RENDER_PRE_WINDOW,     /* Before rendering a window (any pass) Note some windows (e.g. tiled) may have 2 passes (main & popup) */
+    RENDER_POST_WINDOW = eRenderStage::RENDER_POST_WINDOW,    /* After rendering a window (any pass) */
 };
 
 enum class SnapPosition {
@@ -175,7 +175,7 @@ struct HyprIso {
     void reserve_titlebar(ThinClient *c, int size);
     
     void move(int id, int x, int y);
-    void move_resize(int id, int x, int y, int w, int h);
+    void move_resize(int id, int x, int y, int w, int h, bool instant = true);
     int monitor_from_cursor();
     
     void send_key(uint32_t key);
@@ -186,7 +186,7 @@ struct HyprIso {
     bool has_decorations(int id);
     
     void bring_to_front(int id);
-    void iconify(int id, bool state);
+    void set_hidden(int id, bool state);
     
     bool is_hidden(int id);
 
