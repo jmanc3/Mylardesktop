@@ -168,6 +168,7 @@ struct HyprIso {
     std::function<void(int id, RESIZE_TYPE type)> on_resize_start_requested = nullptr;
 
     std::function<void()> on_config_reload = nullptr;
+    void reload();
 
     std::vector<ThinClient *> windows;
     std::vector<ThinMonitor *> monitors;
@@ -196,7 +197,13 @@ struct HyprIso {
     void damage_box(Bounds b);
 
     void screenshot_all();
+    void screenshot_deco(int id);
+    void screenshot_space(int mon, int id);
+    
     void draw_thumbnail(int id, Bounds b, int rounding = 0, float roundingPower = 2.0f, int cornermask = 0);
+    void draw_deco_thumbnail(int id, Bounds b, int rounding = 0, float roundingPower = 2.0f, int cornermask = 0);
+    void draw_workspace(int mon, int id, Bounds b);
+    
 
     void set_zoom_factor(float amount);
     int parent(int id);

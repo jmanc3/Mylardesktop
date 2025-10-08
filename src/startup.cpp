@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <linux/input-event-codes.h>
 #include <locale>
+#include <memory>
 
 #ifdef TRACY_ENABLE
 
@@ -96,8 +97,9 @@ static int tab_menu_font_h = 40;
 static float interspace = 20.0f;
 static bool META_PRESSED = false;
 
-static float thumb_to_position_time = 200;
-static long thumb_to_position_forward = 20;
+static float thumb_to_position_time = 130;
+static float snap_fadein = 80;
+static long thumb_to_position_forward = 30;
 
 static float zoom_factor = 1.0;
 static long zoom_nicely_ended_time = 0;
@@ -112,11 +114,12 @@ Bounds max_space = {510 * sdd, 310 * sdd, 510 * sdd, 310 * sdd}; // need to be m
 
 RGBA color_alt_tab = {1.0, 1.0, 1.0, 0.7};
 RGBA color_snap_helper = {1.0, 1.0, 1.0, 0.35};
+RGBA color_snap_helper_border = {0.5, 0.5, 0.5, 0.9};
+
 RGBA color_workspace_switcher = {1.0, 1.0, 1.0, 0.55};
 RGBA color_workspace_thumb = {0.59, 0.59, 0.59, 1.0f};
 
 RGBA color_titlebar = {1.0, 1.0, 1.0, 1.0};
-RGBA color_snap_helper_thumb_bg = {0.95, 0.95, 0.95, 1.0};
 
 RGBA color_titlebar_hovered = {0.87, 0.87, 0.87, 1.0f};
 RGBA color_titlebar_pressed = {0.69, 0.69, 0.69, 1.0f};
@@ -197,12 +200,6 @@ struct ClientData : UserData {
     }
 };
 
-struct AltTabOption {
-    std::string class_name;
-    std::string title;
-    int window;
-};
-
 void reset_visible_window();
 void update_visible_window();
 void tab_next_window();
@@ -211,6 +208,14 @@ void screenshot_all() {
     screenshotting = true;
     hypriso->screenshot_all(); 
     screenshotting = false; 
+}
+
+void screenshot_deco(int id) {
+    later(nullptr, 1, [id](Timer *t) {
+        screenshotting = true;
+        hypriso->screenshot_deco(id); 
+        screenshotting = false;   
+    });
 }
 
 // The reason we take screenshots like this is because if we try to do it in the render thread, we CRASH for some reason that I don't feel like investigating. PLUS, we need to take screenshots on a perdiodic basis anyways so this solves both problems.
@@ -407,9 +412,13 @@ class AltTabMenu {
             }
         }
     }
+
+    ~AltTabMenu() {
+        printf("done\n");
+    }
 };
 
-static AltTabMenu alt_tab_menu;
+static std::shared_ptr<AltTabMenu> alt_tab_menu = std::make_shared<AltTabMenu>();
 
 void reset_visible_window() {
     return;
@@ -424,8 +433,8 @@ void paint_thumbnail(Container *root, Container *c) {
     auto rdata = (RootData *) root->user_data;
     auto s = scale(rdata->id);
     hypriso->draw_thumbnail(tdata->wid, c->real_bounds, thumb_rounding * s, 2.0f, 3);
-    if (alt_tab_menu.index <= alt_tab_menu.root->children.size()) {
-        auto r = alt_tab_menu.root->children[alt_tab_menu.index];
+    if (alt_tab_menu->index <= alt_tab_menu->root->children.size()) {
+        auto r = alt_tab_menu->root->children[alt_tab_menu->index];
         if (r == c->parent) {
             rect(c->real_bounds, {1, 1, 1, .2}, 3, thumb_rounding * s, 2.0f, 0.0);
         }
@@ -836,6 +845,9 @@ void resize_stop() {
 void drag_start(int id) {
     hypriso->dragging_id = id;
     hypriso->dragging = true;
+    //screenshot_deco(id);
+    //hypriso->set_hidden(id, true);
+    clear_snap_groups(id);
     auto client = c_from_id(hypriso->dragging_id);
     auto b = bounds(client);
     auto MOUSECOORDS = mouse();
@@ -984,6 +996,7 @@ SnapPosition opposite_snap_position(SnapPosition pos) {
 struct SnapHelperData : UserData {
     SnapPosition pos;
     int id;
+    long created = 0;
 };
 
 void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
@@ -995,8 +1008,8 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
     if (count <= 1) // Don't create snap helper if there is only one window open
         return;
     
-    if (alt_tab_menu.timer == nullptr)
-        alt_tab_menu.timer = start_producing_thumbnails();
+    if (alt_tab_menu->timer == nullptr)
+        alt_tab_menu->timer = start_producing_thumbnails();
    // Create snap helper
     auto mon = get_monitor(c->id);
     for (auto r: roots) {
@@ -1018,7 +1031,7 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                 auto ch = c->children[i];
                 auto chdata = (TabData *) ch->user_data;
                 bool found = false;
-                for (auto t: alt_tab_menu.root->children) {
+                for (auto t: alt_tab_menu->root->children) {
                     auto tdata = (TabData *) t->user_data;
                     if (tdata->wid == chdata->wid) {
                         found = true;
@@ -1032,7 +1045,7 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
             }
 
             // Add children who don't exist yet
-           for (auto t: alt_tab_menu.root->children) {
+           for (auto t: alt_tab_menu->root->children) {
                 auto tdata = (TabData *) t->user_data;
                 bool found = false;
                 for (int i = c->children.size() - 1; i >= 0; i--) {
@@ -1059,6 +1072,15 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                         float scalar = ((float)(current - *d)) / thumb_to_position_time;
                         if (scalar > 1)
                             scalar = 1.0;
+
+                        auto s = scale(((RootData *) root->user_data)->id);
+
+                        for (auto tchild : c->children) {
+                            if (tchild->custom_type == (int) TYPE::SNAP_THUMB) {
+                                rect(tchild->real_bounds, color_titlebar, 3, thumb_rounding * s);
+                            }
+                        }
+ 
 
                         for (auto tchild : c->children) {
                             if (tchild->custom_type == (int) TYPE::SNAP_THUMB) {
@@ -1130,8 +1152,7 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                         auto tt = (TabData *) c->user_data;
                         auto b = c->real_bounds;
                         auto s = scale(rdata->id);
-                        rect(b, color_snap_helper_thumb_bg, 3, thumb_rounding * s);
-                        return;
+                        //rect(b, color_snap_helper_thumb_bg, 3, thumb_rounding * s);
                     };
                     thumbnail_area->when_clicked = paint {
                         auto tt = (TabData *) c->user_data;
@@ -1140,14 +1161,23 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                         SnapPosition snop = shd->pos;
                         auto pos = snap_position_to_bounds(mon, snop);
                         // we instant move it so that it looks like it's comint out of the thumbnail
-                        //hypriso->move_resize(tt->wid, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h);
-                        perform_snap(c_from_id(tt->wid), pos, snop, true, true);
+                        auto client = c_from_id(tt->wid);
+                        auto pre_snap = bounds(client);
+                        bool save = !client->snapped;
+                        Bounds bb = Bounds(c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h);
+                        auto s = scale(((RootData *) root->user_data)->id);
+                        bb.scale(1.0 / s);
+                        hypriso->move_resize(tt->wid, bb.x, bb.y, bb.w, bb.h);
+                        perform_snap(c_from_id(tt->wid), pos, snop, true, false);
+                        if (save)
+                            client->pre_snap_bounds = pre_snap;
+ 
                         hypriso->bring_to_front(tt->wid);
                         later(1, [](Timer *t) {
                             remove_snap_helpers();
-                            if (alt_tab_menu.timer) {
-                                alt_tab_menu.timer->keep_running = false;
-                                alt_tab_menu.timer = nullptr;
+                            if (alt_tab_menu->timer) {
+                                alt_tab_menu->timer->keep_running = false;
+                                alt_tab_menu->timer = nullptr;
                             }
                         });
                         root->consumed_event = true;
@@ -1205,9 +1235,9 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
             if (c->children.size() <= 1) { // Remove the snap helper if there are no windows to show
                 later(1, [](Timer *t) {
                     remove_snap_helpers();
-                    if (alt_tab_menu.timer) {
-                        alt_tab_menu.timer->keep_running = false;
-                        alt_tab_menu.timer = nullptr;
+                    if (alt_tab_menu->timer) {
+                        alt_tab_menu->timer->keep_running = false;
+                        alt_tab_menu->timer = nullptr;
                     }
                 });
             }
@@ -1227,7 +1257,14 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
             auto b = c->real_bounds;
             b.grow(interspace* s);
             //shadow(b, {0, 0, 0, 1}, thumb_rounding * s, 2.0, interspace* s);
+            float scalar = ((float )(get_current_time_in_ms() - shd->created)) / snap_fadein;
+            if (scalar > 1.0)
+                scalar = 1.0;
+            color.a *= scalar;
             rect(c->real_bounds, color, 0, thumb_rounding * s);
+            auto color2 = color_snap_helper_border;
+            color2.a *= scalar;
+            border(c->real_bounds, color2, 1 * s, 0, thumb_rounding * s);
         };
         snap_helper->after_paint = paint {
             c->automatically_paint_children = false;
@@ -1243,6 +1280,7 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
         auto shd = new SnapHelperData;
         shd->pos = op;
         shd->id = c->id;
+        shd->created = get_current_time_in_ms();
         snap_helper->user_data = shd;
     } 
 
@@ -1274,6 +1312,8 @@ bool groupable_types(SnapPosition a, SnapPosition b) {
     } else {
         bool a_on_top = a == SnapPosition::TOP_LEFT || a == SnapPosition::TOP_RIGHT;
         bool b_on_top = b == SnapPosition::TOP_LEFT || b == SnapPosition::TOP_RIGHT;
+        if (a == SnapPosition::LEFT || b == SnapPosition::RIGHT)
+            return false;
         if (a_on_top != b_on_top) {
             return true;
         }
@@ -1357,6 +1397,7 @@ void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position, bo
                     bool mergable = groupable(c->snap_type, ids);
                     if (mergable) {
                         add_to_snap_group(c->id, other_cdata->id, other_cdata->grouped_with);
+                        create_helper = false;
                     } else {
                         // if first merge attempt fails, we don't seek deeper layers
                         goto out;
@@ -1381,7 +1422,7 @@ void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position, bo
 
 void open_overview() {
     // TODO this is a fake overview right now piggy-backing off alt tab menu
-    alt_tab_menu.change_showing(true);
+    alt_tab_menu->change_showing(true);
 }
 
 void drag_stop() {    
@@ -1389,6 +1430,7 @@ void drag_stop() {
     drag_update();
     hypriso->dragging_id = -1;
     hypriso->dragging = false;
+    hypriso->set_hidden(window, false);
     hypriso->drag_stop_time = get_current_time_in_ms();
     unsetCursorImage();
 
@@ -1525,6 +1567,9 @@ void toggle_maximize(int id) {
 
 // returning true means consume the event
 bool on_mouse_move(int id, float x, float y) {
+    if (hypriso->monitors.empty())
+        return false;
+ 
     if (hypriso->dragging)
         drag_update();
     if (hypriso->resizing)
@@ -1584,16 +1629,16 @@ bool on_mouse_move(int id, float x, float y) {
                             later(nullptr, 100, [](Timer* data) {
                                 hypriso->send_key(KEY_SPACE);
                                 later(nullptr, 100, [](Timer* data) {
-                                    alt_tab_menu.change_showing(true);
+                                    alt_tab_menu->change_showing(true);
                                     tab_next_window();
-                                    alt_tab_menu.change_showing(false);
+                                    alt_tab_menu->change_showing(false);
                                 });
                             });
                         }
                     } else {
-                        alt_tab_menu.change_showing(true);
+                        alt_tab_menu->change_showing(true);
                         tab_next_window();
-                        alt_tab_menu.change_showing(false);
+                        alt_tab_menu->change_showing(false);
                     }
                 }
             } else { 
@@ -1614,13 +1659,13 @@ bool on_mouse_move(int id, float x, float y) {
 }
 
 void tab_next_window() {
-    alt_tab_menu.previous_index = alt_tab_menu.index;
-    alt_tab_menu.index++;
-    if (alt_tab_menu.index >= alt_tab_menu.root->children.size()) {
-        alt_tab_menu.index = 0;
+    alt_tab_menu->previous_index = alt_tab_menu->index;
+    alt_tab_menu->index++;
+    if (alt_tab_menu->index >= alt_tab_menu->root->children.size()) {
+        alt_tab_menu->index = 0;
     }
     update_visible_window();
-    alt_tab_menu.time_when_change = get_current_time_in_ms();
+    alt_tab_menu->time_when_change = get_current_time_in_ms();
     /*
     auto w = alt_tab_menu.stored[alt_tab_menu.index]; 
     switchToWindow(w.lock(), true);
@@ -1629,12 +1674,12 @@ void tab_next_window() {
 }
 
 void tab_previous_window() {
-    alt_tab_menu.index--;
-    if (alt_tab_menu.index < 0) {
-        alt_tab_menu.index = alt_tab_menu.root->children.size() - 1;
+    alt_tab_menu->index--;
+    if (alt_tab_menu->index < 0) {
+        alt_tab_menu->index = alt_tab_menu->root->children.size() - 1;
     }
     update_visible_window();
-    alt_tab_menu.time_when_change = get_current_time_in_ms();
+    alt_tab_menu->time_when_change = get_current_time_in_ms();
 
     /*
     auto w = alt_tab_menu.stored[alt_tab_menu.index]; 
@@ -1671,6 +1716,9 @@ void remove_snap_helpers() {
 
 // returning true means consume the event
 bool on_key_press(int id, int key, int state, bool update_mods) {
+    if (hypriso->monitors.empty())
+        return false;
+ 
     static bool alt_down   = false;
     static bool shift_down = false;
     
@@ -1684,7 +1732,7 @@ bool on_key_press(int id, int key, int state, bool update_mods) {
         META_PRESSED = false;
         zoom_factor = 1.0;
         
-        alt_tab_menu.change_showing(false);
+        alt_tab_menu->change_showing(false);
         // remove snap helper
         //remove_snap_helpers();
     }
@@ -1693,7 +1741,7 @@ bool on_key_press(int id, int key, int state, bool update_mods) {
     if (key == KEY_LEFTALT || key == KEY_RIGHTALT) {
         alt_down = state;
         if (state == 0) {
-            alt_tab_menu.change_showing(false);
+            alt_tab_menu->change_showing(false);
         }
     }
     
@@ -1707,7 +1755,7 @@ bool on_key_press(int id, int key, int state, bool update_mods) {
 
     if (key == KEY_TAB) { // on tab release
         if (alt_down) {
-            alt_tab_menu.change_showing(true);
+            alt_tab_menu->change_showing(true);
             if (shift_down) {
                 if (state == 1)
                     tab_previous_window();
@@ -1882,20 +1930,20 @@ void layout_every_single_root() {
                 break;
             }
         } else if (b->custom_type == (int) TYPE::ALT_TAB) {
-            alt_tab_menu.fix_index();
+            alt_tab_menu->fix_index();
             //scroll->content = alt_tab_menu.root;
-            b->exists = alt_tab_menu.is_showing();
+            b->exists = alt_tab_menu->is_showing();
 
             for (auto r: roots) {
                 auto rdata = (RootData *) r->user_data;
                 auto s = scale(rdata->id);
 
-                alt_tab_menu.root->pre_layout(r, alt_tab_menu.root, r->real_bounds);
+                alt_tab_menu->root->pre_layout(r, alt_tab_menu->root, r->real_bounds);
                 //rect(r->real_bounds, {0, 0, 0, .3});
                 //float interthumb_spacing = 20 * s;
 
                 b->children.clear();
-                b->children.push_back(alt_tab_menu.root);
+                b->children.push_back(alt_tab_menu->root);
 
                 b->real_bounds = r->real_bounds;
 
@@ -1914,7 +1962,7 @@ void layout_every_single_root() {
 
 // i think this is being called once per monitor
 void on_render(int id, int stage) {
-    if (screenshotting)
+    if (screenshotting) // todo maybe remove
         return;
     if (stage == (int) STAGE::RENDER_BEGIN) {
          layout_every_single_root();
@@ -1929,7 +1977,7 @@ void on_render(int id, int stage) {
         rdata->stage = stage;
         rdata->active_id = active_id;
         if (stage == (int) STAGE::RENDER_LAST_MOMENT) {
-            if (alt_tab_menu.is_showing()) {
+            if (alt_tab_menu->is_showing()) {
                 rect(root->real_bounds, {0, 0, 0, .4}, 0, 0, 2.0f, false);
             }
         }
@@ -1943,7 +1991,7 @@ void on_render(int id, int stage) {
             auto rdata = (RootData *) root->user_data;
             // TODO: how costly is this exactly?
             bool should_damage = false;
-            if (alt_tab_menu.is_showing())
+            if (alt_tab_menu->is_showing())
                 should_damage = true;
             for (auto c: root->children)
                 if (c->custom_type == (int)TYPE::SNAP_HELPER)
@@ -1988,6 +2036,9 @@ void on_render(int id, int stage) {
 
 // returning true means consume the event
 bool on_mouse_press(int id, int button, int state, float x, float y) {
+    if (hypriso->monitors.empty())
+        return false;
+    
     Event event(x, y, button, state);
     layout_every_single_root();
     for (auto root : roots)
@@ -2023,14 +2074,14 @@ bool on_mouse_press(int id, int button, int state, float x, float y) {
         if (!snap_helper_hit)
             remove_snap_helpers();
 
-        if (alt_tab_menu.is_showing()) {
+        if (alt_tab_menu->is_showing()) {
             for (auto r: roots) {
                 for (int i = r->children.size() - 1; i >= 0; i--) {
                     auto c = r->children[i];
                     if (c->custom_type == (int) TYPE::ALT_TAB) {
                         auto altroot = (AltRoot *) c->children[0]->user_data;
                         if (!bounds_contains(altroot->b, event.x, event.y)) {
-                            alt_tab_menu.change_showing(false, false);
+                            alt_tab_menu->change_showing(false, false);
                         }
                     }
                 }
@@ -2204,7 +2255,7 @@ void on_window_open(int id) {
         auto td = new TabData;
         td->wid = id;
         
-        auto thumbnail_parent = alt_tab_menu.root->child(::vbox, FILL_SPACE, FILL_SPACE);
+        auto thumbnail_parent = alt_tab_menu->root->child(::vbox, FILL_SPACE, FILL_SPACE);
         thumbnail_parent->user_data = td;
 
         auto titlebar = thumbnail_parent->child(::hbox, FILL_SPACE, titlebar_h * s);
@@ -2235,12 +2286,12 @@ void on_window_open(int id) {
         thumb_area->user_data = td;
         thumb_area->when_clicked = paint {
             auto td = (TabData *) c->user_data;
-            for (int i = 0; i < alt_tab_menu.root->children.size(); i++) {
-                auto o = alt_tab_menu.root->children[i];
+            for (int i = 0; i < alt_tab_menu->root->children.size(); i++) {
+                auto o = alt_tab_menu->root->children[i];
                 auto data = (TabData *) o->user_data;
                 if (data->wid == td->wid) {
-                    alt_tab_menu.index = i;
-                    alt_tab_menu.change_showing(false);
+                    alt_tab_menu->index = i;
+                    alt_tab_menu->change_showing(false);
                     break;
                 }
             }
@@ -2418,6 +2469,25 @@ void on_window_open(int id) {
             c->custom_type = (int) TYPE::CLIENT;
             c->user_data = new ClientData(id);            
             c->automatically_paint_children = false;
+            c->when_paint = paint {
+                auto data = (ClientData *) c->user_data;
+                auto rdata = (RootData *) root->user_data;
+                if (hypriso->dragging && data->id == hypriso->dragging_id) {
+                    if (rdata->stage == (int) STAGE::RENDER_LAST_MOMENT) {
+                        //rect(c->real_bounds, {1, 1, 0, 1});
+                        auto b = c->real_bounds;
+                        auto client = c_from_id(data->id);
+                        auto full_b = bounds_full(client);
+                        auto xb = bounds(client);
+                        auto s = scale(rdata->id);
+                        xb.x -= (xb.x - full_b.x);
+                        xb.y -= (xb.y - full_b.y);
+                        xb.scale(s);
+                        full_b.scale(s);
+                        //hypriso->draw_deco_thumbnail(data->id, full_b);
+                    }
+                }
+            };
             resize->user_data = c->user_data;
             
             auto thinc = c_from_id(id);
@@ -2558,9 +2628,9 @@ void on_window_open(int id) {
                 } else {
                     //hypriso->move_to_workspace(data->id, 2);
                     hypriso->set_hidden(data->id, true);
-                    alt_tab_menu.change_showing(true);
+                    alt_tab_menu->change_showing(true);
                     tab_next_window();
-                    alt_tab_menu.change_showing(false);
+                    alt_tab_menu->change_showing(false);
                 }
             };
             auto max = title->child(100, FILL_SPACE);
@@ -2710,12 +2780,12 @@ void clear_snap_groups(int id) {
 void on_window_closed(int id) {
     auto client = c_from_id(id);
 
-    for (int i = 0; i < alt_tab_menu.root->children.size(); i++) {
-        auto t = alt_tab_menu.root->children[i];
+    for (int i = 0; i < alt_tab_menu->root->children.size(); i++) {
+        auto t = alt_tab_menu->root->children[i];
         auto tab_data = (TabData *) t->user_data;
         if (tab_data->wid == id) {
             delete t;
-            alt_tab_menu.root->children.erase(alt_tab_menu.root->children.begin() + i);
+            alt_tab_menu->root->children.erase(alt_tab_menu->root->children.begin() + i);
         }
     }
   
@@ -2728,9 +2798,9 @@ void on_window_closed(int id) {
                 if (shd->id == id) {
                     later(1, [](Timer *t) {
                         remove_snap_helpers();
-                        if (alt_tab_menu.timer) {
-                            alt_tab_menu.timer->keep_running = false;
-                            alt_tab_menu.timer = nullptr;
+                        if (alt_tab_menu->timer) {
+                            alt_tab_menu->timer->keep_running = false;
+                            alt_tab_menu->timer = nullptr;
                         }
                     });
                 }
@@ -2751,13 +2821,24 @@ void on_window_closed(int id) {
     }
 }
 
-void on_monitor_open(int id) {
+void on_monitor_open(int id) {    
     auto tm = new ThinMonitor(id);
     hypriso->monitors.push_back(tm);
 
     auto c = new Container(layout_type::absolute, FILL_SPACE, FILL_SPACE);
     c->user_data = new RootData(id);
     c->receive_events_even_if_obstructed = true;
+    c->handles_pierced = [](Container *c, int mouse_x, int mouse_y) {
+        auto b = c->real_bounds;
+        b.x += b.w - 3;
+        b.y += b.h - 3;
+        b.w = 3;
+        b.h = 3;
+        if (bounds_contains(b, mouse_x, mouse_y)) {
+            return true;
+        }
+        return false;
+    };
     c->when_clicked = paint {
         auto rdata = (RootData *) root->user_data;
         auto s = scale(rdata->id);
@@ -2839,10 +2920,15 @@ void on_monitor_open(int id) {
                 auto tdata = get_or_create<TabData>(ch->uuid, "tdata");
                 tdata->wid = space;
                 ch->when_paint = paint {
+                    auto tdata = get_or_create<TabData>(c->uuid, "tdata");
+                    
                     auto b = c->real_bounds;
                     //b.shrink(10);
                     auto s = scale(((RootData *) root->user_data)->id);
                     rect(b, color_workspace_thumb, 0, interspace * s);
+                    auto rdata = (RootData *) root->user_data;
+                    //nz(fz("{} {} {}", rdata->id, tdata->wid, "attempt"));
+                    //hypriso->draw_workspace(rdata->id, tdata->wid, Bounds(0, 0, 200, 200));
                 };
             }
         }
@@ -2900,6 +2986,14 @@ void on_monitor_open(int id) {
 }
 
 void on_monitor_closed(int id) {
+    for (auto r : roots) {
+        for (int i = 0; i < r->children.size(); i++) {
+            if (r->children[i]->custom_type == (int) TYPE::ALT_TAB) {
+                r->children.erase(r->children.begin() + i); 
+            } 
+        }
+    }
+    
     for (int i = 0; i < roots.size(); i++) {
         auto data = (RootData *) roots[i]->user_data;
         if (data->id == id) {
@@ -2945,6 +3039,7 @@ void on_draw_decos(std::string name, int m, int w, float a) {
                    // todo @speed
                    layout_every_single_root();
                    c->automatically_paint_children = true;
+                   //chdata->alpha = 1.0;
                    chdata->alpha = a;
                    paint_outline(r, c);
                    chdata->alpha = 1.0;
@@ -2955,6 +3050,74 @@ void on_draw_decos(std::string name, int m, int w, float a) {
         }
     }
 };
+
+std::string rounding_shader_data = R"round(
+// smoothing constant for the edge: more = blurrier, but smoother
+#define M_PI 3.1415926535897932384626433832795
+#define SMOOTHING_CONSTANT (M_PI / 5.34665792551)
+
+uniform float radius;
+uniform float roundingPower;
+uniform vec2 topLeft;
+uniform vec2 fullSize;
+uniform int cornerDisableMask; // new
+
+vec4 rounding(vec4 color) {
+    vec2 pixCoord = vec2(gl_FragCoord);
+    vec2 preMirror = pixCoord - (topLeft + fullSize * 0.5); // new
+
+    pixCoord -= topLeft + fullSize * 0.5;
+    pixCoord *= vec2(lessThan(pixCoord, vec2(0.0))) * -2.0 + 1.0;
+    pixCoord -= fullSize * 0.5 - radius;
+    pixCoord += vec2(1.0, 1.0) / fullSize;
+
+    // new: skip rounding if bit for this corner is set
+    int cornerBit = (preMirror.y < 0.0 ? (preMirror.x < 0.0 ? 1 : 2)
+                                       : (preMirror.x < 0.0 ? 4 : 8));
+    if ((cornerDisableMask & cornerBit) != 0)
+        return color;
+
+    if (pixCoord.x + pixCoord.y > radius) {
+        float dist = pow(pow(pixCoord.x, roundingPower) + pow(pixCoord.y, roundingPower), 1.0/roundingPower);
+
+        if (dist > radius + SMOOTHING_CONSTANT)
+            discard;
+
+        float normalized = 1.0 - smoothstep(0.0, 1.0, (dist - radius + SMOOTHING_CONSTANT) / (SMOOTHING_CONSTANT * 2.0));
+
+        color *= normalized;
+    }
+
+    return color;
+}
+)round";
+
+void create_rounding_shader() {
+    const char* home = std::getenv("HOME");
+    if (!home) {
+        throw std::runtime_error("HOME environment variable not set");
+    }
+
+    bool reload_shaders = false;
+
+    // Target path
+    std::filesystem::path filepath = std::filesystem::path(home) / ".config/hypr/shaders/rounding.glsl";
+    if (!std::filesystem::exists(filepath)) {
+        reload_shaders = true;
+    }
+
+    // Ensure parent directories exist
+    std::filesystem::create_directories(filepath.parent_path());
+
+    // Write file (overwrite mode)
+    {
+        std::ofstream out(filepath, std::ios::trunc);
+        out << rounding_shader_data << std::endl;
+    }
+
+    if (reload_shaders)
+        hypriso->reload();
+}
 
 void startup::begin() {
     on_any_container_close = any_container_closed;
@@ -2989,6 +3152,22 @@ void startup::begin() {
         //notify("icon load");
         icon_cache_load();
     }
+
+    /*
+    auto timer = later(nullptr, 1000, [](Timer *m) {
+        for (auto r : roots) {
+            auto rdata = (RootData *) r->user_data;
+            auto spaces = hypriso->get_workspaces(rdata->id);
+            for (auto s : spaces) {
+                hypriso->screenshot_space(rdata->id, s);
+            }
+        }
+        m->keep_running = true;
+        nz("screenshot spaces");
+    });
+    timer->keep_running = true;
+    */
+   create_rounding_shader();
 }
 
 void startup::end() {
