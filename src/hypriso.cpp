@@ -10,6 +10,7 @@
 
 #include "container.h"
 #include "first.h"
+#include <hyprland/src/helpers/time/Time.hpp>
 
 #include <algorithm>
 #include <hyprutils/math/Vector2D.hpp>
@@ -60,7 +61,7 @@ void* pRenderLayer = nullptr;
 void* pRenderMonitor = nullptr;
 void* pRenderWorkspace = nullptr;
 void* pRenderWorkspaceWindowsFullscreen = nullptr;
-typedef void (*tRenderWindow)(void *, PHLWINDOW, PHLMONITOR, timespec *, bool decorate, eRenderPassMode, bool ignorePosition, bool standalone);
+typedef void (*tRenderWindow)(void *, PHLWINDOW, PHLMONITOR, const Time::steady_tp&, bool decorate, eRenderPassMode, bool ignorePosition, bool standalone);
 typedef void (*tRenderMonitor)(void *, PHLMONITOR pMonitor, bool commit);
 typedef void (*tRenderWorkspace)(void *, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp &, const CBox &geom);
 typedef void (*tRenderWorkspaceWindowsFullscreen)(void *, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp &);
@@ -93,7 +94,7 @@ static std::vector<HyprMonitor *> hyprmonitors;
 
 struct HyprWorkspaces {
     int id;
-    PHLWORKSPACE w;
+    PHLWORKSPACEREF w;
     CFramebuffer *buffer;
 };
 
@@ -184,7 +185,12 @@ PHLWINDOW get_window_from_mouse() {
     return PWINDOW;
 }
 
+void on_open_monitor(PHLMONITOR m);
+
 void on_open_window(PHLWINDOW w) {
+    for (auto m : g_pCompositor->m_monitors) {
+        on_open_monitor(m);
+    }
    if (auto surface = w->m_xdgSurface) {
         if (auto toplevel = surface->m_toplevel.lock()) {
             auto resource = toplevel->m_resource;
@@ -291,6 +297,10 @@ void on_close_window(PHLWINDOW w) {
 }
 
 void on_open_monitor(PHLMONITOR m) {
+    for (auto mons : hyprmonitors) {
+        if (mons->m == m)
+            return;
+    }
     auto hm = new HyprMonitor;
     hm->id = unique_id;
     hm->m = m;
@@ -316,7 +326,7 @@ void on_close_monitor(PHLMONITOR m) {
 }
 
 inline CFunctionHook* g_pOnSurfacePassDraw = nullptr;
-typedef void (*origSurfacePassDraw)(void*, const CRegion& damage);
+typedef void (*origSurfacePassDraw)(CSurfacePassElement *, const CRegion& damage);
 void hook_onSurfacePassDraw(void* thisptr, const CRegion& damage) {
     auto  spe = (CSurfacePassElement *) thisptr;
     auto window = spe->m_data.pWindow;
@@ -325,7 +335,7 @@ void hook_onSurfacePassDraw(void* thisptr, const CRegion& damage) {
         if (hw->w == window)
             cornermask = hw->cornermask;
     set_rounding(cornermask); // only top rounding
-    (*(origSurfacePassDraw)g_pOnSurfacePassDraw->m_original)(thisptr, damage);
+    (*(origSurfacePassDraw)g_pOnSurfacePassDraw->m_original)(spe, damage);
     set_rounding(0);
 }
 
@@ -335,6 +345,7 @@ void fix_window_corner_rendering() {
         if (m.signature.find("SurfacePassElement") != std::string::npos) {
             g_pOnSurfacePassDraw = HyprlandAPI::createFunctionHook(globals->api, m.address, (void*)&hook_onSurfacePassDraw);
             g_pOnSurfacePassDraw->hook();
+            return;
         }
     }
 }
@@ -582,6 +593,7 @@ float hook_WindowRoundingPower(void* thisptr) {
 }
 
 void hook_render_functions() {
+    //return;    
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "rounding");
         g_pWindowRoundingHook       = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_WindowRounding);
@@ -615,6 +627,7 @@ void hook_render_functions() {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderMonitor");
         pRenderMonitor = METHODS[0].address;
     }
+    
 }
 
 inline CFunctionHook* g_pOnCircleNextHook = nullptr;
@@ -639,120 +652,119 @@ void set_window_corner_mask(int id, int cornermask) {
 }
 
 void HyprIso::create_hooks_and_callbacks() {
-    static auto mouseMove = HyprlandAPI::registerCallbackDynamic(globals->api, "mouseMove", 
-        [](void* self, SCallbackInfo& info, std::any data) {
-            auto consume = false;
-            if (hypriso->on_mouse_move) {
-                auto mouse = g_pInputManager->getMouseCoordsInternal();
-                auto m = g_pCompositor->getMonitorFromCursor();
-                consume = hypriso->on_mouse_move(0, mouse.x * m->m_scale, mouse.y * m->m_scale);
-            }
-            info.cancelled = consume;
-        });
-    
-    static auto mouseButton = HyprlandAPI::registerCallbackDynamic(globals->api, "mouseButton", 
-        [](void* self, SCallbackInfo& info, std::any data) {
-            auto e = std::any_cast<IPointer::SButtonEvent>(data);
-            auto consume = false;
-            if (hypriso->on_mouse_press) {
-                auto mouse = g_pInputManager->getMouseCoordsInternal();
-                auto s = g_pCompositor->getMonitorFromCursor()->m_scale;
-                consume = hypriso->on_mouse_press(e.mouse, e.button, e.state, mouse.x * s, mouse.y * s);
-            }
-            info.cancelled = consume;
-        });
-    
-    static auto mouseAxis = HyprlandAPI::registerCallbackDynamic(globals->api, "mouseAxis", 
-        [](void* self, SCallbackInfo& info, std::any data) {
-            bool consume = false;
-            auto p = std::any_cast<std::unordered_map<std::string, std::any>>(data);
-            for (std::pair<const std::string, std::any> pair : p) {
-                if (pair.first == "event") {
-                    auto axisevent = std::any_cast<IPointer::SAxisEvent>(pair.second);
-                    if (hypriso->on_scrolled) {
-                        consume = hypriso->on_scrolled(0, axisevent.source, axisevent.axis, axisevent.relativeDirection, axisevent.delta, axisevent.deltaDiscrete, axisevent.mouse); 
-                    }
-                }
-            }
-            info.cancelled = consume;
-        });
-     
-    static auto keyPress = HyprlandAPI::registerCallbackDynamic(globals->api, "keyPress", 
-        [](void* self, SCallbackInfo& info, std::any data) {
-            auto consume = false;
-            if (hypriso->on_key_press) {
-                auto p = std::any_cast<std::unordered_map<std::string, std::any>>(data);
-                for (std::pair<const std::string, std::any> pair : p) {
-                    if (pair.first == "event") {
-                        auto skeyevent = std::any_cast<IKeyboard::SKeyEvent>(pair.second);
-                        consume = hypriso->on_key_press(0, skeyevent.keycode, skeyevent.state, skeyevent.updateMods);
-                    } else if (pair.first == "keyboard") {
-                        auto ikeyboard = std::any_cast<Hyprutils::Memory::CSharedPointer<IKeyboard>>(pair.second);
-                    }
-                }
-            }
-            info.cancelled = consume;
-        });
-
-
-    static auto openWindow = HyprlandAPI::registerCallbackDynamic(globals->api, "openWindow", 
-    [](void *self, SCallbackInfo& info, std::any data) {
+    for (auto m : g_pCompositor->m_monitors) {
+        on_open_monitor(m);
+    }
+    for (auto w : g_pCompositor->m_windows) {
+        on_open_window(w);
+    }
+    static auto openWindow  = HyprlandAPI::registerCallbackDynamic(globals->api, "openWindow", [](void* self, SCallbackInfo& info, std::any data) {
         if (hypriso->on_window_open) {
             auto w = std::any_cast<PHLWINDOW>(data); // todo getorcreate ref on our side
             on_open_window(w);
         }
     });
-    static auto closeWindow = HyprlandAPI::registerCallbackDynamic(globals->api, "closeWindow", 
-    [](void *self, SCallbackInfo& info, std::any data) {
+    static auto closeWindow1 = HyprlandAPI::registerCallbackDynamic(globals->api, "closeWindow", [](void* self, SCallbackInfo& info, std::any data) {
         if (hypriso->on_window_closed) {
             auto w = std::any_cast<PHLWINDOW>(data); // todo getorcreate ref on our side
             on_close_window(w);
         }
     });
-    static auto monitorAdded = HyprlandAPI::registerCallbackDynamic(globals->api, "monitorAdded", 
-    [](void *self, SCallbackInfo& info, std::any data) {
+    static auto render      = HyprlandAPI::registerCallbackDynamic(globals->api, "render", [](void* self, SCallbackInfo& info, std::any data) {
+        if (hypriso->on_render) {
+            for (auto m : hyprmonitors) {
+                if (m->m == g_pHyprOpenGL->m_renderData.pMonitor) {
+                    auto stage = std::any_cast<eRenderStage>(data);
+                    hypriso->on_render(m->id, (int)stage);
+                }
+            }
+        }
+    });
+    static auto mouseMove   = HyprlandAPI::registerCallbackDynamic(globals->api, "mouseMove", [](void* self, SCallbackInfo& info, std::any data) {
+        auto consume = false;
+        if (hypriso->on_mouse_move) {
+            auto mouse = g_pInputManager->getMouseCoordsInternal();
+            auto m     = g_pCompositor->getMonitorFromCursor();
+            consume    = hypriso->on_mouse_move(0, mouse.x * m->m_scale, mouse.y * m->m_scale);
+        }
+        info.cancelled = consume;
+    });
+
+    static auto mouseButton = HyprlandAPI::registerCallbackDynamic(globals->api, "mouseButton", [](void* self, SCallbackInfo& info, std::any data) {
+        auto e       = std::any_cast<IPointer::SButtonEvent>(data);
+        auto consume = false;
+        if (hypriso->on_mouse_press) {
+            auto mouse = g_pInputManager->getMouseCoordsInternal();
+            auto s     = g_pCompositor->getMonitorFromCursor()->m_scale;
+            consume    = hypriso->on_mouse_press(e.mouse, e.button, e.state, mouse.x * s, mouse.y * s);
+        }
+        info.cancelled = consume;
+    });
+
+    static auto mouseAxis = HyprlandAPI::registerCallbackDynamic(globals->api, "mouseAxis", [](void* self, SCallbackInfo& info, std::any data) {
+        bool consume = false;
+        auto p       = std::any_cast<std::unordered_map<std::string, std::any>>(data);
+        for (std::pair<const std::string, std::any> pair : p) {
+            if (pair.first == "event") {
+                auto axisevent = std::any_cast<IPointer::SAxisEvent>(pair.second);
+                if (hypriso->on_scrolled) {
+                    consume = hypriso->on_scrolled(0, axisevent.source, axisevent.axis, axisevent.relativeDirection, axisevent.delta, axisevent.deltaDiscrete, axisevent.mouse);
+                }
+            }
+        }
+        info.cancelled = consume;
+    });
+
+    static auto keyPress       = HyprlandAPI::registerCallbackDynamic(globals->api, "keyPress", [](void* self, SCallbackInfo& info, std::any data) {
+        auto consume = false;
+        if (hypriso->on_key_press) {
+            auto p = std::any_cast<std::unordered_map<std::string, std::any>>(data);
+            for (std::pair<const std::string, std::any> pair : p) {
+                if (pair.first == "event") {
+                    auto skeyevent = std::any_cast<IKeyboard::SKeyEvent>(pair.second);
+                    consume        = hypriso->on_key_press(0, skeyevent.keycode, skeyevent.state, skeyevent.updateMods);
+                } else if (pair.first == "keyboard") {
+                    auto ikeyboard = std::any_cast<Hyprutils::Memory::CSharedPointer<IKeyboard>>(pair.second);
+                }
+            }
+        }
+        info.cancelled = consume;
+    });
+    static auto monitorAdded   = HyprlandAPI::registerCallbackDynamic(globals->api, "monitorAdded", [](void* self, SCallbackInfo& info, std::any data) {
         if (hypriso->on_monitor_open) {
             auto m = std::any_cast<PHLMONITOR>(data); // todo getorcreate ref on our side
             on_open_monitor(m);
         }
     });
-    static auto monitorRemoved = HyprlandAPI::registerCallbackDynamic(globals->api, "monitorRemoved", 
-    [](void *self, SCallbackInfo& info, std::any data) {
+    static auto monitorRemoved = HyprlandAPI::registerCallbackDynamic(globals->api, "monitorRemoved", [](void* self, SCallbackInfo& info, std::any data) {
         if (hypriso->on_monitor_closed) {
             auto m = std::any_cast<PHLMONITOR>(data); // todo getorcreate ref on our side
-            on_close_monitor(m);            
+            on_close_monitor(m);
         }
     });
-    static auto render = HyprlandAPI::registerCallbackDynamic(globals->api, "render", 
-    [](void *self, SCallbackInfo& info, std::any data) {
-        if (hypriso->on_render) {
-            for (auto m : hyprmonitors) {
-                if (m->m == g_pHyprOpenGL->m_renderData.pMonitor) {
-                    auto stage = std::any_cast<eRenderStage>(data);
-                    hypriso->on_render(m->id, (int) stage);
-                }
-            }
-        }
-    });
-    static auto configReloaded = HyprlandAPI::registerCallbackDynamic(globals->api, "configReloaded", 
-    [](void *self, SCallbackInfo& info, std::any data) {
+
+    static auto configReloaded = HyprlandAPI::registerCallbackDynamic(globals->api, "configReloaded", [](void* self, SCallbackInfo& info, std::any data) {
         if (hypriso->on_config_reload) {
             hypriso->on_config_reload();
+            
+            Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("input:follow_mouse");
+            auto f = (Hyprlang::INT*)val->dataPtr();
+            //initial_value = *f;
+            *f = 2;
         }
     });
-    static auto createWorkspace = HyprlandAPI::registerCallbackDynamic(globals->api, "createWorkspace", 
-    [](void *self, SCallbackInfo& info, std::any data) {
-        auto s = std::any_cast<PHLWORKSPACE>(data);
-        auto hs = new HyprWorkspaces;
-        hs->w = s;
-        hs->id = unique_id++;
+
+    static auto createWorkspace = HyprlandAPI::registerCallbackDynamic(globals->api, "createWorkspace", [](void* self, SCallbackInfo& info, std::any data) {
+        auto s     = std::any_cast<CWorkspace*>(data)->m_self.lock();
+        auto hs    = new HyprWorkspaces;
+        hs->w      = s;
+        hs->id     = unique_id++;
         hs->buffer = new CFramebuffer;
         hyprspaces.push_back(hs);
     });
-    static auto destroyWorkspace = HyprlandAPI::registerCallbackDynamic(globals->api, "destroyWorkspace", 
-    [](void *self, SCallbackInfo& info, std::any data)
-    {
-        auto s = std::any_cast<PHLWORKSPACE>(data);
+
+    static auto destroyWorkspace = HyprlandAPI::registerCallbackDynamic(globals->api, "destroyWorkspace", [](void* self, SCallbackInfo& info, std::any data) {
+        auto s = std::any_cast<CWorkspace*>(data)->m_self.lock();
         for (int i = 0; i < hyprspaces.size(); i++) {
             auto hs = hyprspaces[i];
             if (hs->w == s) {
@@ -762,19 +774,12 @@ void HyprIso::create_hooks_and_callbacks() {
         }
     });
 
-    for (auto m : g_pCompositor->m_monitors) {
-        on_open_monitor(m);
-    }
-    for (auto w : g_pCompositor->m_windows) {
-        on_open_window(w);
-    }
-
-    fix_window_corner_rendering();
-    detect_csd_request_change();
-    detect_move_resize_requests();    
     disable_default_alt_tab_behaviour();
-    hook_render_functions();
+    //detect_csd_request_change();
+    detect_move_resize_requests();    
+    fix_window_corner_rendering();
     overwrite_min();
+    hook_render_functions();
 }
 
 void HyprIso::end() {
@@ -1059,7 +1064,6 @@ std::vector<int> get_window_stacking_order() {
 }
 
 void HyprIso::move(int id, int x, int y) {
-    auto m = g_pCompositor->getMonitorFromCursor();
     for (auto c : hyprwindows) {
         if (c->id == id) {
             c->w->m_realPosition->setValueAndWarp({x, y});
@@ -1068,7 +1072,6 @@ void HyprIso::move(int id, int x, int y) {
 }
 
 void HyprIso::move_resize(int id, int x, int y, int w, int h, bool instant) {
-    auto m = g_pCompositor->getMonitorFromCursor();
     for (auto c : hyprwindows) {
         if (c->id == id) {
             if (instant) {
@@ -1686,6 +1689,7 @@ void screenshot_monitor(CFramebuffer* buffer, PHLMONITOR m) {
 }
 
 void screenshot_workspace(CFramebuffer* buffer, PHLWORKSPACEREF w, PHLMONITOR m, bool include_cursor) {
+    //return;
     if (!buffer || pRenderWorkspace == nullptr)
         return;
     if (!m || !m->m_output || m->m_pixelSize.x <= 0 || m->m_pixelSize.y <= 0)
@@ -1705,6 +1709,7 @@ void screenshot_workspace(CFramebuffer* buffer, PHLWORKSPACEREF w, PHLMONITOR m,
 }
 
 void screenshot_window_with_decos(CFramebuffer* buffer, PHLWINDOW w) {
+    //return;
     if (!buffer || !pRenderWindow)
         return;
     const auto m = w->m_monitor.lock();
@@ -1721,13 +1726,12 @@ void screenshot_window_with_decos(CFramebuffer* buffer, PHLWINDOW w) {
     g_pHyprRenderer->m_bRenderingSnapshot = true;
     g_pHyprOpenGL->clear(CHyprColor(0, 0, 0, 0)); // JIC
 
-    timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
+    auto const NOW = Time::steadyNow();
 
     auto fo = w->m_floatingOffset;
     w->m_floatingOffset.x -= w->m_realPosition->value().x - ex.topLeft.x;
     w->m_floatingOffset.y -= w->m_realPosition->value().y - ex.topLeft.y;
-    (*(tRenderWindow)pRenderWindow)(g_pHyprRenderer.get(), w, m, &now, true, RENDER_PASS_ALL, false, false);
+    (*(tRenderWindow)pRenderWindow)(g_pHyprRenderer.get(), w, m, NOW, true, RENDER_PASS_ALL, false, false);
     w->m_floatingOffset = fo;
 
     g_pHyprRenderer->endRender();
@@ -1736,6 +1740,7 @@ void screenshot_window_with_decos(CFramebuffer* buffer, PHLWINDOW w) {
 }
 
 void screenshot_window(HyprWindow *hw, PHLWINDOW w, bool include_decorations) {
+    //return;
     if (!pRenderWindow)
         return;
     const auto m = w->m_monitor.lock();
@@ -1762,9 +1767,8 @@ void screenshot_window(HyprWindow *hw, PHLWINDOW w, bool include_decorations) {
     g_pHyprRenderer->beginRender(m, fakeDamage, RENDER_MODE_FULL_FAKE, nullptr, hw->fb);
     g_pHyprRenderer->m_bRenderingSnapshot = true;
     g_pHyprOpenGL->clear(CHyprColor(0, 0, 0, 0)); // JIC
-    timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    (*(tRenderWindow)pRenderWindow)(g_pHyprRenderer.get(), w, m, &now, false, RENDER_PASS_MAIN, true, true);
+    auto const NOW = Time::steadyNow();
+    (*(tRenderWindow)pRenderWindow)(g_pHyprRenderer.get(), w, m, NOW, false, RENDER_PASS_MAIN, true, true);
     g_pHyprRenderer->endRender();
     g_pHyprRenderer->m_bRenderingSnapshot = false;
 
@@ -1791,6 +1795,7 @@ void HyprIso::screenshot_all() {
 }
 
 void HyprIso::draw_workspace(int mon, int id, Bounds b) {
+    //return;
     for (auto hs : hyprspaces) {
     AnyPass::AnyData anydata([id, b, hs](AnyPass* pass) {
         notify("draw");
@@ -1883,6 +1888,7 @@ void HyprIso::screenshot_deco(int id) {
 
 // Will stretch the thumbnail if the aspect ratio passed in is different from thumbnail
 void HyprIso::draw_thumbnail(int id, Bounds b, int rounding, float roundingPower, int cornermask) {
+    // return;
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             if (hw->fb) {
@@ -1911,6 +1917,7 @@ void HyprIso::draw_thumbnail(int id, Bounds b, int rounding, float roundingPower
 }
 
 void HyprIso::draw_deco_thumbnail(int id, Bounds b, int rounding, float roundingPower, int cornermask) {
+    // return;
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             if (hw->deco_fb) {
@@ -2069,4 +2076,11 @@ void HyprIso::move_to_workspace(int id, int workspace) {
 
 void HyprIso::reload() {
     g_pConfigManager->reload(); 
+}
+
+void HyprIso::add_float_rule() {
+    g_pConfigManager->handleWindowRule("windowrulev2", "float, class:.*");
+
+   //HyprInt  input:folloe_mouse
+   
 }

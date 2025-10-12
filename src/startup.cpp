@@ -365,7 +365,7 @@ class AltTabMenu {
                 });
             } else {
                 if (change_index) {
-                    if (index <= root->children.size()) {
+                    if (index < root->children.size()) {
                         if (auto c = root->children[index]) {
                             auto tab_data = (TabData *) c->user_data;
                             auto w = tab_data->wid;
@@ -3020,6 +3020,7 @@ void on_resize_start_requested(int id, RESIZE_TYPE type) {
 
 void on_config_reload() {
     hypriso->set_zoom_factor(zoom_factor);
+    hypriso->add_float_rule();
 }
 
 void any_container_closed(Container *c) {
@@ -3120,6 +3121,8 @@ void create_rounding_shader() {
 }
 
 void startup::begin() {
+    hypriso->add_float_rule();
+    
     on_any_container_close = any_container_closed;
     
     hypriso->on_mouse_press = on_mouse_press;

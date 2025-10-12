@@ -215,6 +215,8 @@ struct HyprIso {
     void move_to_workspace(int id, int workspace);
 
     std::vector<int> get_workspaces(int monitor);
+
+    void add_float_rule();
         
 };
 
