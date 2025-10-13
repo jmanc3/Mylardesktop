@@ -88,6 +88,9 @@ static std::vector<HyprWindow *> hyprwindows;
 struct HyprMonitor {
     int id;  
     PHLMONITOR m;
+
+    CFramebuffer *wallfb = nullptr;
+    Bounds wall_size; // 0 -> 1, percentage of fb taken up by the actual window used for drawing
 };
 
 static std::vector<HyprMonitor *> hyprmonitors;
@@ -764,10 +767,16 @@ void HyprIso::create_hooks_and_callbacks() {
     });
 
     static auto destroyWorkspace = HyprlandAPI::registerCallbackDynamic(globals->api, "destroyWorkspace", [](void* self, SCallbackInfo& info, std::any data) {
-        auto s = std::any_cast<CWorkspace*>(data)->m_self.lock();
-        for (int i = 0; i < hyprspaces.size(); i++) {
+        auto s = std::any_cast<CWorkspace*>(data);
+        for (int i = hyprspaces.size() - 1; i >= 0; i--) {
             auto hs = hyprspaces[i];
-            if (hs->w == s) {
+            bool remove = false;
+            if (!hs->w.lock()) {
+                remove = true;
+            } else if (hs->w.get() == s) {
+                remove = true;
+            }
+            if (remove) {
                 delete hs->buffer;
                 hyprspaces.erase(hyprspaces.begin() + i);
             }
@@ -1668,6 +1677,26 @@ Timer* later(float time_ms, const std::function<void(Timer*)>& fn) {
     return timer;
 }
 
+void actual_screenshot_wallpaper(CFramebuffer* buffer, PHLMONITOR m) {
+    if (!buffer || !pRenderMonitor)
+        return;
+    if (!m || !m->m_output || m->m_pixelSize.x <= 0 || m->m_pixelSize.y <= 0)
+        return;
+    CRegion fakeDamage{0, 0, INT16_MAX, INT16_MAX};
+    g_pHyprRenderer->makeEGLCurrent();
+    buffer->alloc(m->m_pixelSize.x, m->m_pixelSize.y, DRM_FORMAT_ABGR8888);
+    g_pHyprRenderer->beginRender(m, fakeDamage, RENDER_MODE_FULL_FAKE, nullptr, buffer);
+    // g_pHyprRenderer->m_bRenderingSnapshot = true;
+    // g_pHyprOpenGL->clear(CHyprColor(0, 0, 0, 0)); // JIC
+    // g_pHyprOpenGL->m_renderData.pMonitor = m;
+    // (*(tRenderMonitor)pRenderMonitor)(g_pHyprRenderer.get(), m, false);
+    // g_pHyprOpenGL->m_renderData.pMonitor  = m;
+    // g_pHyprOpenGL->m_renderData.outFB     = buffer;
+    // g_pHyprOpenGL->m_renderData.currentFB = buffer;
+    g_pHyprRenderer->endRender();
+    // g_pHyprRenderer->m_bRenderingSnapshot = false;
+}
+
 void screenshot_monitor(CFramebuffer* buffer, PHLMONITOR m) {
     if (!buffer || !pRenderMonitor)
         return;
@@ -1794,34 +1823,35 @@ void HyprIso::screenshot_all() {
     }
 }
 
-void HyprIso::draw_workspace(int mon, int id, Bounds b) {
+void HyprIso::draw_workspace(int mon, int id, Bounds b, int rounding) {
     //return;
     for (auto hs : hyprspaces) {
-    AnyPass::AnyData anydata([id, b, hs](AnyPass* pass) {
-        notify("draw");
-        auto rounding = 0;
-        auto roundingPower = 2.0f;
-        auto cornermask = 0;
-        auto tex = hs->buffer->getTexture();
-        auto box = tocbox(b);
-        
-        CHyprOpenGLImpl::STextureRenderData data;
-        data.allowCustomUV = true;
+        if (hs->w->m_id != id)
+            continue;
+        AnyPass::AnyData anydata([id, b, hs, rounding](AnyPass* pass) {
+            //notify("draw");
+            auto roundingPower = 2.0f;
+            auto cornermask = 0;
+            auto tex = hs->buffer->getTexture();
+            auto box = tocbox(b);
 
-        data.round = rounding;
-        data.roundingPower = roundingPower;
-        g_pHyprOpenGL->m_renderData.primarySurfaceUVTopLeft     = Vector2D(0, 0);
-        g_pHyprOpenGL->m_renderData.primarySurfaceUVBottomRight = Vector2D(
-            std::min(1.0, 1.0), 
-            std::min(1.0, 1.0) 
-        );
-        set_rounding(cornermask);
-        g_pHyprOpenGL->renderTexture(tex, box, data);
-        set_rounding(0);
-        g_pHyprOpenGL->m_renderData.primarySurfaceUVTopLeft     = Vector2D(-1, -1);
-        g_pHyprOpenGL->m_renderData.primarySurfaceUVBottomRight = Vector2D(-1, -1);
-    });
-    g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
+            CHyprOpenGLImpl::STextureRenderData data;
+            data.allowCustomUV = true;
+
+            data.round = rounding;
+            data.roundingPower = roundingPower;
+            g_pHyprOpenGL->m_renderData.primarySurfaceUVTopLeft     = Vector2D(0, 0);
+            g_pHyprOpenGL->m_renderData.primarySurfaceUVBottomRight = Vector2D(
+                std::min(1.0, 1.0),
+                std::min(1.0, 1.0)
+            );
+            set_rounding(cornermask);
+            g_pHyprOpenGL->renderTexture(tex, box, data);
+            set_rounding(0);
+            g_pHyprOpenGL->m_renderData.primarySurfaceUVTopLeft     = Vector2D(-1, -1);
+            g_pHyprOpenGL->m_renderData.primarySurfaceUVBottomRight = Vector2D(-1, -1);
+        });
+        g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
         
         /*for (auto hm : hyprmonitors) {
             if (mon == hm->id) {
@@ -1859,16 +1889,63 @@ void HyprIso::draw_workspace(int mon, int id, Bounds b) {
     }
 };
 
+void HyprIso::draw_wallpaper(int mon, Bounds b, int rounding) {
+    //return;
+    for (auto hm : hyprmonitors) {
+        if (hm->id != mon)
+            continue;
+        AnyPass::AnyData anydata([hm, mon, b, rounding](AnyPass* pass) {
+            //notify("draw");
+            auto roundingPower = 2.0f;
+            auto cornermask = 0;
+            auto tex = hm->wallfb->getTexture();
+            auto box = tocbox(b);
+
+            CHyprOpenGLImpl::STextureRenderData data;
+            data.allowCustomUV = true;
+
+            data.round = rounding;
+            data.roundingPower = roundingPower;
+            g_pHyprOpenGL->m_renderData.primarySurfaceUVTopLeft     = Vector2D(0, 0);
+            g_pHyprOpenGL->m_renderData.primarySurfaceUVBottomRight = Vector2D(
+                std::min(1.0, 1.0),
+                std::min(1.0, 1.0)
+            );
+            set_rounding(cornermask);
+            g_pHyprOpenGL->renderTexture(tex, box, data);
+            set_rounding(0);
+            g_pHyprOpenGL->m_renderData.primarySurfaceUVTopLeft     = Vector2D(-1, -1);
+            g_pHyprOpenGL->m_renderData.primarySurfaceUVBottomRight = Vector2D(-1, -1);
+        });
+        g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
+    }
+};
+
+void HyprIso::screenshot_wallpaper(int mon) {
+   for (auto hm : hyprmonitors) {
+       if (hm->id) {
+           if (!hm->wallfb)
+               hm->wallfb = new CFramebuffer;
+           actual_screenshot_wallpaper(hm->wallfb, hm->m);
+           hm->wall_size = Bounds(hm->m->m_position.x, hm->m->m_position.y, 
+               hm->m->m_pixelSize.x, hm->m->m_pixelSize.y);
+       }
+   }
+}
+
 void HyprIso::screenshot_space(int mon, int id) {
     for (auto hs : hyprspaces) {
-        for (auto hm : hyprmonitors) {
-            if (hs->w->m_monitor == hm->m && mon == hm->id) {
-                if (hs->w->m_id == id) {
-                    screenshot_workspace(hs->buffer, hs->w, hm->m, false);
-                    break;
-                }
-            }
+        if (hs->w->m_id == id) {
+            screenshot_workspace(hs->buffer, hs->w, hs->w->m_monitor.lock(), false);
         }
+        // for (auto hm : hyprmonitors) {
+        //     if (hs->w.lock() && hs->w->m_monitor == hm->m && mon == hm->id) {
+        //         if (hs->w->m_id == id) {
+        //             screenshot_workspace(hs->buffer, hs->w, hm->m, false);
+        //             return;
+        //         }
+        //     }
+        // }
     }
 }
 

@@ -842,7 +842,39 @@ void resize_stop() {
     }
 }
 
+static Timer *workspace_screenshot_timer = nullptr;
+
+void stop_workspace_screenshotting() {
+    workspace_screenshot_timer->keep_running = false;
+    workspace_screenshot_timer = nullptr;
+}
+
+void start_workspace_screenshotting() {
+    if (workspace_screenshot_timer) {
+        workspace_screenshot_timer->keep_running = true;
+        return;
+    }
+    float fps = 1000.0 / 24.0f;
+    workspace_screenshot_timer = later(nullptr, fps, [](Timer *m) {
+        for (auto r : roots) {
+            auto rdata = (RootData *) r->user_data;
+            auto spaces = hypriso->get_workspaces(rdata->id);
+            for (auto s : spaces) {
+                auto before = screenshotting;
+                //screenshotting = true;
+                hypriso->screenshot_space(rdata->id, s);
+                //screenshotting = before;
+            }
+            //hypriso->screenshot_wallpaper(rdata->id);
+        }
+        //m->keep_running = true;
+        //nz("screenshot spaces");
+    });
+    workspace_screenshot_timer->keep_running = true;
+}
+
 void drag_start(int id) {
+    start_workspace_screenshotting();
     hypriso->dragging_id = id;
     hypriso->dragging = true;
     //screenshot_deco(id);
@@ -1426,6 +1458,7 @@ void open_overview() {
 }
 
 void drag_stop() {    
+    stop_workspace_screenshotting();
     int window = hypriso->dragging_id;
     drag_update();
     hypriso->dragging_id = -1;
@@ -2925,10 +2958,12 @@ void on_monitor_open(int id) {
                     auto b = c->real_bounds;
                     //b.shrink(10);
                     auto s = scale(((RootData *) root->user_data)->id);
-                    rect(b, color_workspace_thumb, 0, interspace * s);
+                    auto color = color_workspace_thumb;
+                    color.a = .4;
+                    rect(b, color, 0, interspace * s);
                     auto rdata = (RootData *) root->user_data;
                     //nz(fz("{} {} {}", rdata->id, tdata->wid, "attempt"));
-                    //hypriso->draw_workspace(rdata->id, tdata->wid, Bounds(0, 0, 200, 200));
+                    hypriso->draw_workspace(rdata->id, tdata->wid, c->real_bounds, interspace * s);
                 };
             }
         }
@@ -2967,6 +3002,16 @@ void on_monitor_open(int id) {
         if (space_data->expanded)
             mask = 0;
         rect(c->real_bounds, color_workspace_switcher, mask, interspace * s);
+
+        auto rdata = (RootData *) root->user_data;
+
+        auto spaces = hypriso->get_workspaces(rdata->id);
+        int x = 0;
+        for (auto space :spaces) {
+            //hypriso->draw_wallpaper(rdata->id, Bounds(x, 0, 200, 200), interspace * s);
+            //hypriso->draw_workspace(rdata->id, space, Bounds(x, 0, 200, 200), interspace * s);
+            x += 200;
+        }
     };
 
     auto tab_menu = c->child(::vbox, FILL_SPACE, FILL_SPACE); 
@@ -3156,21 +3201,7 @@ void startup::begin() {
         icon_cache_load();
     }
 
-    /*
-    auto timer = later(nullptr, 1000, [](Timer *m) {
-        for (auto r : roots) {
-            auto rdata = (RootData *) r->user_data;
-            auto spaces = hypriso->get_workspaces(rdata->id);
-            for (auto s : spaces) {
-                hypriso->screenshot_space(rdata->id, s);
-            }
-        }
-        m->keep_running = true;
-        nz("screenshot spaces");
-    });
-    timer->keep_running = true;
-    */
-   create_rounding_shader();
+    create_rounding_shader();
 }
 
 void startup::end() {
