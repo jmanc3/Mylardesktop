@@ -97,14 +97,15 @@ static int tab_menu_font_h = 40;
 static float interspace = 20.0f;
 static bool META_PRESSED = false;
 
-static float thumb_to_position_time = 130;
-static float snap_fadein = 80;
-static long thumb_to_position_forward = 30;
+static float thumb_to_position_time = 350;
+static float snap_fadein = 300;
+static long thumb_to_position_forward = 0;
 
 static float zoom_factor = 1.0;
 static long zoom_nicely_ended_time = 0;
 
 static bool screenshotting = false;
+static bool showing_switcher = false;
 
 static float sd = .65;                  // scale down
 Bounds max_thumb = {510 * sd, 310 * sd, 510 * sd, 310 * sd}; // need to be multiplied by scale
@@ -138,6 +139,31 @@ void remove_snap_helpers();
 void perform_snap(ThinClient *c, Bounds position, SnapPosition snap_position, bool create_helper = true, bool instant = true);
 void clear_snap_groups(int id);
 Bounds snap_position_to_bounds(int mon, SnapPosition pos);
+
+float pull(std::vector<float>& fls, float scalar);
+
+float pull(std::vector<float>& fls, float scalar) {
+    if (fls.empty())
+        return 0.0f; // or throw an exception
+
+    // Clamp scalar between 0 and 1
+    scalar = std::clamp(scalar, 0.0f, 1.0f);
+
+    float fIndex = scalar * (fls.size() - 1); // exact position
+    int   i0     = static_cast<int>(std::floor(fIndex));
+    int   i1     = static_cast<int>(std::ceil(fIndex));
+
+    if (i0 == i1 || i1 >= fls.size()) {
+        return fls[i0];
+    }
+
+    float t = fIndex - i0; // fraction between the two indices
+    return fls[i0] * (1.0f - t) + fls[i1] * t;
+}
+
+
+// {"anchors":[{"x":0,"y":1},{"x":0.275,"y":0.17500000000000002},{"x":1,"y":0}],"controls":[{"x":0.11310096545097162,"y":0.37717594570583773},{"x":0.3948317346817408,"y":0.03828705681694877}]}
+std::vector<float> curve_to_position = { 0, 0.08799999999999997, 0.16900000000000004, 0.245, 0.31399999999999995, 0.378, 0.43700000000000006, 0.491, 0.5409999999999999, 0.587, 0.63, 0.6679999999999999, 0.704, 0.736, 0.765, 0.791, 0.8140000000000001, 0.834, 0.848, 0.86, 0.871, 0.88, 0.888, 0.895, 0.902, 0.908, 0.914, 0.919, 0.924, 0.929, 0.933, 0.937, 0.9410000000000001, 0.945, 0.948, 0.952, 0.955, 0.958, 0.961, 0.963, 0.966, 0.969, 0.971, 0.973, 0.975, 0.978, 0.98, 0.981, 0.983, 0.985, 0.987, 0.988, 0.99, 0.991, 0.993, 0.994, 0.995, 0.997, 0.998, 0.999 };
 
 struct WindowRestoreLocation {
     Bounds box; // all values are 0-1 and supposed to be scaled to monitor
@@ -428,17 +454,21 @@ void update_visible_window() {
     return;
 }
 
-void paint_thumbnail(Container *root, Container *c) {
+void paint_thumbnail_raw(Container *root, Container *c, float alpha) {
     auto tdata = (TabData *) c->user_data;
     auto rdata = (RootData *) root->user_data;
     auto s = scale(rdata->id);
-    hypriso->draw_thumbnail(tdata->wid, c->real_bounds, thumb_rounding * s, 2.0f, 3);
+    hypriso->draw_thumbnail(tdata->wid, c->real_bounds, thumb_rounding * s, 2.0f, 3, alpha);
     if (alt_tab_menu->index <= alt_tab_menu->root->children.size()) {
         auto r = alt_tab_menu->root->children[alt_tab_menu->index];
         if (r == c->parent) {
-            rect(c->real_bounds, {1, 1, 1, .2}, 3, thumb_rounding * s, 2.0f, 0.0);
+            rect(c->real_bounds, {1, 1, 1, .2}, 3, thumb_rounding * s, 2.0f, false);
         }
     }
+}
+
+void paint_thumbnail(Container *root, Container *c) {
+    paint_thumbnail_raw(root, c, 1.0); 
 }
 
 void paint_titlebar_raw(Container *root, Container *c, float a) {
@@ -462,9 +492,8 @@ void paint_titlebar_raw(Container *root, Container *c, float a) {
     if (cdata) {
         if (auto title = container_by_name("title", cdata)) {
             auto td = (TitleData *) title->user_data;
-            int xoff = 0;
+            int xoff = titlebar_icon_pad * s;
             if (td->icon.id != -1) {
-                xoff += titlebar_icon_pad * s;
                 draw_texture(td->icon, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->icon.h * .5, a);
                 xoff += titlebar_icon_pad * s + td->icon.w;
             }
@@ -861,14 +890,13 @@ void start_workspace_screenshotting() {
             auto spaces = hypriso->get_workspaces(rdata->id);
             for (auto s : spaces) {
                 auto before = screenshotting;
-                //screenshotting = true;
                 hypriso->screenshot_space(rdata->id, s);
-                //screenshotting = before;
             }
-            //hypriso->screenshot_wallpaper(rdata->id);
+            auto before = screenshotting;
+            screenshotting = true;
+            hypriso->screenshot_wallpaper(rdata->id);
+            screenshotting = before;
         }
-        //m->keep_running = true;
-        //nz("screenshot spaces");
     });
     workspace_screenshot_timer->keep_running = true;
 }
@@ -877,6 +905,7 @@ void drag_start(int id) {
     start_workspace_screenshotting();
     hypriso->dragging_id = id;
     hypriso->dragging = true;
+    showing_switcher = true;
     //screenshot_deco(id);
     //hypriso->set_hidden(id, true);
     clear_snap_groups(id);
@@ -1094,6 +1123,7 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                     auto thumbnail_parent = c->child(::vbox, FILL_SPACE, FILL_SPACE);
                     thumbnail_parent->user_data = td;
                     thumbnail_parent->after_paint = paint {
+                        auto rdata = (RootData *) root->user_data;
                         // lerp between ch->real and b, based on
                         long *d = get_data<long>(c->uuid, "start");
                         if (!d) {
@@ -1113,37 +1143,61 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                             }
                         }
  
+                        //for (int i = 0; i < 2; i++) {
+                            for (auto tchild : c->children) {
+                                if (tchild->custom_type == (int) TYPE::SNAP_THUMB) {
+                                    auto tt = (TabData *) tchild->user_data;
+                                    auto shd = (SnapHelperData * ) tchild->parent->parent->user_data;
 
-                        for (auto tchild : c->children) {
-                            if (tchild->custom_type == (int) TYPE::SNAP_THUMB) {
-                                auto tt = (TabData *) tchild->user_data;
-                                auto shd = (SnapHelperData * ) tchild->parent->parent->user_data;
-
-                                auto b = tchild->real_bounds;
-                                for (auto r : roots) {
-                                    auto rdata = (RootData *) r->user_data;
-                                    auto s = scale(rdata->id);
-                                    for (auto cc : r->children) {
-                                        if (cc->custom_type == (int) TYPE::CLIENT) {
-                                            auto chdata = (ClientData *) cc->user_data;
-                                            if (chdata->id == tt->wid) {
-                                                auto cb = cc->real_bounds;
-                                                cb.y += titlebar_h * s;
-                                                cb.h -= titlebar_h * s;
-                                                tchild->real_bounds = cb;
+                                    auto b = tchild->real_bounds;
+                                    for (auto r : roots) {
+                                        auto rdata = (RootData *) r->user_data;
+                                        auto s = scale(rdata->id);
+                                        for (auto cc : r->children) {
+                                            if (cc->custom_type == (int) TYPE::CLIENT) {
+                                                auto chdata = (ClientData *) cc->user_data;
+                                                if (chdata->id == tt->wid) {
+                                                    auto cb = cc->real_bounds;
+                                                    cb.y += titlebar_h * s;
+                                                    cb.h -= titlebar_h * s;
+                                                    tchild->real_bounds = cb;
+                                                }
                                             }
                                         }
                                     }
-                                }
-                                tchild->real_bounds.x = tchild->real_bounds.x + ((b.x - tchild->real_bounds.x) * scalar);
-                                tchild->real_bounds.y = tchild->real_bounds.y + ((b.y - tchild->real_bounds.y) * scalar);
-                                tchild->real_bounds.w = tchild->real_bounds.w + ((b.w - tchild->real_bounds.w) * scalar);
-                                tchild->real_bounds.h = tchild->real_bounds.h + ((b.h - tchild->real_bounds.h) * scalar);
+                                    auto active_monitor = rdata->id;
+                                    auto active_space = hypriso->get_active_workspace(active_monitor);
+                                    auto actual_monitor = get_monitor(tt->wid);
+                                    auto actual_space = hypriso->get_workspace(tt->wid);
+                                    bool on_same_monitor_and_workspace = active_monitor == actual_monitor && active_space == actual_space;
+                                    scalar = pull(curve_to_position, scalar);
+                                    float alpha = 1.0;
+                                    if (!on_same_monitor_and_workspace) {
+                                        //if (i == 1) { // skip 
+                                            //continue;
+                                        //}
+                                        alpha = scalar;
+                                        scalar = 1.0;
+                                    } else {
+                                        //if (i == 0) { // skip 
+                                            //continue;
+                                        //}
+                                    }
 
-                                paint_thumbnail(root, tchild);
-                                tchild->real_bounds = b;
+
+                                    tchild->real_bounds.x = tchild->real_bounds.x + ((b.x - tchild->real_bounds.x) * scalar);
+                                    tchild->real_bounds.y = tchild->real_bounds.y + ((b.y - tchild->real_bounds.y) * scalar);
+                                    tchild->real_bounds.w = tchild->real_bounds.w + ((b.w - tchild->real_bounds.w) * scalar);
+                                    tchild->real_bounds.h = tchild->real_bounds.h + ((b.h - tchild->real_bounds.h) * scalar);
+
+                                    paint_thumbnail_raw(root, tchild, alpha);
+                                    if (alpha != 1.0) {
+                                        rect(c->real_bounds, {0, 0, 0, ((float) (1.0 - alpha) * .75f)}, 0, thumb_rounding * s, 2.0f, false);
+                                    }
+                                    tchild->real_bounds = b;
+                                }
                             }
-                        }
+                        //}
                     };
 
                     auto titlebar = thumbnail_parent->child(::hbox, FILL_SPACE, titlebar_h * s);
@@ -1156,7 +1210,7 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                             d = get_data<long>(c->uuid, "start");
                         }
                         long current = get_current_time_in_ms();
-                        float scalar = ((float)(current - *d)) / thumb_to_position_time;
+                        float scalar = ((float)(current - *d)) / (thumb_to_position_time + 100);
                         if (scalar > 1)
                             scalar = 1.0;
                         paint_titlebar_raw(root, c, scalar);
@@ -1165,7 +1219,9 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                     
                     auto close = titlebar->child(::hbox, titlebar_h * s * title_button_wratio, FILL_SPACE);
                     close->skip_delete = true;
-                    close->when_paint = paint_titlebar_close; 
+                    close->when_paint = paint {
+                        paint_titlebar_close(root, c); 
+                    };
                     close->user_data = td;
                     close->when_clicked = paint {
                         auto td = (TabData *) c->user_data;
@@ -1292,8 +1348,9 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
             float scalar = ((float )(get_current_time_in_ms() - shd->created)) / snap_fadein;
             if (scalar > 1.0)
                 scalar = 1.0;
+            scalar = pull(curve_to_position, scalar);
             color.a *= scalar;
-            rect(c->real_bounds, color, 0, thumb_rounding * s);
+            rect(c->real_bounds, color, 0, thumb_rounding * s, 2.0, true, scalar);
             auto color2 = color_snap_helper_border;
             color2.a *= scalar;
             border(c->real_bounds, color2, 1 * s, 0, thumb_rounding * s);
@@ -1459,6 +1516,7 @@ void open_overview() {
 
 void drag_stop() {    
     stop_workspace_screenshotting();
+    showing_switcher = false;
     int window = hypriso->dragging_id;
     drag_update();
     hypriso->dragging_id = -1;
@@ -1639,6 +1697,15 @@ bool on_mouse_move(int id, float x, float y) {
             auto rdata = (RootData *) r->user_data;
             if (rdata->id != m)
                 continue;
+            
+            if (current_coords.y <= r->real_bounds.y + 1) {
+                if (current_coords.x >= r->real_bounds.x + r->real_bounds.w * .4) {
+                    if (current_coords.x <= r->real_bounds.x + r->real_bounds.w * .6) {
+                        showing_switcher = true;
+                        request_refresh();
+                    }
+                }
+            }
 
             if (current_coords.x <= r->real_bounds.x + 1) {
                 if (!has_done_window_switch && no_fullscreens && enough_time) {
@@ -1946,7 +2013,7 @@ void layout_every_single_root() {
             for (auto r: roots) {
                 auto rdata = (RootData *) r->user_data;
                 auto s = scale(rdata->id);
-                b->exists = hypriso->dragging;
+                b->exists = showing_switcher;
                 if (b->pre_layout)
                     b->pre_layout(r, b, r->real_bounds);
                 r->children.insert(r->children.begin() + 0, b);
@@ -2034,6 +2101,8 @@ void on_render(int id, int stage) {
                 max_request = true;
             }
         }
+        if (showing_switcher)
+            max_request = true;
         if (max_request) {
             request_refresh();
         }
@@ -2790,6 +2859,10 @@ void on_window_open(int id) {
             break;
         }
     }
+
+    later(0, [id](Timer *) {
+        hypriso->floatit(id);
+    });
 }
 
 void clear_snap_groups(int id) {
@@ -2952,6 +3025,10 @@ void on_monitor_open(int id) {
                 ch->custom_type = (int) TYPE::WORKSPACE_THUMB;
                 auto tdata = get_or_create<TabData>(ch->uuid, "tdata");
                 tdata->wid = space;
+                ch->when_clicked = paint {
+                    auto tdata = get_or_create<TabData>(c->uuid, "tdata");
+                    hypriso->move_to_workspace(tdata->wid);
+                };
                 ch->when_paint = paint {
                     auto tdata = get_or_create<TabData>(c->uuid, "tdata");
                     
@@ -2963,7 +3040,17 @@ void on_monitor_open(int id) {
                     rect(b, color, 0, interspace * s);
                     auto rdata = (RootData *) root->user_data;
                     //nz(fz("{} {} {}", rdata->id, tdata->wid, "attempt"));
-                    hypriso->draw_workspace(rdata->id, tdata->wid, c->real_bounds, interspace * s);
+                    bool actual = false;
+                    for (auto s : hypriso->get_workspaces(rdata->id)){
+                        if (s == tdata->wid) {
+                            actual = true;
+                        }
+                    }
+                    if (actual) {
+                        hypriso->draw_workspace(rdata->id, tdata->wid, c->real_bounds, interspace * s);
+                    } else {
+                        hypriso->draw_wallpaper(rdata->id, c->real_bounds, interspace * s);
+                    }
                 };
             }
         }
@@ -2992,6 +3079,11 @@ void on_monitor_open(int id) {
         }
         auto m = mouse();
         space_data->expanded = bounds_contains(b, m.x * s, m.y * s);
+        if (hypriso->dragging) {
+            showing_switcher = true;
+        } else {
+            showing_switcher = space_data->expanded;
+        }
 
         layout(root, c, c->real_bounds);
     };
@@ -3012,6 +3104,9 @@ void on_monitor_open(int id) {
             //hypriso->draw_workspace(rdata->id, space, Bounds(x, 0, 200, 200), interspace * s);
             x += 200;
         }
+    };
+    workspace->when_clicked = paint {
+        root->consumed_event = true;  
     };
 
     auto tab_menu = c->child(::vbox, FILL_SPACE, FILL_SPACE); 

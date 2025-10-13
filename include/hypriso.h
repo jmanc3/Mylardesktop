@@ -190,6 +190,8 @@ struct HyprIso {
     void set_hidden(int id, bool state);
     
     bool is_hidden(int id);
+    
+    void floatit(int id);
 
     void should_round(int id, bool state);
 
@@ -199,10 +201,12 @@ struct HyprIso {
     void screenshot_all();
     void screenshot_deco(int id);
     void screenshot_space(int mon, int id);
-    
-    void draw_thumbnail(int id, Bounds b, int rounding = 0, float roundingPower = 2.0f, int cornermask = 0);
+    void screenshot_wallpaper(int mon);
+
+    void draw_thumbnail(int id, Bounds b, int rounding = 0, float roundingPower = 2.0f, int cornermask = 0, float alpha = 1.0);
     void draw_deco_thumbnail(int id, Bounds b, int rounding = 0, float roundingPower = 2.0f, int cornermask = 0);
-    void draw_workspace(int mon, int id, Bounds b);
+    void draw_workspace(int mon, int id, Bounds b, int rounding = 0);
+    void draw_wallpaper(int mon, Bounds b, int rounding = 0);
     
 
     void set_zoom_factor(float amount);
@@ -213,8 +217,11 @@ struct HyprIso {
     void show_desktop();
     void hide_desktop();
     void move_to_workspace(int id, int workspace);
+    void move_to_workspace(int workspace);
 
     std::vector<int> get_workspaces(int monitor);
+    int get_active_workspace(int monitor);
+    int get_workspace(int client);
 
     void add_float_rule();
         

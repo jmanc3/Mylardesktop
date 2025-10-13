@@ -1,2 +1,6 @@
 start
 stop.sh
+cmake*
+hyprland
+build
+.*
