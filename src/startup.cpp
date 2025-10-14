@@ -471,7 +471,7 @@ void paint_thumbnail(Container *root, Container *c) {
     paint_thumbnail_raw(root, c, 1.0); 
 }
 
-void paint_titlebar_raw(Container *root, Container *c, float a) {
+void paint_titlebar_raw(Container *root, Container *c, float a, bool subtract_close = true) {
     auto tdata = (TabData *) c->user_data;
     auto rdata = (RootData *) root->user_data;
     auto s = scale(rdata->id);
@@ -500,8 +500,13 @@ void paint_titlebar_raw(Container *root, Container *c, float a) {
                 xoff += titlebar_icon_pad * s + td->icon.w;
             }
             if (td->main.id != -1) {
-                draw_texture(td->main, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->main.h * .5, a,
+                if (subtract_close) {
+                    draw_texture(td->main, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->main.h * .5, a,
                              c->real_bounds.w - xoff - c->real_bounds.h * title_button_wratio);
+                } else {
+                    draw_texture(td->main, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->main.h * .5, a,
+                             c->real_bounds.w - xoff - titlebar_icon_pad * s);
+                }
             }
         }
     }
@@ -1072,6 +1077,18 @@ struct SnapHelperData : UserData {
     long created = 0;
 };
 
+SnapHelperData *get_shd_data() {
+    for (auto r : roots) {
+        for (auto c : r->children) {
+            if (c->custom_type == (int) TYPE::SNAP_HELPER) {
+                return (SnapHelperData *) c->user_data;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
 void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
     int count = 0;
     for (auto w: hypriso->windows) {
@@ -1136,15 +1153,13 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                     thumbnail_parent->user_data = td;
                     thumbnail_parent->after_paint = paint {
                         auto rdata = (RootData *) root->user_data;
+                        auto shd = get_shd_data();
+                        if (!shd)
+                            return;
                         // lerp between ch->real and b, based on
-                        long *d = get_data<long>(c->uuid, "start");
-                        if (!d) {
-                            set_data<long>(c->uuid, "start", get_current_time_in_ms() - thumb_to_position_forward);
-                            d = get_data<long>(c->uuid, "start");
-                        }
                         long current = get_current_time_in_ms();
                         float thumb_to_position_time = hypriso->get_varfloat("plugin:mylardesktop:thumb_to_position_time");
-                        float scalar = ((float)(current - *d)) / thumb_to_position_time;
+                        float scalar = ((float)(current - shd->created)) / thumb_to_position_time;
                         if (scalar > 1)
                             scalar = 1.0;
 
@@ -1153,13 +1168,12 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                         float snap_fadein = hypriso->get_varfloat("plugin:mylardesktop:snap_helper_fade_in");                        
                         for (auto tchild : c->children) {
                             if (tchild->custom_type == (int) TYPE::SNAP_THUMB) {
-                                auto shd = (SnapHelperData * ) c->parent->user_data;
-                                float scalar = ((float )(get_current_time_in_ms() - shd->created)) / snap_fadein;
-                                if (scalar > 1.0)
-                                    scalar = 1.0;
-                                scalar = pull(curve_to_position, scalar);
+                                float snfade = ((float )(get_current_time_in_ms() - shd->created)) / snap_fadein;
+                                if (snfade > 1.0)
+                                    snfade = 1.0;
+                                snfade = pull(curve_to_position, snfade);
                                 auto color = color_titlebar;
-                                color.a = scalar;
+                                color.a = snfade;
                                 //rect(tchild->real_bounds, color, 3, thumb_rounding * s, 2.0, true, scalar);
                             }
                         }
@@ -1168,7 +1182,6 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                             for (auto tchild : c->children) {
                                 if (tchild->custom_type == (int) TYPE::SNAP_THUMB) {
                                     auto tt = (TabData *) tchild->user_data;
-                                    auto shd = (SnapHelperData * ) tchild->parent->parent->user_data;
 
                                     auto b = tchild->real_bounds;
                                     for (auto r : roots) {
@@ -1194,15 +1207,10 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                                     scalar = pull(curve_to_position, scalar);
                                     float alpha = 1.0;
                                     if (!on_same_monitor_and_workspace) {
-                                        //if (i == 1) { // skip 
-                                            //continue;
-                                        //}
                                         alpha = scalar;
                                         scalar = 1.0;
                                     } else {
-                                        //if (i == 0) { // skip 
-                                            //continue;
-                                        //}
+                                        
                                     }
 
 
@@ -1213,7 +1221,9 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
 
                                     paint_thumbnail_raw(root, tchild, alpha);
                                     if (alpha != 1.0) {
-                                        rect(c->real_bounds, {0, 0, 0, ((float) (1.0 - alpha) * .75f)}, 0, thumb_rounding * s, 2.0f, false);
+                                        //rect(c->real_bounds, 
+                                            //{0, 0, 0, ((float) (1.0 - alpha) * .75f)},
+                                            //0, thumb_rounding * s, 2.0f, false);
                                     }
                                     tchild->real_bounds = b;
                                 }
@@ -1235,11 +1245,11 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                         float scalar = ((float)(current - *d)) / (thumb_to_position_time + 100);
                         if (scalar > 1)
                             scalar = 1.0;
-                        paint_titlebar_raw(root, c, scalar);
+                        paint_titlebar_raw(root, c, scalar, false);
                     }; 
                     titlebar->user_data = td;
 
-                    ///*
+                    /*
                     auto close = titlebar->child(::hbox, titlebar_h * s * title_button_wratio, FILL_SPACE);
                     close->skip_delete = true;
                     close->when_paint = paint {
@@ -1260,7 +1270,7 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                             });
                         }
                     };
-                    //*/
+                    */
                     
                     auto thumbnail_area = thumbnail_parent->child(::vbox, FILL_SPACE, FILL_SPACE);
                     thumbnail_area->custom_type = (int) TYPE::SNAP_THUMB;
