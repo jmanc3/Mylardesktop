@@ -57,6 +57,8 @@
 
 #include <hyprutils/utils/ScopeGuard.hpp>
 
+#include <hyprlang.hpp>
+
 HyprIso *hypriso = new HyprIso;
 
 static int unique_id = 0;
@@ -377,6 +379,7 @@ typedef void (*origSurfacePassDraw)(CSurfacePassElement *, const CRegion& damage
 void hook_onSurfacePassDraw(void* thisptr, const CRegion& damage) {
     auto  spe = (CSurfacePassElement *) thisptr;
     auto window = spe->m_data.pWindow;
+    //notify("alo");
     int cornermask = 0;
     for (auto hw: hyprwindows)
         if (hw->w == window)
@@ -387,11 +390,12 @@ void hook_onSurfacePassDraw(void* thisptr, const CRegion& damage) {
 }
 
 void fix_window_corner_rendering() {
-    return;
+    //return;
     static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "draw");
     // TODO: check if m.address is same as set_rounding even though signature is SurfacePassElement
     for (auto m : METHODS) {
         if (m.signature.find("SurfacePassElement") != std::string::npos) {
+            //notify(m.demangled);
             g_pOnSurfacePassDraw = HyprlandAPI::createFunctionHook(globals->api, m.address, (void*)&hook_onSurfacePassDraw);
             g_pOnSurfacePassDraw->hook();
             return;
@@ -643,7 +647,6 @@ float hook_WindowRoundingPower(void* thisptr) {
 
 void hook_render_functions() {
     //return;
-    /*
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "rounding");
         for (auto m : METHODS) {
@@ -664,7 +667,6 @@ void hook_render_functions() {
             }
         }
     }
-    */
  
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderWindow");
@@ -712,11 +714,37 @@ void set_window_corner_mask(int id, int cornermask) {
             hw->cornermask = cornermask;
 }
 
+float HyprIso::get_rounding(int id) {
+    for (auto hw: hyprwindows)
+        if (hw->id == id)
+            return hw->w->rounding();
+    return 0;
+}
+
 void HyprIso::floatit(int id) {
     //return;
     for (auto hw: hyprwindows)
         if (hw->id == id)
             float_target(hw->w);
+}
+
+float HyprIso::get_varfloat(std::string target) {
+     auto VAR = (Hyprlang::FLOAT* const*)HyprlandAPI::getConfigValue(globals->api, target)->getDataStaticPtr();
+     return **VAR;
+}
+
+void HyprIso::create_config_variables() {
+    //HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:bar_color", Hyprlang::INT{*configStringToInt("rgba(33333388)")});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:thumb_to_position_time", Hyprlang::FLOAT{330});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:snap_helper_fade_in", Hyprlang::FLOAT{400});
+    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_height", Hyprlang::INT{15});
+    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:col.text", Hyprlang::INT{*configStringToInt("rgba(ffffffff)")});
+    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_text_size", Hyprlang::INT{10});
+    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_title_enabled", Hyprlang::INT{1});
+    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_blur", Hyprlang::INT{0});
+    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_text_font", Hyprlang::STRING{"Sans"});
+    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_text_align", Hyprlang::STRING{"center"});
+    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_part_of_window", Hyprlang::INT{1});
 }
 
 void HyprIso::create_hooks_and_callbacks() {
@@ -824,11 +852,19 @@ void HyprIso::create_hooks_and_callbacks() {
         }
     });
 
+    for (auto e : g_pCompositor->m_workspaces) {
+        auto hs = new HyprWorkspaces;
+        hs->w = e;
+        hs->id = unique_id++;
+        hs->buffer = new CFramebuffer;
+        hyprspaces.push_back(hs);
+    }
+
     static auto createWorkspace = HyprlandAPI::registerCallbackDynamic(globals->api, "createWorkspace", [](void* self, SCallbackInfo& info, std::any data) {
-        auto s     = std::any_cast<CWorkspace*>(data)->m_self.lock();
-        auto hs    = new HyprWorkspaces;
-        hs->w      = s;
-        hs->id     = unique_id++;
+        auto s = std::any_cast<CWorkspace*>(data)->m_self.lock();
+        auto hs = new HyprWorkspaces;
+        hs->w = s;
+        hs->id = unique_id++;
         hs->buffer = new CFramebuffer;
         hyprspaces.push_back(hs);
     });
@@ -850,10 +886,10 @@ void HyprIso::create_hooks_and_callbacks() {
         }
     });
 
-    disable_default_alt_tab_behaviour();
-    //detect_csd_request_change();
-    detect_move_resize_requests();    
     fix_window_corner_rendering();
+    disable_default_alt_tab_behaviour();
+    detect_csd_request_change();
+    detect_move_resize_requests();    
     overwrite_min();
     hook_render_functions();
 }
@@ -1795,6 +1831,7 @@ void render_wallpaper(PHLMONITOR pMonitor, const Time::steady_tp& time, const Ve
     static auto PXPMODE          = CConfigValue<Hyprlang::INT>("render:xp_mode");
     static auto PSESSIONLOCKXRAY = CConfigValue<Hyprlang::INT>("misc:session_lock_xray");
 
+    /*
     if (!pMonitor)
         return;
 
@@ -1823,7 +1860,7 @@ void render_wallpaper(PHLMONITOR pMonitor, const Time::steady_tp& time, const Ve
             g_pHyprRenderer->m_renderPass.add(makeUnique<CRendererHintsPassElement>(CRendererHintsPassElement::SData{SRenderModifData{}}));
         }
     });
-
+    */
     g_pHyprRenderer->renderBackground(pMonitor);
 
     for (auto const& ls : pMonitor->m_layerSurfaceLayers[ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND]) {
@@ -1854,7 +1891,7 @@ void actual_screenshot_wallpaper(CFramebuffer* buffer, PHLMONITOR m) {
     g_pHyprRenderer->makeEGLCurrent();
     buffer->alloc(m->m_pixelSize.x, m->m_pixelSize.y, DRM_FORMAT_ABGR8888);
     g_pHyprRenderer->beginRender(m, fakeDamage, RENDER_MODE_FULL_FAKE, nullptr, buffer);
-    g_pHyprOpenGL->clear(CHyprColor(0, 0, 0, 0)); // JIC
+    g_pHyprOpenGL->clear(CHyprColor(0, 0, 1, 1)); // JIC
 
     const auto NOW = Time::steadyNow();
     render_wallpaper(m, NOW, {0.0, 0.0}, 1.0);
@@ -1976,7 +2013,8 @@ void HyprIso::draw_workspace(int mon, int id, Bounds b, int rounding) {
             continue;
         if (!hs->buffer->isAllocated())
             continue;
-        AnyPass::AnyData anydata([id, b, hs, rounding](AnyPass* pass) {
+        //notify("draw space " + std::to_string(id));
+        AnyPass::AnyData anydata([b, hs, rounding](AnyPass* pass) {
             //notify("draw");
             auto roundingPower = 2.0f;
             auto cornermask = 0;
@@ -2001,40 +2039,6 @@ void HyprIso::draw_workspace(int mon, int id, Bounds b, int rounding) {
             g_pHyprOpenGL->m_renderData.primarySurfaceUVBottomRight = Vector2D(-1, -1);
         });
         g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
-        
-        /*for (auto hm : hyprmonitors) {
-            if (mon == hm->id) {
-                if (hs->w->m_id == id && hs->buffer) {
-                    AnyPass::AnyData anydata([id, b, hs](AnyPass* pass) {
-                        notify("draw");
-                        auto rounding = 0;
-                        auto roundingPower = 2.0f;
-                        auto cornermask = 0;
-                        auto tex = hs->buffer->getTexture();
-                        auto box = tocbox(b);
-                        
-                        CHyprOpenGLImpl::STextureRenderData data;
-                        data.allowCustomUV = true;
-
-                        data.round = rounding;
-                        data.roundingPower = roundingPower;
-                        g_pHyprOpenGL->m_renderData.primarySurfaceUVTopLeft     = Vector2D(0, 0);
-                        g_pHyprOpenGL->m_renderData.primarySurfaceUVBottomRight = Vector2D(
-                            std::min(1.0, 1.0), 
-                            std::min(1.0, 1.0) 
-                        );
-                        set_rounding(cornermask);
-                        g_pHyprOpenGL->renderTexture(tex, box, data);
-                        set_rounding(0);
-                        g_pHyprOpenGL->m_renderData.primarySurfaceUVTopLeft     = Vector2D(-1, -1);
-                        g_pHyprOpenGL->m_renderData.primarySurfaceUVBottomRight = Vector2D(-1, -1);
-                    });
-                    g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
-                    // paint
-                    break;
-                }
-            }
-        }*/
     }
 };
 
@@ -2074,7 +2078,7 @@ void HyprIso::draw_wallpaper(int mon, Bounds b, int rounding) {
 
 void HyprIso::screenshot_wallpaper(int mon) {
    for (auto hm : hyprmonitors) {
-       if (hm->id) {
+       if (hm->id == mon) {
            if (!hm->wallfb)
                hm->wallfb = new CFramebuffer;
            actual_screenshot_wallpaper(hm->wallfb, hm->m);
@@ -2085,8 +2089,11 @@ void HyprIso::screenshot_wallpaper(int mon) {
 }
 
 void HyprIso::screenshot_space(int mon, int id) {
+    //notify("attempt screenshot " + std::to_string(id));
     for (auto hs : hyprspaces) {
+        //notify("against " + std::to_string(hs->w->m_id));
         if (hs->w->m_id == id) {
+            //notify("screenshot " + std::to_string(id));
             screenshot_workspace(hs->buffer, hs->w, hs->w->m_monitor.lock(), false);
         }
         // for (auto hm : hyprmonitors) {
@@ -2317,3 +2324,5 @@ void HyprIso::add_float_rule() {
    //HyprInt  input:folloe_mouse
    
 }
+
+

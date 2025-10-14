@@ -97,8 +97,8 @@ static int tab_menu_font_h = 40;
 static float interspace = 20.0f;
 static bool META_PRESSED = false;
 
-static float thumb_to_position_time = 350;
-static float snap_fadein = 300;
+//static float thumb_to_position_time = 350;
+//static float snap_fadein = 300;
 static long thumb_to_position_forward = 0;
 
 static float zoom_factor = 1.0;
@@ -475,7 +475,9 @@ void paint_titlebar_raw(Container *root, Container *c, float a) {
     auto tdata = (TabData *) c->user_data;
     auto rdata = (RootData *) root->user_data;
     auto s = scale(rdata->id);
-    rect(c->real_bounds, color_titlebar, 12, thumb_rounding * s);
+    auto ct = color_titlebar;
+    ct.a = a;
+    rect(c->real_bounds, ct, 12, thumb_rounding * s, 2.0f, true, a);
     Container *cdata = nullptr;
     for (auto r : roots) {
         for (auto ch : r->children) {
@@ -509,14 +511,18 @@ void paint_titlebar(Container *root, Container *c) {
     paint_titlebar_raw(root, c, 1.0);
 }
 
-void paint_titlebar_close(Container *root, Container *c) {
+void paint_titlebar_close_raw(Container *root, Container *c, float a) {
     auto tdata = (TabData *) c->user_data;
     auto rdata = (RootData *) root->user_data;
     auto s = scale(rdata->id);
     if (c->state.mouse_pressing) {
-        rect(c->real_bounds, color_titlebar_pressed_closed, 13, thumb_rounding * s);
+        auto color = color_titlebar_pressed_closed;
+        color.a = a;
+        rect(c->real_bounds, color, 13, thumb_rounding * s, 2.0, true, a);
     } else if (c->state.mouse_hovering) {
-        rect(c->real_bounds, color_titlebar_hovered_closed, 13, thumb_rounding * s);
+        auto color = color_titlebar_hovered_closed;
+        color.a = a;
+        rect(c->real_bounds, color, 13, thumb_rounding * s, 2.0, true, a);
     }
 
     Container *cdata = nullptr;
@@ -542,10 +548,14 @@ void paint_titlebar_close(Container *root, Container *c) {
                 }
                 draw_texture(texid,
                     c->real_bounds.x + c->real_bounds.w * .5 - td->main.w * .5,
-                    c->real_bounds.y + c->real_bounds.h * .5 - td->main.h * .5);
+                    c->real_bounds.y + c->real_bounds.h * .5 - td->main.h * .5, a);
             }
         }
     }
+}
+
+void paint_titlebar_close(Container *root, Container *c) {
+    paint_titlebar_close_raw(root, c, 1.0);
 }
 
 void layout_every_single_root();
@@ -874,8 +884,10 @@ void resize_stop() {
 static Timer *workspace_screenshot_timer = nullptr;
 
 void stop_workspace_screenshotting() {
-    workspace_screenshot_timer->keep_running = false;
-    workspace_screenshot_timer = nullptr;
+    if (workspace_screenshot_timer) {
+        workspace_screenshot_timer->keep_running = false;
+        workspace_screenshot_timer = nullptr;
+    }
 }
 
 void start_workspace_screenshotting() {
@@ -1131,15 +1143,24 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                             d = get_data<long>(c->uuid, "start");
                         }
                         long current = get_current_time_in_ms();
+                        float thumb_to_position_time = hypriso->get_varfloat("plugin:mylardesktop:thumb_to_position_time");
                         float scalar = ((float)(current - *d)) / thumb_to_position_time;
                         if (scalar > 1)
                             scalar = 1.0;
 
                         auto s = scale(((RootData *) root->user_data)->id);
 
+                        float snap_fadein = hypriso->get_varfloat("plugin:mylardesktop:snap_helper_fade_in");                        
                         for (auto tchild : c->children) {
                             if (tchild->custom_type == (int) TYPE::SNAP_THUMB) {
-                                rect(tchild->real_bounds, color_titlebar, 3, thumb_rounding * s);
+                                auto shd = (SnapHelperData * ) c->parent->user_data;
+                                float scalar = ((float )(get_current_time_in_ms() - shd->created)) / snap_fadein;
+                                if (scalar > 1.0)
+                                    scalar = 1.0;
+                                scalar = pull(curve_to_position, scalar);
+                                auto color = color_titlebar;
+                                color.a = scalar;
+                                //rect(tchild->real_bounds, color, 3, thumb_rounding * s, 2.0, true, scalar);
                             }
                         }
  
@@ -1210,17 +1231,25 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                             d = get_data<long>(c->uuid, "start");
                         }
                         long current = get_current_time_in_ms();
+                        float thumb_to_position_time = hypriso->get_varfloat("plugin:mylardesktop:thumb_to_position_time");
                         float scalar = ((float)(current - *d)) / (thumb_to_position_time + 100);
                         if (scalar > 1)
                             scalar = 1.0;
                         paint_titlebar_raw(root, c, scalar);
                     }; 
                     titlebar->user_data = td;
-                    
+
+                    ///*
                     auto close = titlebar->child(::hbox, titlebar_h * s * title_button_wratio, FILL_SPACE);
                     close->skip_delete = true;
                     close->when_paint = paint {
-                        paint_titlebar_close(root, c); 
+                        float snap_fadein = hypriso->get_varfloat("plugin:mylardesktop:snap_helper_fade_in");
+                        auto shd = (SnapHelperData * ) c->parent->parent->user_data;
+                        float scalar = ((float )(get_current_time_in_ms() - shd->created)) / snap_fadein;
+                        if (scalar > 1.0)
+                            scalar = 1.0;
+                        scalar = pull(curve_to_position, scalar);
+                        paint_titlebar_close_raw(root, c, scalar); 
                     };
                     close->user_data = td;
                     close->when_clicked = paint {
@@ -1231,6 +1260,7 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                             });
                         }
                     };
+                    //*/
                     
                     auto thumbnail_area = thumbnail_parent->child(::vbox, FILL_SPACE, FILL_SPACE);
                     thumbnail_area->custom_type = (int) TYPE::SNAP_THUMB;
@@ -1345,6 +1375,7 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
             auto b = c->real_bounds;
             b.grow(interspace* s);
             //shadow(b, {0, 0, 0, 1}, thumb_rounding * s, 2.0, interspace* s);
+            float snap_fadein = hypriso->get_varfloat("plugin:mylardesktop:snap_helper_fade_in");
             float scalar = ((float )(get_current_time_in_ms() - shd->created)) / snap_fadein;
             if (scalar > 1.0)
                 scalar = 1.0;
@@ -1845,12 +1876,12 @@ bool on_key_press(int id, int key, int state, bool update_mods) {
         }
     }
     
-    if (key == KEY_LEFTMETA || key == KEY_RIGHTMETA || key == KEY_RIGHTCTRL) {
-        META_PRESSED = state;
-    }
-
     if (key == KEY_LEFTSHIFT || key == KEY_RIGHTSHIFT) {
         shift_down = state;
+    }
+
+    if (key == KEY_LEFTMETA || key == KEY_RIGHTMETA) {
+        META_PRESSED = state;
     }
 
     if (key == KEY_TAB) { // on tab release
@@ -2275,7 +2306,7 @@ void update_restore_info_for(int w) {
             cb.x / cm.w,
             cb.y / cm.h,
             cb.w / cm.w,
-            cb.h / cm.h,
+            (cb.h + titlebar_h) / cm.h,
         };
         restore_infos[class_name(c_from_id(w))] = info;
         save_restore_infos(); // I believe it's okay to call this here because it only happens on resize end, and drag end
@@ -2491,6 +2522,10 @@ void on_window_open(int id) {
                     client->resize_type = (int) RESIZE_TYPE::LEFT;
                 }
 
+                if (client->snapped && client->snap_type == SnapPosition::MAX) {
+                    client->resize_type = (int) RESIZE_TYPE::NONE;
+                }
+
                 update_cursor(client->resize_type);
             };
             resize->when_mouse_leaves_container = [](Container *root, Container *c) {
@@ -2574,6 +2609,14 @@ void on_window_open(int id) {
             c->when_paint = paint {
                 auto data = (ClientData *) c->user_data;
                 auto rdata = (RootData *) root->user_data;
+                auto s = scale(rdata->id);
+                if (rdata->active_id == data->id && rdata->stage == (int) STAGE::RENDER_POST_WINDOW) {
+                    auto b = c->real_bounds;
+                    auto size = std::floor(1.3 * s);
+                    b.shrink(size);
+                    float round = hypriso->get_rounding(data->id);
+                    //border(b, {1, 1, 1, .2}, size, 0, round * s);
+                }
                 if (hypriso->dragging && data->id == hypriso->dragging_id) {
                     if (rdata->stage == (int) STAGE::RENDER_LAST_MOMENT) {
                         //rect(c->real_bounds, {1, 1, 0, 1});
@@ -3046,6 +3089,8 @@ void on_monitor_open(int id) {
                             actual = true;
                         }
                     }
+                    //hypriso->draw_wallpaper(rdata->id, c->real_bounds, interspace * s);
+                    
                     if (actual) {
                         hypriso->draw_workspace(rdata->id, tdata->wid, c->real_bounds, interspace * s);
                     } else {
@@ -3081,8 +3126,14 @@ void on_monitor_open(int id) {
         space_data->expanded = bounds_contains(b, m.x * s, m.y * s);
         if (hypriso->dragging) {
             showing_switcher = true;
-        } else {
+        } else if (showing_switcher) {
             showing_switcher = space_data->expanded;
+        }
+        if (space_data->expanded && showing_switcher) {
+            start_workspace_screenshotting();
+        }
+        if (!showing_switcher) {
+            stop_workspace_screenshotting(); 
         }
 
         layout(root, c, c->real_bounds);
@@ -3261,6 +3312,8 @@ void create_rounding_shader() {
 }
 
 void startup::begin() {
+    hypriso->create_config_variables();
+    
     hypriso->add_float_rule();
     
     on_any_container_close = any_container_closed;

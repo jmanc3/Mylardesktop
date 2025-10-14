@@ -138,6 +138,10 @@ struct HyprIso {
     bool resizing = false;
     int resizing_id = false;
 
+    float get_varfloat(std::string target);
+
+    void create_config_variables();
+    
     // The main workhorse of the program which pumps events from hyprland to mylar
     void create_hooks_and_callbacks();
 
@@ -174,6 +178,8 @@ struct HyprIso {
     std::vector<ThinMonitor *> monitors;
 
     void reserve_titlebar(ThinClient *c, int size);
+
+    float get_rounding(int id);
     
     void move(int id, int x, int y);
     void move_resize(int id, int x, int y, int w, int h, bool instant = true);
