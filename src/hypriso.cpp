@@ -768,7 +768,7 @@ void HyprIso::create_hooks_and_callbacks() {
             on_close_window(w);
         }
     });
-    static auto render      = HyprlandAPI::registerCallbackDynamic(globals->api, "render", [](void* self, SCallbackInfo& info, std::any data) {
+    static auto render = HyprlandAPI::registerCallbackDynamic(globals->api, "render", [](void* self, SCallbackInfo& info, std::any data) {
         if (hypriso->on_render) {
             for (auto m : hyprmonitors) {
                 if (m->m == g_pHyprOpenGL->m_renderData.pMonitor) {
@@ -778,7 +778,7 @@ void HyprIso::create_hooks_and_callbacks() {
             }
         }
     });
-    static auto mouseMove   = HyprlandAPI::registerCallbackDynamic(globals->api, "mouseMove", [](void* self, SCallbackInfo& info, std::any data) {
+    static auto mouseMove = HyprlandAPI::registerCallbackDynamic(globals->api, "mouseMove", [](void* self, SCallbackInfo& info, std::any data) {
         auto consume = false;
         if (hypriso->on_mouse_move) {
             auto mouse = g_pInputManager->getMouseCoordsInternal();
@@ -834,12 +834,14 @@ void HyprIso::create_hooks_and_callbacks() {
             on_open_monitor(m);
         }
     });
+    
     static auto monitorRemoved = HyprlandAPI::registerCallbackDynamic(globals->api, "monitorRemoved", [](void* self, SCallbackInfo& info, std::any data) {
         if (hypriso->on_monitor_closed) {
             auto m = std::any_cast<PHLMONITOR>(data); // todo getorcreate ref on our side
             on_close_monitor(m);
         }
     });
+    
 
     static auto configReloaded = HyprlandAPI::registerCallbackDynamic(globals->api, "configReloaded", [](void* self, SCallbackInfo& info, std::any data) {
         if (hypriso->on_config_reload) {
@@ -885,6 +887,19 @@ void HyprIso::create_hooks_and_callbacks() {
             }
         }
     });
+
+    static auto activeWindow = HyprlandAPI::registerCallbackDynamic(globals->api, "activeWindow", [](void* self, SCallbackInfo& info, std::any data) {
+        auto p = std::any_cast<PHLWINDOW>(data);
+        if (hypriso->on_activated) {
+            for (auto h : hyprwindows) {
+                if (h->w == p) {
+                    hypriso->on_activated(h->id);
+                }
+            }
+        }
+    });
+
+    
 
     fix_window_corner_rendering();
     disable_default_alt_tab_behaviour();
@@ -1685,10 +1700,11 @@ void HyprIso::set_hidden(int id, bool state) {
     */
 }
 
-void HyprIso::bring_to_front(int id) {
+void HyprIso::bring_to_front(int id, bool focus) {
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
-            g_pCompositor->focusWindow(hw->w);
+            if (focus)
+                g_pCompositor->focusWindow(hw->w);
             g_pCompositor->changeWindowZOrder(hw->w, true);
         }
     }

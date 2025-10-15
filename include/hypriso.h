@@ -164,6 +164,8 @@ struct HyprIso {
     
     std::function<void(int id)> on_monitor_closed = nullptr;
     
+    std::function<void(int id)> on_activated = nullptr;
+    
     std::function<void(std::string name, int monitor, int w, float a)> on_draw_decos = nullptr;
     
     std::function<void(int id, int stage)> on_render = nullptr;
@@ -192,7 +194,7 @@ struct HyprIso {
     bool is_fullscreen(int id);
     bool has_decorations(int id);
     
-    void bring_to_front(int id);
+    void bring_to_front(int id, bool focus = true);
     void set_hidden(int id, bool state);
     
     bool is_hidden(int id);

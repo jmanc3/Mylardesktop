@@ -34,6 +34,7 @@ struct Datas {
 };
 std::unordered_map<std::string, Datas> datas;
 
+
 template<typename T>
 T *get_data(const std::string& uuid, const std::string& name) {
     // Locate uuid
@@ -86,6 +87,14 @@ struct IconData : UserData {
     TextureInfo main;
     TextureInfo secondary;
 };
+
+bool any_fullscreen() {
+    bool any = false;
+    for (auto w : get_window_stacking_order())
+        if (hypriso->is_fullscreen(w))
+            any = true;
+    return any; 
+}
 
 static std::vector<Container *> roots; // monitors
 static int titlebar_text_h = 15;
@@ -1721,10 +1730,7 @@ bool on_mouse_move(int id, float x, float y) {
     auto time_since = (current - zoom_nicely_ended_time);
     if (zoom_factor == 1.0 && time_since > 1000) {
         static bool has_done_window_switch = false;
-        bool no_fullscreens = true;
-        for (auto w : get_window_stacking_order())
-            if (hypriso->is_fullscreen(w))
-                no_fullscreens = false;
+        bool no_fullscreens = !any_fullscreen();
         int m = hypriso->monitor_from_cursor();
         auto s = scale(m);
         auto current_coords = mouse();
@@ -1741,7 +1747,7 @@ bool on_mouse_move(int id, float x, float y) {
             
             if (current_coords.y <= r->real_bounds.y + 1) {
                 if (current_coords.x >= r->real_bounds.x + r->real_bounds.w * .4) {
-                    if (current_coords.x <= r->real_bounds.x + r->real_bounds.w * .6) {
+                    if (current_coords.x <= r->real_bounds.x + r->real_bounds.w * .6 && no_fullscreens) {
                         showing_switcher = true;
                         request_refresh();
                     }
@@ -3215,6 +3221,13 @@ void on_drag_start_requested(int id) {
     drag_start(id);
 }
 
+void on_activated(int id) {
+    for (auto g : thin_groups(id)) {
+        hypriso->bring_to_front(g->id, false);
+    }
+    hypriso->bring_to_front(id, false);
+}
+
 void on_resize_start_requested(int id, RESIZE_TYPE type) { 
     resize_start(id, type);
 }
@@ -3341,6 +3354,7 @@ void startup::begin() {
     hypriso->on_drag_start_requested = on_drag_start_requested;
     hypriso->on_resize_start_requested = on_resize_start_requested;
     hypriso->on_config_reload = on_config_reload;
+    hypriso->on_activated = on_activated;
 
     load_restore_infos();
 	// The two most important callbacks we hook are mouse move and mouse events
