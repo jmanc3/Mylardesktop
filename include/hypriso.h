@@ -4,6 +4,7 @@
 #include <hyprland/src/SharedDefs.hpp>
 
 #include "container.h"
+#include <ranges>
 #include <string>
 #include <vector>
 #include <chrono>
@@ -56,10 +57,10 @@ static bool parse_hex(std::string hex, double *a, double *r, double *g, double *
     
     std::smatch match;
     if (std::regex_match(hex, match, pattern)) {
-        double t_a = std::stoul(match[1].str(), nullptr, 16);
-        double t_r = std::stoul(match[2].str(), nullptr, 16);
-        double t_g = std::stoul(match[3].str(), nullptr, 16);
-        double t_b = std::stoul(match[4].str(), nullptr, 16);
+        double t_a = std::stoul(match[4].str(), nullptr, 16);
+        double t_r = std::stoul(match[1].str(), nullptr, 16);
+        double t_g = std::stoul(match[2].str(), nullptr, 16);
+        double t_b = std::stoul(match[3].str(), nullptr, 16);
         
         *a = t_a / 255;
         *r = t_r / 255;
@@ -84,6 +85,18 @@ struct RGBA {
 
     RGBA () {
         
+    }
+
+    bool operator==(const RGBA& other) const {
+        constexpr double eps = 1e-9;
+        return std::fabs(r - other.r) < eps &&
+               std::fabs(g - other.g) < eps &&
+               std::fabs(b - other.b) < eps &&
+               std::fabs(a - other.a) < eps;
+    }
+
+    bool operator!=(const RGBA& other) const {
+        return !(*this == other);
     }
 };
 
@@ -138,8 +151,8 @@ struct HyprIso {
     bool resizing = false;
     int resizing_id = false;
 
-    float get_varfloat(std::string target);
-    RGBA get_varcolor(std::string target);
+    float get_varfloat(std::string target, float default_float = 1.0);
+    RGBA get_varcolor(std::string target, RGBA default_color = {1.0, 0.0, 1.0, 1.0});
 
     void create_config_variables();
     
@@ -238,6 +251,7 @@ struct HyprIso {
     int get_workspace(int client);
 
     void add_float_rule();
+    void overwrite_defaults();
         
 };
 

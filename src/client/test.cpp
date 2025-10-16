@@ -344,7 +344,11 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener = {
     .close = handle_toplevel_close,
 };
 
-int open_space() {
+int wake_pipe[2];
+
+int open_dock() {
+    pipe2(wake_pipe, O_CLOEXEC | O_NONBLOCK);
+    
     struct display *d = &g;
     d->display = wl_display_connect(NULL);
     if (!d->display) {
@@ -394,13 +398,26 @@ int open_space() {
             break;
         }
 
-        struct pollfd pfd = { .fd = fd, .events = POLLIN | POLLOUT | POLLERR };
-        if (poll(&pfd, 1, -1) < 0) {
-            perror("poll");
-            break;
-        }
+        //struct pollfd pfd = { .fd = fd, .events = POLLIN | POLLOUT | POLLERR };
+        // in your poll loop:
+        struct pollfd pfds[2] = {
+            { .fd = fd, .events = POLLIN | POLLOUT | POLLERR },
+            { .fd = wake_pipe[0], .events = POLLIN },
+        };
 
-        if (pfd.revents & POLLIN) {
+        if (poll(pfds, 2, -1) < 0) break;
+
+        if (pfds[1].revents & POLLIN) {
+            char buf[64];
+            read(wake_pipe[0], buf, sizeof buf); // drain wake
+            continue; // recheck `running`
+        }
+        //if (poll(&pfd, 1, -1) < 0) {
+            //perror("poll");
+            //break;
+        //}
+
+        if (pfds[0].revents & POLLIN) {
             if (wl_display_dispatch(d->display) < 0) break;
         } else {
             wl_display_dispatch_pending(d->display);
@@ -432,6 +449,15 @@ int open_space() {
     return 0;
 }
 
-void start_test() {
-    open_space();     
+void start_dock() {
+    open_dock();     
+}
+
+void wake_display_loop() {
+    write(wake_pipe[1], "x", 1); // wakes poll
+}
+
+void stop_dock() {
+    running = false;
+    wake_display_loop();    
 }

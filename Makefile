@@ -1,4 +1,5 @@
 PLUGIN_NAME = mylar-desktop
+MAKEFLAGS += -j16
 
 # Find all .cpp source files recursively under src/
 SOURCE_FILES := $(wildcard ./src/*.cpp ./src/*/*.cpp)

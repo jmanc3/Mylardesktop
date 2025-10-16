@@ -735,17 +735,23 @@ void HyprIso::floatit(int id) {
             float_target(hw->w);
 }
 
-float HyprIso::get_varfloat(std::string target) {
-     auto VAR = (Hyprlang::FLOAT* const*)HyprlandAPI::getConfigValue(globals->api, target)->getDataStaticPtr();
-     return **VAR;
+float HyprIso::get_varfloat(std::string target, float default_float) {
+    auto confval = HyprlandAPI::getConfigValue(globals->api, target);
+    if (!confval)
+        return default_float;
+
+    auto VAR = (Hyprlang::FLOAT* const*)confval->getDataStaticPtr();
+    return **VAR; 
 }
 
-RGBA HyprIso::get_varcolor(std::string target) {
-     auto VAR = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(globals->api, target)->getDataStaticPtr();
-     auto color = CHyprColor(**VAR);
-     return RGBA(color.r, color.g, color.b, color.a);         
-     //assert(VAR);
-     //return {1, 0, 1, 1};
+RGBA HyprIso::get_varcolor(std::string target, RGBA default_color) {
+    auto confval = HyprlandAPI::getConfigValue(globals->api, target);
+    if (!confval)
+        return default_color;
+
+    auto VAR = (Hyprlang::INT* const*)confval->getDataStaticPtr();
+    auto color = CHyprColor(**VAR);
+    return RGBA(color.r, color.g, color.b, color.a);         
 }
 
 void HyprIso::create_config_variables() {
@@ -2393,11 +2399,39 @@ void HyprIso::reload() {
 
 void HyprIso::add_float_rule() {
     g_pConfigManager->handleWindowRule("windowrulev2", "float, class:.*");
-
-   //HyprInt  input:folloe_mouse
-   
 }
 
+void HyprIso::overwrite_defaults() {
+    {
+        Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:blur:enabled");
+        auto target = (Hyprlang::INT*)val->dataPtr();
+        *target = 1;
+    }
+    {
+        Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:blur:size");
+        auto target = (Hyprlang::INT*)val->dataPtr();
+        *target= 13;
+    }
+    {
+        Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:blur:passes");
+        auto target = (Hyprlang::INT*)val->dataPtr();
+        *target= 3;
+    }
+    {
+        Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:blur:noise");
+        auto target = (Hyprlang::FLOAT*)val->dataPtr();
+        *target= .04;
+    }
+    {
+        Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:blur:vibrancy");
+        auto target = (Hyprlang::FLOAT*)val->dataPtr();
+        *target= .4696;
+    }
+
+ 
+    
+    //g_pConfigManager->handleWindowRule("windowrulev2", "float, class:.*");
+}
 
 Bounds HyprIso::floating_offset(int id) {
     for (auto hw : hyprwindows) {

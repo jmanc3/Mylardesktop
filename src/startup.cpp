@@ -10,6 +10,8 @@
 #include "client/test.h"
 
 #include <algorithm>
+#include <chrono>
+#include <ratio>
 #include <thread>
 #include <fstream>
 #include <format>
@@ -80,7 +82,11 @@ struct TitleData : UserData {
 
     TextureInfo main_focused;
     TextureInfo main_unfocused;
+
+    // If these change we regenerate
     std::string cached_text;
+    RGBA focused_color;
+    RGBA unfocused_color;
 
     TextureInfo icon;
 };
@@ -93,6 +99,8 @@ struct IconData : UserData {
 
 bool any_fullscreen() {
     bool any = false;
+    any = true;
+    any = false;
     for (auto w : get_window_stacking_order())
         if (hypriso->is_fullscreen(w))
             any = true;
@@ -132,16 +140,16 @@ RGBA color_snap_helper_border = {0.5, 0.5, 0.5, 0.9};
 RGBA color_workspace_switcher = {1.0, 1.0, 1.0, 0.55};
 RGBA color_workspace_thumb = {0.59, 0.59, 0.59, 1.0f};
 
-RGBA color_titlebar_focused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_color"); };
-RGBA color_titlebar_unfocused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_color"); };
+RGBA color_titlebar_focused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_color", RGBA("ffffffff")); };
+RGBA color_titlebar_unfocused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_color", RGBA("f0f0f0ff")); };
 
 RGBA color_titlebar_hovered = {0.87, 0.87, 0.87, 1.0f};
 RGBA color_titlebar_pressed = {0.69, 0.69, 0.69, 1.0f};
 RGBA color_titlebar_hovered_closed = {0.9, 0.1, 0.1, 1.0f};
 RGBA color_titlebar_pressed_closed = {0.7, 0.1, 0.1, 1.0f};
 
-RGBA color_titlebar_text_focused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_text_color"); };
-RGBA color_titlebar_text_unfocused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_text_color"); };
+RGBA color_titlebar_text_focused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_text_color", RGBA("000000ff")); };
+RGBA color_titlebar_text_unfocused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_text_color", RGBA("303030ff")); };
 //RGBA color_titlebar_icon = {0.0, 0.0, 0.0, 1.0};
 RGBA color_titlebar_icon_close_pressed = {1.0, 1.0, 1.0, 1.0};
 
@@ -2438,6 +2446,50 @@ void update_cursor(int type) {
     }
 }
 
+void fit_on_screen(int id) {
+    //assert(false); 
+}
+
+void apply_restore_info(int id) {
+    auto tc = c_from_id(id);
+    auto monitor = get_monitor(id);
+    auto cname = class_name(tc);
+    for (auto [class_n, info] : restore_infos) {
+        if (cname == class_n) {
+            // Skip restore info if class name is same as parent class name (dialogs)
+            int parent = hypriso->parent(id);
+            if (parent != -1) {
+                auto pname = class_name(c_from_id(parent));
+                if (pname == cname) {
+                    continue;
+                }
+            }
+            
+            auto b = real_bounds(tc);
+            auto m = m_from_id(monitor);
+            auto s = scale(m->id);
+            auto b2 = bounds_reserved(m);
+            b.w = b2.w * info.box.w;
+            b.h = b2.h * info.box.h;
+            if (b.w >= b2.w - 60 * s) {
+                b.w = b2.w - 60 * s;
+            }
+            bool fix = false;
+            if (b.h >= b2.h - 60 * s) {
+                b.h = b2.h - 60 * s;
+                fix = true;
+            }
+            b.x = b2.x + b2.w * .5 - b.w * .5;
+            b.y = b2.y + b2.h * .5 - b.h * .5;
+            if (fix)
+                b.y += (titlebar_h * s) * .5;
+
+            hypriso->move_resize(tc->id, b.x, b.y, b.w, b.h);
+        }
+    }
+    fit_on_screen(id);
+}
+
 void on_window_open(int id) {
     // add a child to root which will rep the window titlebar
     auto tc = new ThinClient(id);
@@ -2503,44 +2555,9 @@ void on_window_open(int id) {
         };
         titlebar->when_clicked = thumb_area->when_clicked;
     }
+
+    apply_restore_info(id);    
     
-    auto cname = class_name(tc);
-    for (auto [class_n, info] : restore_infos) {
-        if (cname == class_n) {
-            // Skip restore info if class name is same as parent class name (dialogs)
-            int parent = hypriso->parent(id);
-            if (parent != -1) {
-                auto pname = class_name(c_from_id(parent));
-                if (pname == cname) {
-                    continue;
-                }
-            }
-            
-            auto b = real_bounds(tc);
-            auto m = m_from_id(monitor);
-            auto s = scale(m->id);
-            auto b2 = bounds_reserved(m);
-            b.w = b2.w * info.box.w;
-            b.h = b2.h * info.box.h;
-            if (b.w >= b2.w - 60 * s) {
-                b.w = b2.w - 60 * s;
-            }
-            bool fix = false;
-            if (b.h >= b2.h - 60 * s) {
-                b.h = b2.h - 60 * s;
-                fix = true;
-            }
-            b.x = b2.x + b2.w * .5 - b.w * .5;
-            b.y = b2.y + b2.h * .5 - b.h * .5;
-            if (fix)
-                b.y += (titlebar_h * s) * .5;
-
-            hypriso->move_resize(tc->id, b.x, b.y, b.w, b.h);
-        }
-    }
-    
-
-
     // TODO: We should put these windows in a limbo vector until a monitor opens and then move them over
     //assert(monitor != -1 && "window opened and there were no monitors avaialable (Mylardesktop bug!)");
 
@@ -2788,7 +2805,9 @@ void on_window_open(int id) {
                         rect(c->real_bounds, color, 12, rounding * scale(rdata->id));
                     }
                     auto text = title_name(client);
-                    if (titledata->cached_text != text) {
+                    if (titledata->cached_text != text || 
+                        titledata->unfocused_color != color_titlebar_unfocused() || 
+                        titledata->focused_color != color_titlebar_focused()) {
                         if (titledata->main_focused.id != -1) {
                             titledata->main_focused.id = -1;
                             free_text_texture(titledata->main_focused.id);
@@ -2798,6 +2817,8 @@ void on_window_open(int id) {
                         titledata->main_focused = gen_text_texture("Segoe UI Variable", text, titlebar_text_h * s, color_titlebar_text_focused());
                         titledata->main_unfocused = gen_text_texture("Segoe UI Variable", text, titlebar_text_h * s, color_titlebar_text_unfocused());
                         titledata->cached_text = text;
+                        titledata->focused_color = color_titlebar_focused();
+                        titledata->unfocused_color = color_titlebar_unfocused();
                     }
 
                     if (titledata->icon.id == -1) {
@@ -3037,9 +3058,12 @@ void on_window_open(int id) {
         }
     }
 
-    later(0, [id](Timer *) {
-        hypriso->floatit(id);
-    });
+    if (hypriso->has_decorations(id)) {
+        later(50, [id](Timer *) {
+            hypriso->floatit(id);
+            apply_restore_info(id);
+        });
+    }
 }
 
 void clear_snap_groups(int id) {
@@ -3384,6 +3408,7 @@ void on_resize_start_requested(int id, RESIZE_TYPE type) {
 void on_config_reload() {
     hypriso->set_zoom_factor(zoom_factor);
     hypriso->add_float_rule();
+    hypriso->overwrite_defaults();
 }
 
 void any_container_closed(Container *c) {
@@ -3525,12 +3550,15 @@ void startup::begin() {
     create_rounding_shader();
 
     std::thread th([]() {
-        start_test();        
+        start_dock();        
     });
     th.detach();
 }
 
 void startup::end() {
+    stop_dock();
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     hypriso->end();
 }
 
