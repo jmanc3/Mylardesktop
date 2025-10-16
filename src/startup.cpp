@@ -939,8 +939,16 @@ void start_workspace_screenshotting() {
     workspace_screenshot_timer->keep_running = true;
 }
 
+
+void paper() {
+    later(0, [](Timer *) {
+        hypriso->screenshot_wallpaper(((RootData *) roots[0]->user_data)->id);
+    });
+}
+
 void drag_start(int id) {
-    start_workspace_screenshotting();
+    paper();
+    //start_workspace_screenshotting();
     hypriso->dragging_id = id;
     hypriso->dragging = true;
     showing_switcher = true;
@@ -1586,7 +1594,7 @@ void open_overview() {
 }
 
 void drag_stop() {    
-    stop_workspace_screenshotting();
+    //stop_workspace_screenshotting();
     showing_switcher = false;
     int window = hypriso->dragging_id;
     drag_update();
