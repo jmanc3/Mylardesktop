@@ -262,11 +262,11 @@ void screenshot_all() {
 }
 
 void screenshot_deco(int id) {
-    later(nullptr, 1, [id](Timer *t) {
-        screenshotting = true;
+    //later(nullptr, 1, [id](Timer *t) {
+        //screenshotting = true;
         hypriso->screenshot_deco(id); 
-        screenshotting = false;   
-    });
+        //screenshotting = false;   
+    //});
 }
 
 // The reason we take screenshots like this is because if we try to do it in the render thread, we CRASH for some reason that I don't feel like investigating. PLUS, we need to take screenshots on a perdiodic basis anyways so this solves both problems.
@@ -935,9 +935,11 @@ void start_workspace_screenshotting() {
             for (auto s : spaces) {
                 //hypriso->screenshot_space(rdata->id, s);
             }
-            screenshotting = true;
             for (auto client : hypriso->windows) {
-                hypriso->screenshot_deco(client->id);
+                if (hypriso->has_decorations(client->id)) {
+                    screenshotting = true;
+                    hypriso->screenshot_deco(client->id);
+                }
             }
             screenshotting = true;
             hypriso->screenshot_wallpaper(rdata->id);
@@ -3231,6 +3233,10 @@ void on_monitor_open(int id) {
                     hypriso->move_to_workspace(tdata->wid);
                 };
                 ch->when_paint = paint {
+                    auto rdata = (RootData *) root->user_data;
+                    if (rdata->stage != (int) STAGE::RENDER_LAST_MOMENT) {
+                        return;
+                    }
                     auto tdata = get_or_create<TabData>(c->uuid, "tdata");
                     
                     auto b = c->real_bounds;
@@ -3239,7 +3245,6 @@ void on_monitor_open(int id) {
                     auto color = color_workspace_thumb;
                     color.a = .4;
                     rect(b, color, 0, interspace * s);
-                    auto rdata = (RootData *) root->user_data;
                     //nz(fz("{} {} {}", rdata->id, tdata->wid, "attempt"));
                     bool actual = false;
                     for (auto s : hypriso->get_workspaces(rdata->id)){
@@ -3247,14 +3252,36 @@ void on_monitor_open(int id) {
                             actual = true;
                         }
                     }
-                     for (auto hclient : hypriso->windows) {
-                         auto actual_space = hypriso->get_workspace(hclient->id);
-                         if (actual_space == tdata->wid) {
-                             //notify("ch=" + std::to_string(tdata->wid) + ", " + std::to_string(actual_space));
-                         }
-                     }
-
                     hypriso->draw_wallpaper(rdata->id, c->real_bounds, interspace * s);
+                    int x = 0;
+                    for (auto window : hypriso->windows) {
+                       if (!hypriso->has_decorations(window->id))
+                           continue;
+                       if (hypriso->get_workspace(window->id) == tdata->wid) {
+                           auto cbounds = bounds(c_from_id(window->id));
+                           auto monbounds = bounds(m_from_id(rdata->id));
+                           auto sx = cbounds.x / monbounds.w;
+                           auto sy = cbounds.y / monbounds.h;
+                           auto sw = cbounds.w / monbounds.w;
+                           auto sh = cbounds.h / monbounds.h;
+                           
+                           hypriso->draw_deco_thumbnail(window->id, 
+                           Bounds(sx * c->real_bounds.w + c->real_bounds.x, 
+                               sy * c->real_bounds.h + c->real_bounds.y,
+                               sw * c->real_bounds.w,
+                               sh * c->real_bounds.h));
+                               //Bounds(root->real_bounds.x + x, 
+                               //root->real_bounds.y + tdata->wid * max_thumb.h,
+                               //max_thumb.w,
+                               //max_thumb.h));
+                           //x += max_thumb.w;
+                       }
+                    }
+                     
+                    
+                    //notify(std::to_string(tdata->wid));
+                    
+
                     //if (actual) {
                         // TODO: draw deco windows to screen
                         // for (auto hclient : hypriso->windows) {
@@ -3419,6 +3446,7 @@ void any_container_closed(Container *c) {
 void on_draw_decos(std::string name, int m, int w, float a) {
     if (name != "MylarBar")
         return;
+    //notify("ondraere");
 
     for (auto r : roots) {
         for (auto c : r->children) {
@@ -3430,7 +3458,13 @@ void on_draw_decos(std::string name, int m, int w, float a) {
                    c->automatically_paint_children = true;
                    //chdata->alpha = 1.0;
                    chdata->alpha = a;
+                   auto rdata = (RootData *) r->user_data;
+                   auto before = rdata->active_id;
+                   rdata->active_id = w;
+                   rdata->stage = w;
+                   
                    paint_outline(r, c);
+                   rdata->active_id = before;
                    chdata->alpha = 1.0;
                    c->automatically_paint_children = false;
                    return;
@@ -3438,7 +3472,7 @@ void on_draw_decos(std::string name, int m, int w, float a) {
             }
         }
     }
-};
+}
 
 std::string rounding_shader_data = R"round(
 // smoothing constant for the edge: more = blurrier, but smoother
