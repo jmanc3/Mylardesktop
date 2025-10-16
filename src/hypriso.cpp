@@ -10,6 +10,7 @@
 
 #include "container.h"
 #include "first.h"
+#include <cassert>
 #include <hyprland/src/helpers/time/Time.hpp>
 
 #include <algorithm>
@@ -67,10 +68,12 @@ void* pRenderWindow = nullptr;
 void* pRenderLayer = nullptr;
 void* pRenderMonitor = nullptr;
 void* pRenderWorkspace = nullptr;
+void* pRenderWorkspaceWindows = nullptr;
 void* pRenderWorkspaceWindowsFullscreen = nullptr;
 typedef void (*tRenderWindow)(void *, PHLWINDOW, PHLMONITOR, const Time::steady_tp&, bool decorate, eRenderPassMode, bool ignorePosition, bool standalone);
 typedef void (*tRenderMonitor)(void *, PHLMONITOR pMonitor, bool commit);
 typedef void (*tRenderWorkspace)(void *, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp &, const CBox &geom);
+typedef void (*tRenderWorkspaceWindows)(void *, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp &);
 typedef void (*tRenderWorkspaceWindowsFullscreen)(void *, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp &);
 
 struct HyprWindow {
@@ -683,6 +686,10 @@ void hook_render_functions() {
         pRenderWorkspace = METHODS[0].address;
     }
     {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderWorkspaceWindows");
+        pRenderWorkspaceWindows = METHODS[0].address;
+    }
+    {
         static auto METHODS         = HyprlandAPI::findFunctionsByName(globals->api, "renderWorkspaceWindowsFullscreen");
         pRenderWorkspaceWindowsFullscreen = METHODS[0].address;
     }
@@ -733,8 +740,20 @@ float HyprIso::get_varfloat(std::string target) {
      return **VAR;
 }
 
+RGBA HyprIso::get_varcolor(std::string target) {
+     auto VAR = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(globals->api, target)->getDataStaticPtr();
+     auto color = CHyprColor(**VAR);
+     return RGBA(color.r, color.g, color.b, color.a);         
+     //assert(VAR);
+     //return {1, 0, 1, 1};
+}
+
 void HyprIso::create_config_variables() {
-    //HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:bar_color", Hyprlang::INT{*configStringToInt("rgba(33333388)")});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_focused_color", Hyprlang::INT{*configStringToInt("rgba(ffffffff)")});
+    
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_unfocused_color", Hyprlang::INT{*configStringToInt("rgba(f0f0f0ff)")});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_focused_text_color", Hyprlang::INT{*configStringToInt("rgba(000000ff)")});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_unfocused_text_color", Hyprlang::INT{*configStringToInt("rgba(505050ff)")});
     HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:thumb_to_position_time", Hyprlang::FLOAT{330});
     HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:snap_helper_fade_in", Hyprlang::FLOAT{400});
     //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_height", Hyprlang::INT{15});
@@ -813,7 +832,7 @@ void HyprIso::create_hooks_and_callbacks() {
         info.cancelled = consume;
     });
 
-    static auto keyPress       = HyprlandAPI::registerCallbackDynamic(globals->api, "keyPress", [](void* self, SCallbackInfo& info, std::any data) {
+    static auto keyPress = HyprlandAPI::registerCallbackDynamic(globals->api, "keyPress", [](void* self, SCallbackInfo& info, std::any data) {
         auto consume = false;
         if (hypriso->on_key_press) {
             auto p = std::any_cast<std::unordered_map<std::string, std::any>>(data);
@@ -828,7 +847,8 @@ void HyprIso::create_hooks_and_callbacks() {
         }
         info.cancelled = consume;
     });
-    static auto monitorAdded   = HyprlandAPI::registerCallbackDynamic(globals->api, "monitorAdded", [](void* self, SCallbackInfo& info, std::any data) {
+    /*
+    static auto monitorAdded = HyprlandAPI::registerCallbackDynamic(globals->api, "monitorAdded", [](void* self, SCallbackInfo& info, std::any data) {
         if (hypriso->on_monitor_open) {
             auto m = std::any_cast<PHLMONITOR>(data); // todo getorcreate ref on our side
             on_open_monitor(m);
@@ -841,6 +861,7 @@ void HyprIso::create_hooks_and_callbacks() {
             on_close_monitor(m);
         }
     });
+    */
     
 
     static auto configReloaded = HyprlandAPI::registerCallbackDynamic(globals->api, "configReloaded", [](void* self, SCallbackInfo& info, std::any data) {
@@ -1189,10 +1210,10 @@ int HyprIso::get_active_workspace(int monitor) {
 }
 
 int HyprIso::get_workspace(int client) {
-    for (auto hc : hyprwindows) {
-        if (hc->id == client) {
-            if (hc->w->m_workspace.get()) {
-                return hc->w->m_workspace->m_id;
+    for (auto hw : hyprwindows) {
+        if (hw->id == client) {
+            if (hw->w->m_workspace.get()) {
+                return hw->w->m_workspace->m_id;
             }
         }
     }
@@ -1929,10 +1950,44 @@ void screenshot_workspace(CFramebuffer* buffer, PHLWORKSPACEREF w, PHLMONITOR m,
     g_pHyprOpenGL->m_renderData.pMonitor = m;
     const auto NOW = Time::steadyNow();
 
-    (*(tRenderWorkspace)pRenderWorkspace)(g_pHyprRenderer.get(), m, w.lock(), NOW, CBox(0, 0, (int)m->m_pixelSize.x, (int)m->m_pixelSize.y));
+    notify("screenshot " + std::to_string(w->m_id) + " " + std::to_string((unsigned long long) buffer));
 
+    /*
+    pMonitor->m_activeWorkspace = PWORKSPACE;
+    g_pDesktopAnimationManager->startAnimation(PWORKSPACE, CDesktopAnimationManager::ANIMATION_TYPE_IN, true, true);
+    PWORKSPACE->m_visible = true;
+
+    if (PWORKSPACE == startedOn)
+        pMonitor->m_activeSpecialWorkspace = openSpecial;
+
+    g_pHyprRenderer->renderWorkspace(pMonitor.lock(), PWORKSPACE, Time::steadyNow(), monbox);
+
+    PWORKSPACE->m_visible = false;
+    g_pDesktopAnimationManager->startAnimation(PWORKSPACE, CDesktopAnimationManager::ANIMATION_TYPE_OUT, false, true);
+
+    if (PWORKSPACE == startedOn)
+        pMonitor->m_activeSpecialWorkspace.reset();
+    */
+
+    auto backup = m->m_activeWorkspace;
+    auto visibility = w->m_visible;
+    w->m_visible = true;
+    
+    //(*(tRenderWorkspace)pRenderWorkspace)(g_pHyprRenderer.get(), m, w.lock(), NOW, CBox(0, 0, (int)m->m_pixelSize.x, (int)m->m_pixelSize.y));
+    //(*(tRenderWorkspace)pRenderWorkspace)(g_pHyprRenderer.get(), m, w.lock(), NOW, CBox(0, 0, (int)m->m_pixelSize.x, (int)m->m_pixelSize.y));
+    (*(tRenderWorkspaceWindows)pRenderWorkspaceWindows)(g_pHyprRenderer.get(), m, w.lock(), NOW);
+    
+    /*
+    if (auto wmon = w->m_monitor.lock()) {
+        (*(tRenderWorkspace)pRenderWorkspace)(g_pHyprRenderer.get(), wmon, w.lock(), NOW, CBox(0, 0, (int)m->m_pixelSize.x, (int)m->m_pixelSize.y));
+    }
+*/
+
+    w->m_visible = visibility;
+    m->m_activeWorkspace = backup;
     //(*(tRenderWorkspaceWindowsFullscreen)pRenderWorkspaceWindowsFullscreen)(g_pHyprRenderer.get(), m, w.lock(), NOW);
 
+    
     g_pHyprRenderer->endRender();
 }
 
@@ -2035,6 +2090,8 @@ void HyprIso::draw_workspace(int mon, int id, Bounds b, int rounding) {
             auto roundingPower = 2.0f;
             auto cornermask = 0;
             auto tex = hs->buffer->getTexture();
+            notify(std::to_string(hs->w->m_id) + " " + std::to_string((unsigned long long) hs->buffer));
+            
             auto box = tocbox(b);
 
             CHyprOpenGLImpl::STextureRenderData data;
@@ -2339,6 +2396,39 @@ void HyprIso::add_float_rule() {
 
    //HyprInt  input:folloe_mouse
    
+}
+
+
+Bounds HyprIso::floating_offset(int id) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            return {hw->w->m_floatingOffset.x, hw->w->m_floatingOffset.y, 0, 0};
+        }
+    }
+
+    return {};
+}
+Bounds HyprIso::workspace_offset(int id) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            if (hw->w->m_workspace) {
+                if (!hw->w->m_pinned) {
+                    auto off = hw->w->m_workspace->m_renderOffset->value();
+                    return {off.x, off.y, 0, 0};
+                }
+            }
+        }
+    }
+    return {};
+}
+
+bool HyprIso::has_focus(int client) {
+    for (auto hw: hyprwindows) {
+        if (hw->id == client) {
+            return hw->w == g_pCompositor->m_lastWindow;
+        }
+    }
+    return false;
 }
 
 

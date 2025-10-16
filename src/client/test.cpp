@@ -344,8 +344,7 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener = {
     .close = handle_toplevel_close,
 };
 
-int main(int argc, char **argv) {
-    (void)argc; (void)argv;
+int open_space() {
     struct display *d = &g;
     d->display = wl_display_connect(NULL);
     if (!d->display) {
@@ -433,3 +432,6 @@ int main(int argc, char **argv) {
     return 0;
 }
 
+void start_test() {
+    open_space();     
+}

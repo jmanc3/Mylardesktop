@@ -139,6 +139,7 @@ struct HyprIso {
     int resizing_id = false;
 
     float get_varfloat(std::string target);
+    RGBA get_varcolor(std::string target);
 
     void create_config_variables();
     
@@ -189,6 +190,9 @@ struct HyprIso {
     
     void send_key(uint32_t key);
 
+    Bounds floating_offset(int id);
+    Bounds workspace_offset(int id);
+
     Bounds min_size(int id);
     bool is_x11(int id);
     bool is_fullscreen(int id);
@@ -196,6 +200,8 @@ struct HyprIso {
     
     void bring_to_front(int id, bool focus = true);
     void set_hidden(int id, bool state);
+    
+    bool has_focus(int client);
     
     bool is_hidden(int id);
     

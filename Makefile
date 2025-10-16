@@ -9,7 +9,8 @@ PKG_FLAGS := $(shell pkg-config --cflags librsvg-2.0 pixman-1 libdrm hyprland pa
 INCLUDE_FLAGS := -I./include
 
 # Compiler flags
-COMMON_FLAGS := -Wall --no-gnu-unique -fPIC -std=c++2b $(INCLUDE_FLAGS) $(PKG_FLAGS)
+COMMON_FLAGS := --no-gnu-unique -fPIC -std=c++2b $(INCLUDE_FLAGS) $(PKG_FLAGS)
+#COMMON_FLAGS := -Wall --no-gnu-unique -fPIC -std=c++2b $(INCLUDE_FLAGS) $(PKG_FLAGS)
 
 # Build types
 DEBUG_FLAGS := -g -O0

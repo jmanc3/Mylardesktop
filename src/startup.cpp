@@ -7,8 +7,10 @@
 #include "spring.h"
 #include "container.h"
 #include "hypriso.h"
+#include "client/test.h"
 
 #include <algorithm>
+#include <thread>
 #include <fstream>
 #include <format>
 #include <cassert>
@@ -76,7 +78,8 @@ void remove_data(const std::string& uuid) {
 struct TitleData : UserData {
     long previous = 0;
 
-    TextureInfo main;
+    TextureInfo main_focused;
+    TextureInfo main_unfocused;
     std::string cached_text;
 
     TextureInfo icon;
@@ -129,14 +132,19 @@ RGBA color_snap_helper_border = {0.5, 0.5, 0.5, 0.9};
 RGBA color_workspace_switcher = {1.0, 1.0, 1.0, 0.55};
 RGBA color_workspace_thumb = {0.59, 0.59, 0.59, 1.0f};
 
-RGBA color_titlebar = {1.0, 1.0, 1.0, 1.0};
+RGBA color_titlebar_focused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_color"); };
+RGBA color_titlebar_unfocused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_color"); };
 
 RGBA color_titlebar_hovered = {0.87, 0.87, 0.87, 1.0f};
 RGBA color_titlebar_pressed = {0.69, 0.69, 0.69, 1.0f};
 RGBA color_titlebar_hovered_closed = {0.9, 0.1, 0.1, 1.0f};
 RGBA color_titlebar_pressed_closed = {0.7, 0.1, 0.1, 1.0f};
-RGBA color_titlebar_icon = {0.0, 0.0, 0.0, 1.0};
+
+RGBA color_titlebar_text_focused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_text_color"); };
+RGBA color_titlebar_text_unfocused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_text_color"); };
+//RGBA color_titlebar_icon = {0.0, 0.0, 0.0, 1.0};
 RGBA color_titlebar_icon_close_pressed = {1.0, 1.0, 1.0, 1.0};
+
 static float title_button_wratio = 1.4375f;
 static float rounding = 10.0f;
 static float thumb_rounding = 10.0f;
@@ -449,7 +457,7 @@ class AltTabMenu {
     }
 
     ~AltTabMenu() {
-        printf("done\n");
+        //printf("done\n");
     }
 };
 
@@ -484,7 +492,8 @@ void paint_titlebar_raw(Container *root, Container *c, float a, bool subtract_cl
     auto tdata = (TabData *) c->user_data;
     auto rdata = (RootData *) root->user_data;
     auto s = scale(rdata->id);
-    auto ct = color_titlebar;
+    
+    auto ct = color_titlebar_focused();
     ct.a = a;
     rect(c->real_bounds, ct, 12, thumb_rounding * s, 2.0f, true, a);
     Container *cdata = nullptr;
@@ -508,12 +517,12 @@ void paint_titlebar_raw(Container *root, Container *c, float a, bool subtract_cl
                 draw_texture(td->icon, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->icon.h * .5, a);
                 xoff += titlebar_icon_pad * s + td->icon.w;
             }
-            if (td->main.id != -1) {
+            if (td->main_focused.id != -1) {
                 if (subtract_close) {
-                    draw_texture(td->main, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->main.h * .5, a,
+                    draw_texture(td->main_focused, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->main_focused.h * .5, a,
                              c->real_bounds.w - xoff - c->real_bounds.h * title_button_wratio);
                 } else {
-                    draw_texture(td->main, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->main.h * .5, a,
+                    draw_texture(td->main_focused, c->real_bounds.x + xoff, c->real_bounds.y + c->real_bounds.h * .5 - td->main_focused.h * .5, a,
                              c->real_bounds.w - xoff - titlebar_icon_pad * s);
                 }
             }
@@ -914,11 +923,14 @@ void start_workspace_screenshotting() {
         for (auto r : roots) {
             auto rdata = (RootData *) r->user_data;
             auto spaces = hypriso->get_workspaces(rdata->id);
-            for (auto s : spaces) {
-                auto before = screenshotting;
-                hypriso->screenshot_space(rdata->id, s);
-            }
             auto before = screenshotting;
+            for (auto s : spaces) {
+                //hypriso->screenshot_space(rdata->id, s);
+            }
+            screenshotting = true;
+            for (auto client : hypriso->windows) {
+                hypriso->screenshot_deco(client->id);
+            }
             screenshotting = true;
             hypriso->screenshot_wallpaper(rdata->id);
             screenshotting = before;
@@ -1116,6 +1128,7 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
 
         auto snap_helper = r->child(::absolute, FILL_SPACE, FILL_SPACE);
         snap_helper->receive_events_even_if_obstructed = true;
+        snap_helper->name = "snap_helper";
         snap_helper->pre_layout = [](Container *root, Container *c, const Bounds &b) {
             auto shd = (SnapHelperData *) c->user_data;
             auto rdata = ((RootData *) root->user_data);
@@ -1181,7 +1194,11 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                                 if (snfade > 1.0)
                                     snfade = 1.0;
                                 snfade = pull(curve_to_position, snfade);
-                                auto color = color_titlebar;
+
+                                auto tdata = (TabData *) tchild->user_data;
+                                auto color = color_titlebar_focused();
+                                if (!hypriso->has_focus(tdata->wid))
+                                    color = color_titlebar_unfocused();
                                 color.a = snfade;
                                 //rect(tchild->real_bounds, color, 3, thumb_rounding * s, 2.0, true, scalar);
                             }
@@ -1365,6 +1382,7 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                 if (final_h > highest_h)
                     highest_h = final_h;
                 ch->real_bounds = Bounds(pen_x, pen_y, t_w, final_h);
+                ch->real_bounds.y += c->scroll_v_visual;
                 ::layout(root, ch, ch->real_bounds);
                 pen_x += t_w + interspace * s;
             }
@@ -1411,8 +1429,11 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
         snap_helper->when_mouse_motion = paint { root->consumed_event = true; };
         snap_helper->when_mouse_down = paint { root->consumed_event = true; };
         snap_helper->when_mouse_up = paint { root->consumed_event = true; };
-        snap_helper->when_fine_scrolled = [](Container* root, Container* self, int scroll_x, int scroll_y, bool came_from_touchpad) {
+        snap_helper->when_fine_scrolled = [](Container* root, Container* c, int scroll_x, int scroll_y, bool came_from_touchpad) {
             root->consumed_event = true;
+            c->scroll_v_visual += scroll_y;
+            c->scroll_v_real += scroll_y;
+            //notify(std::to_string(c->scroll_v_real));
         };
         snap_helper->custom_type = (int) TYPE::SNAP_HELPER;
         SnapPosition op = opposite_snap_position(window_snap_target);
@@ -2008,6 +2029,7 @@ void layout_every_single_root() {
             return adata->index > bdata->index; 
         });
     }    
+
     
     // set bounds of containers 
     for (auto r : roots) {
@@ -2020,15 +2042,41 @@ void layout_every_single_root() {
             r->real_bounds = Bounds(b.x, b.y, b.w, b.h);
         }
 
+                            /*
+
+CBox assignedBoxGlobal(MylarBar *bar) {
+    if (!validMapped(bar->window))
+        return {};
+
+    const auto PWORKSPACE = bar->window->m_workspace;
+    const auto WORKSPACEOFFSET = PWORKSPACE && !bar->window->m_pinned ? PWORKSPACE->m_renderOffset->value() : Vector2D();
+    auto w = bar->window.get();
+
+    CBox title_raw = {
+        w->m_realPosition->value().x + w->m_floatingOffset.x + WORKSPACEOFFSET.x, 
+        w->m_realPosition->value().y + w->m_floatingOffset.y + WORKSPACEOFFSET.y - ((float) our_state->titlebar_size), 
+        w->m_realSize->value().x, 
+        (float) our_state->titlebar_size
+    };
+
+    return title_raw.round();
+}
+                             * 
+                             */ 
+
         for (auto c : r->children) {
             auto cdata = (ClientData *) c->user_data;
             auto cid = cdata->id;
             if (auto cm = c_from_id(cid)) {
                 auto b = bounds(cm);            
                 b.scale(s);
+                auto fo = hypriso->floating_offset(cid);
+                fo.scale(s);
+                auto so = hypriso->workspace_offset(cid);
+                so.scale(s);
                 c->real_bounds = Bounds(
-                    b.x, 
-                    b.y - titlebar_h * s, 
+                    b.x + fo.x + so.x, 
+                    b.y - titlebar_h * s + fo.y + so.y, 
                     b.w, 
                     b.h + titlebar_h * s
                 );
@@ -2046,7 +2094,7 @@ void layout_every_single_root() {
                     auto c = r->children[i];
                     if (c->custom_type == (int) TYPE::CLIENT) {
                         auto cdata = (ClientData *) c->user_data;
-                        if (cdata->id == bdata->id) {
+                        if (cdata->id == bdata->id) {                            
                             b->real_bounds = c->real_bounds;
                             b->real_bounds.grow(resize_size * s);
                             r->children.insert(r->children.begin() + i, b);
@@ -2682,7 +2730,9 @@ void on_window_open(int id) {
                 auto client = c_from_id(data->id);
                 auto titledata = (TitleData *) c->user_data;
                 if (data->id == rdata->active_id) {
-                    auto color = color_titlebar;
+                    auto color = color_titlebar_focused();
+                    if (!hypriso->has_focus(data->id))
+                        color = color_titlebar_unfocused();
                     color.a = data->alpha;
                     if (client->snapped) {
                         rect(c->real_bounds, color, 0, 0);
@@ -2691,11 +2741,14 @@ void on_window_open(int id) {
                     }
                     auto text = title_name(client);
                     if (titledata->cached_text != text) {
-                        if (titledata->main.id != -1) {
-                            titledata->main.id = -1;
-                            free_text_texture(titledata->main.id);
+                        if (titledata->main_focused.id != -1) {
+                            titledata->main_focused.id = -1;
+                            free_text_texture(titledata->main_focused.id);
+                            free_text_texture(titledata->main_unfocused.id);
                         }
-                        titledata->main = gen_text_texture("Segoe UI Variable", text, titlebar_text_h * s, color_titlebar_icon);
+
+                        titledata->main_focused = gen_text_texture("Segoe UI Variable", text, titlebar_text_h * s, color_titlebar_text_focused());
+                        titledata->main_unfocused = gen_text_texture("Segoe UI Variable", text, titlebar_text_h * s, color_titlebar_text_unfocused());
                         titledata->cached_text = text;
                     }
 
@@ -2717,7 +2770,10 @@ void on_window_open(int id) {
                     double clip_w = c->real_bounds.w - (xoff - c->real_bounds.x) - (c->real_bounds.h * 3 * title_button_wratio);
                     if (clip_w <= 0.0)
                         clip_w = 1.0;
-                    draw_texture(titledata->main, xoff, c->real_bounds.y + (c->real_bounds.h - titledata->main.h) * .5, data->alpha, clip_w);
+                    auto tex = titledata->main_focused;
+                    if (!hypriso->has_focus(data->id))
+                       tex = titledata->main_unfocused;
+                    draw_texture(tex, xoff, c->real_bounds.y + (c->real_bounds.h - tex.h) * .5, data->alpha, clip_w);
                 }
                 c->real_bounds = backup;
             };
@@ -2766,6 +2822,10 @@ void on_window_open(int id) {
 
                     if (!cdata->attempted) {
                         cdata->attempted = true;
+                        auto color_titlebar_icon = color_titlebar_text_focused();
+                        if (!hypriso->has_focus(data->id)) {
+                            color_titlebar_icon = color_titlebar_text_unfocused();
+                        }
                         cdata->main = gen_text_texture("Segoe Fluent Icons", "\ue921",
                             titlebar_icon_button_h * s, color_titlebar_icon);
                     }
@@ -2823,6 +2883,11 @@ void on_window_open(int id) {
 
                     if (!cdata->attempted) {
                         cdata->attempted = true;
+                        auto color_titlebar_icon = color_titlebar_text_focused();
+                        if (!hypriso->has_focus(data->id)) {
+                            color_titlebar_icon = color_titlebar_text_unfocused();
+                        }
+                        
                         cdata->main = gen_text_texture("Segoe Fluent Icons", "\ue922",
                             titlebar_icon_button_h * s, color_titlebar_icon);
                         // demax
@@ -2890,6 +2955,11 @@ void on_window_open(int id) {
 
                     if (!cdata->attempted) {
                         cdata->attempted = true;
+                        auto color_titlebar_icon = color_titlebar_text_focused();
+                        if (!hypriso->has_focus(data->id)) {
+                            color_titlebar_icon = color_titlebar_text_unfocused();
+                        }
+                        
                         cdata->main = gen_text_texture("Segoe Fluent Icons", "\ue8bb",
                             titlebar_icon_button_h * s, color_titlebar_icon);
                         cdata->secondary = gen_text_texture("Segoe Fluent Icons", "\ue8bb",
@@ -3105,13 +3175,40 @@ void on_monitor_open(int id) {
                             actual = true;
                         }
                     }
-                    //hypriso->draw_wallpaper(rdata->id, c->real_bounds, interspace * s);
-                    
-                    if (actual) {
-                        hypriso->draw_workspace(rdata->id, tdata->wid, c->real_bounds, interspace * s);
-                    } else {
-                        hypriso->draw_wallpaper(rdata->id, c->real_bounds, interspace * s);
-                    }
+                     for (auto hclient : hypriso->windows) {
+                         auto actual_space = hypriso->get_workspace(hclient->id);
+                         if (actual_space == tdata->wid) {
+                             //notify("ch=" + std::to_string(tdata->wid) + ", " + std::to_string(actual_space));
+                         }
+                     }
+
+                    hypriso->draw_wallpaper(rdata->id, c->real_bounds, interspace * s);
+                    //if (actual) {
+                        // TODO: draw deco windows to screen
+                        // for (auto hclient : hypriso->windows) {
+                        //     //auto mon = get_monitor(hclient->id);
+                        //     //if (mon == rdata->id) {
+                        //         // if workspace
+                        //         auto actual_space = hypriso->get_workspace(hclient->id);
+                        //         if (actual_space == tdata->wid) {
+                        //             auto thin = c_from_id(hclient->id);
+                        //             auto bou = bounds_full(thin);
+                        //             bou.scale(s);
+                        //             bou.x = bou.x / root->real_bounds.x;
+                        //             bou.y = bou.y / root->real_bounds.y;
+                        //             bou.w = bou.w / root->real_bounds.w;
+                        //             bou.h = bou.h / root->real_bounds.h;
+                        //             bou.x = bou.x * c->real_bounds.x;
+                        //             bou.y = bou.y * c->real_bounds.y;
+                        //             bou.w = bou.w * c->real_bounds.w;
+                        //             bou.h = bou.h * c->real_bounds.h;
+                        //             hypriso->draw_deco_thumbnail(hclient->id, bou);
+                        //         }
+                        //     //}
+                        // }
+                         
+                        //hypriso->draw_workspace(rdata->id, tdata->wid, c->real_bounds, interspace * s);
+                    //}
                 };
             }
         }
@@ -3163,14 +3260,18 @@ void on_monitor_open(int id) {
         rect(c->real_bounds, color_workspace_switcher, mask, interspace * s);
 
         auto rdata = (RootData *) root->user_data;
+        if (rdata->stage != (int) STAGE::RENDER_LAST_MOMENT)
+            return;
 
         auto spaces = hypriso->get_workspaces(rdata->id);
         int x = 0;
         for (auto space :spaces) {
             //hypriso->draw_wallpaper(rdata->id, Bounds(x, 0, 200, 200), interspace * s);
+            //notify(std::to_string(space));
             //hypriso->draw_workspace(rdata->id, space, Bounds(x, 0, 200, 200), interspace * s);
             x += 200;
         }
+        //notify("done");
     };
     workspace->when_clicked = paint {
         root->consumed_event = true;  
@@ -3374,6 +3475,11 @@ void startup::begin() {
     }
 
     create_rounding_shader();
+
+    std::thread th([]() {
+        start_test();        
+    });
+    th.detach();
 }
 
 void startup::end() {
