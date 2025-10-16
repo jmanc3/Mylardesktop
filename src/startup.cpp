@@ -2594,8 +2594,48 @@ void on_window_open(int id) {
                     client->resize_type = (int) RESIZE_TYPE::LEFT;
                 }
 
+                auto rtype = client->resize_type;
+                // Don't allow every type of resize for snapped windows
                 if (client->snapped && client->snap_type == SnapPosition::MAX) {
                     client->resize_type = (int) RESIZE_TYPE::NONE;
+                }
+                if (client->snapped && client->snap_type == SnapPosition::LEFT) {
+                    if (rtype != (int) RESIZE_TYPE::RIGHT) {
+                        client->resize_type = (int) RESIZE_TYPE::NONE;
+                    }
+                }
+                if (client->snapped && client->snap_type == SnapPosition::RIGHT) {
+                    if (rtype != (int) RESIZE_TYPE::LEFT) {
+                        client->resize_type = (int) RESIZE_TYPE::NONE;
+                    }
+                }
+                if (client->snapped && client->snap_type == SnapPosition::TOP_RIGHT) {
+                    auto valid = rtype == (int) RESIZE_TYPE::BOTTOM || 
+                                 rtype == (int) RESIZE_TYPE::BOTTOM_LEFT || 
+                                 rtype == (int) RESIZE_TYPE::LEFT;
+                    if (!valid)
+                        client->resize_type = (int) RESIZE_TYPE::NONE;
+                }
+                if (client->snapped && client->snap_type == SnapPosition::BOTTOM_RIGHT) {
+                    auto valid = rtype == (int) RESIZE_TYPE::TOP || 
+                                 rtype == (int) RESIZE_TYPE::TOP_LEFT || 
+                                 rtype == (int) RESIZE_TYPE::LEFT;
+                    if (!valid)
+                        client->resize_type = (int) RESIZE_TYPE::NONE;
+                }
+                if (client->snapped && client->snap_type == SnapPosition::BOTTOM_LEFT) {
+                    auto valid = rtype == (int) RESIZE_TYPE::TOP || 
+                                 rtype == (int) RESIZE_TYPE::TOP_RIGHT || 
+                                 rtype == (int) RESIZE_TYPE::RIGHT;
+                    if (!valid)
+                        client->resize_type = (int) RESIZE_TYPE::NONE;
+                }
+                if (client->snapped && client->snap_type == SnapPosition::TOP_LEFT) {
+                    auto valid = rtype == (int) RESIZE_TYPE::BOTTOM || 
+                                 rtype == (int) RESIZE_TYPE::BOTTOM_RIGHT || 
+                                 rtype == (int) RESIZE_TYPE::RIGHT;
+                    if (!valid)
+                        client->resize_type = (int) RESIZE_TYPE::NONE;
                 }
 
                 update_cursor(client->resize_type);
