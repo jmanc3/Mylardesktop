@@ -252,7 +252,9 @@ struct HyprIso {
 
     void add_float_rule();
     void overwrite_defaults();
-        
+
+    bool clip = false;
+    Bounds clipbox;
 };
 
 extern HyprIso *hypriso;

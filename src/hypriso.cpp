@@ -955,17 +955,25 @@ Bounds tobounds(CBox box) {
 void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPower, bool blur, float blurA) {
     if (box.h <= 0 || box.w <= 0)
         return;
-    AnyPass::AnyData anydata([box, color, cornermask, round, roundingPower, blur, blurA](AnyPass* pass) {
+    bool clip = hypriso->clip;
+    Bounds clipbox = hypriso->clipbox;
+    AnyPass::AnyData anydata([box, color, cornermask, round, roundingPower, blur, blurA, clip, clipbox](AnyPass* pass) {
         CHyprOpenGLImpl::SRectRenderData rectdata;
         rectdata.blur          = blur;
         rectdata.blurA         = blurA;
         rectdata.round         = std::round(round);
         rectdata.roundingPower = roundingPower;
         rectdata.xray = false;
+
+        if (clip)
+            g_pHyprOpenGL->m_renderData.clipBox = tocbox(clipbox);
+        
         // TODO: who is responsible for cleaning up this damage?
         set_rounding(cornermask); // only top side
         g_pHyprOpenGL->renderRect(tocbox(box), CHyprColor(color.r, color.g, color.b, color.a), rectdata);
         set_rounding(0);
+        if (clip)
+            g_pHyprOpenGL->m_renderData.clipBox = CBox();
     });
     g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
 }
@@ -1626,12 +1634,22 @@ void draw_texture(TextureInfo info, int x, int y, float a, float clip_w) {
             data.box = {(float) x, (float) y, data.tex->m_size.x, data.tex->m_size.y};
             data.box.x = x;
             data.box.round();
-            data.clipBox = data.box;
+            auto inter = data.box;
+            if (hypriso->clip) {
+                inter = tocbox(hypriso->clipbox);
+                //.intersection(data.box)
+                if (data.box.inside(inter)) {
+                    inter = tocbox(hypriso->clipbox).intersection(data.box);
+                }
+            }
+            
+            data.clipBox = inter;
             if (clip_w != 0.0) {
                 data.clipBox.w = clip_w;
             }
             data.a = 1.0 * a;
             g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(std::move(data)));
+            
        }
     }
 }
@@ -2518,7 +2536,9 @@ void HyprIso::draw_thumbnail(int id, Bounds b, int rounding, float roundingPower
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             if (hw->fb) {
-                AnyPass::AnyData anydata([id, b, hw, rounding, roundingPower, cornermask, alpha](AnyPass* pass) {
+                bool clip = this->clip;
+                Bounds clipbox = this->clipbox;
+                AnyPass::AnyData anydata([id, b, hw, rounding, roundingPower, cornermask, alpha, clip, clipbox](AnyPass* pass) {
                     auto tex = hw->fb->getTexture();
                     auto box = tocbox(b);
                     CHyprOpenGLImpl::STextureRenderData data;
@@ -2532,10 +2552,14 @@ void HyprIso::draw_thumbnail(int id, Bounds b, int rounding, float roundingPower
                         std::min(hw->w_size.h / hw->fb->m_size.y, 1.0) 
                     );
                     set_rounding(cornermask);
+                    if (clip)
+                        g_pHyprOpenGL->m_renderData.clipBox = tocbox(clipbox);
                     g_pHyprOpenGL->renderTexture(tex, box, data);
                     set_rounding(0);
                     g_pHyprOpenGL->m_renderData.primarySurfaceUVTopLeft     = Vector2D(-1, -1);
                     g_pHyprOpenGL->m_renderData.primarySurfaceUVBottomRight = Vector2D(-1, -1);
+                    if (clip)
+                        g_pHyprOpenGL->m_renderData.clipBox = tocbox(Bounds());
                 });
                 g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
             }

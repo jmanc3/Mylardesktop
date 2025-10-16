@@ -1263,7 +1263,11 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                                     tchild->real_bounds.w = tchild->real_bounds.w + ((b.w - tchild->real_bounds.w) * scalar);
                                     tchild->real_bounds.h = tchild->real_bounds.h + ((b.h - tchild->real_bounds.h) * scalar);
 
+
                                     paint_thumbnail_raw(root, tchild, alpha);
+                                    //hypriso->clip = false;
+                                    //hypriso->clipbox = Bounds();
+                                    
                                     if (alpha != 1.0) {
                                         //rect(c->real_bounds, 
                                             //{0, 0, 0, ((float) (1.0 - alpha) * .75f)},
@@ -1339,6 +1343,7 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                         Bounds bb = Bounds(c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h);
                         auto s = scale(((RootData *) root->user_data)->id);
                         bb.scale(1.0 / s);
+                        hypriso->move_to_workspace(tt->wid, hypriso->get_active_workspace(mon));
                         hypriso->move_resize(tt->wid, bb.x, bb.y, bb.w, bb.h);
                         perform_snap(c_from_id(tt->wid), pos, snop, true, false);
                         if (save)
@@ -1425,6 +1430,10 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                 return;
             }
             c->automatically_paint_children = true;
+            if (auto snap_helper = container_by_name("snap_helper", root)) {
+                //hypriso->clip = true;
+                //hypriso->clipbox = snap_helper->real_bounds;
+            }
             
             auto s = scale(rdata->id);
             auto b = c->real_bounds;
@@ -1443,6 +1452,8 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
         };
         snap_helper->after_paint = paint {
             c->automatically_paint_children = false;
+            //hypriso->clip = false;
+            //hypriso->clipbox = Bounds();
         };
         snap_helper->when_mouse_motion = paint { root->consumed_event = true; };
         snap_helper->when_mouse_down = paint { root->consumed_event = true; };
