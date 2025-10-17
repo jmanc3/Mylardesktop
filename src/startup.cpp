@@ -95,6 +95,9 @@ struct IconData : UserData {
     bool attempted = false;
     TextureInfo main;
     TextureInfo secondary;
+    
+    RGBA focused_color;
+    RGBA unfocused_color;
 };
 
 bool any_fullscreen() {
@@ -615,6 +618,7 @@ ClientData *get_cdata(int id) {
 }
 
 void resize_start(int id, RESIZE_TYPE type) {
+    hypriso->floatit(id);
     hypriso->resizing = true;
     hypriso->resizing_id = id;
     auto client = c_from_id(hypriso->resizing_id);
@@ -957,8 +961,9 @@ void paper() {
 }
 
 void drag_start(int id) {
+    hypriso->floatit(id);
     paper();
-    //start_workspace_screenshotting();
+    start_workspace_screenshotting();
     hypriso->dragging_id = id;
     hypriso->dragging = true;
     showing_switcher = true;
@@ -1615,7 +1620,7 @@ void open_overview() {
 }
 
 void drag_stop() {    
-    //stop_workspace_screenshotting();
+    stop_workspace_screenshotting();
     showing_switcher = false;
     int window = hypriso->dragging_id;
     drag_update();
@@ -1733,6 +1738,7 @@ void drag_stop() {
 }
 
 void toggle_maximize(int id) {
+    hypriso->bring_to_front(id, false);
     auto c = c_from_id(id);
     int mon = hypriso->monitor_from_cursor();
     if (c->snapped) {
@@ -2760,8 +2766,9 @@ void on_window_open(int id) {
                     //border(b, {1, 1, 1, .2}, size, 0, round * s);
                 }
                 if (hypriso->dragging && data->id == hypriso->dragging_id) {
-                    if (rdata->stage == (int) STAGE::RENDER_LAST_MOMENT) {
+                    //if (rdata->stage == (int) STAGE::RENDER_LAST_MOMENT) {
                         //rect(c->real_bounds, {1, 1, 0, 1});
+                        /*
                         auto b = c->real_bounds;
                         auto client = c_from_id(data->id);
                         auto full_b = bounds_full(client);
@@ -2771,8 +2778,17 @@ void on_window_open(int id) {
                         xb.y -= (xb.y - full_b.y);
                         xb.scale(s);
                         full_b.scale(s);
-                        //hypriso->draw_deco_thumbnail(data->id, full_b);
-                    }
+                        */
+                        auto client = c_from_id(hypriso->dragging_id);
+                        auto xb = bounds(client);
+                        xb.scale(s);
+                        auto mou = mouse();
+                        xb.x = mou.x;
+                        xb.y = mou.y;
+                        xb.w = 800;
+                        xb.h = 800;
+                        //hypriso->draw_raw_deco_thumbnail(data->id, root->real_bounds);
+                    //}
                 }
             };
             resize->user_data = c->user_data;
@@ -2805,6 +2821,7 @@ void on_window_open(int id) {
                 auto data = (ClientData *) c->parent->user_data;
                 auto rdata = (RootData *) root->user_data;
                 auto s = scale(rdata->id);
+                c->wanted_bounds.h = titlebar_h * s;
                 auto client = c_from_id(data->id);
                 auto titledata = (TitleData *) c->user_data;
                 if (data->id == rdata->active_id) {
@@ -2935,6 +2952,7 @@ void on_window_open(int id) {
                     tab_next_window();
                     alt_tab_menu->change_showing(false);
                 }
+                hypriso->bring_to_front(data->id, true);
             };
             auto max = title->child(100, FILL_SPACE);
             max->user_data = new IconData;
@@ -2994,6 +3012,7 @@ void on_window_open(int id) {
                 if (cdata) {
                     toggle_maximize(cdata->id);
                 }
+                hypriso->bring_to_front(cdata->id, true);
             };
             auto close = title->child(100, FILL_SPACE);
             close->user_data = new IconData;

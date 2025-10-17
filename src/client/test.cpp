@@ -1,4 +1,5 @@
 // wl_input.c
+#include <cstddef>
 #define _POSIX_C_SOURCE 200809L
 #include <poll.h>    // for POLLIN, POLLOUT, POLLERR, etc.
 #include <errno.h>   // for EAGAIN, EINTR, and other errno constants
@@ -12,7 +13,13 @@
 #include <sys/stat.h>
 
 #include <wayland-client.h>
-#include "xdg-shell-client-protocol.h" // generated via wayland-scanner
+
+extern "C" {
+#define namespace namespace_
+#include "wlr-layer-shell-unstable-v1-client-protocol.h"
+#undef namespace
+#include "xdg-shell-client-protocol.h"
+}
 
 #include <xkbcommon/xkbcommon.h>
 
@@ -23,6 +30,8 @@ struct display {
     struct wl_shm *shm;
     struct wl_seat *seat;
     struct xdg_wm_base *wm_base;
+    struct zwlr_layer_shell_v1 *layer_shell;
+    struct zwlr_layer_surface_v1 *layer_surface;
     struct wl_surface *surface;
     struct xdg_surface *xdg_surface;
     struct xdg_toplevel *xdg_toplevel;
@@ -296,6 +305,20 @@ static const struct xdg_wm_base_listener wm_base_listener = {
     .ping = xdg_wm_base_ping
 };
 
+static void configure_layer_shell(void *data,
+                        		  struct zwlr_layer_surface_v1 *surf,
+                        		  uint32_t serial,
+                        		  uint32_t width,
+                            	  uint32_t height) {
+    zwlr_layer_surface_v1_ack_configure(surf, serial); 
+}
+
+static const struct zwlr_layer_surface_v1_listener layer_shell_listener = {
+    .configure = configure_layer_shell,
+    .closed = nullptr
+};
+
+
 /* ---- registry ---- */
 static void registry_handle_global(void *data, struct wl_registry *registry,
                                    uint32_t id, const char *interface, uint32_t version) {
@@ -311,6 +334,8 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
     } else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
         d->wm_base = (xdg_wm_base *) wl_registry_bind(registry, id, &xdg_wm_base_interface, 1);
         xdg_wm_base_add_listener(d->wm_base, &wm_base_listener, d);
+    } else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
+        d->layer_shell = (zwlr_layer_shell_v1 *) wl_registry_bind(registry, id, &zwlr_layer_shell_v1_interface, 5);
     }
 }
 
@@ -370,10 +395,34 @@ int open_dock() {
     d->width = 320; d->height = 240;
 
     d->surface = wl_compositor_create_surface(d->compositor);
-    d->xdg_surface = xdg_wm_base_get_xdg_surface(d->wm_base, d->surface);
-    d->xdg_toplevel = xdg_surface_get_toplevel(d->xdg_surface);
-    xdg_toplevel_add_listener(d->xdg_toplevel, &xdg_toplevel_listener, NULL);
-    xdg_toplevel_set_title(d->xdg_toplevel, "wl-input - minimal");
+            /*
+
+
+        */
+    //d->xdg_surface = xdg_wm_base_get_xdg_surface(d->wm_base, d->surface);
+    //d->xdg_toplevel = xdg_surface_get_toplevel(d->xdg_surface);
+   
+    //xdg_toplevel_add_listener(d->xdg_toplevel, &xdg_toplevel_listener, NULL);
+    //xdg_toplevel_set_title(d->xdg_toplevel, "wl-input - minimal");
+
+    d->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
+        d->layer_shell,
+        d->surface,
+        NULL, // output (NULL = compositor decides)
+        ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM, // or TOP / OVERLAY / BACKGROUND
+        "Mylardock" // namespace (used for compositor config)
+    );
+
+    zwlr_layer_surface_v1_set_size(d->layer_surface, 300, 40); // width auto, height 50
+    zwlr_layer_surface_v1_set_anchor(d->layer_surface,
+        ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+        ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
+        ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+    zwlr_layer_surface_v1_set_keyboard_interactivity(d->layer_surface, ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+
+    zwlr_layer_surface_v1_set_exclusive_zone(d->layer_surface, 40);
+
+    zwlr_layer_surface_v1_add_listener(d->layer_surface, &layer_shell_listener, d);
 
     wl_surface_commit(d->surface);
 
@@ -460,4 +509,9 @@ void wake_display_loop() {
 void stop_dock() {
     running = false;
     wake_display_loop();    
+}
+
+int main() {
+    start_dock();   
+    return 0;
 }

@@ -21,10 +21,16 @@
 #include <hyprland/src/helpers/Color.hpp>
 #include <kde-server-decoration.hpp>
 //#include <hyprland/protocols/kde-server-decoration.hpp>
-#include <hyprland/protocols/wlr-layer-shell-unstable-v1.hpp>
+//#include <hyprland/protocols/wlr-layer-shell-unstable-v1.hpp>
 
 #include <hyprland/src/render/pass/ShadowPassElement.hpp>
 #include <hyprland/src/render/pass/RendererHintsPassElement.hpp>
+#include <hyprland/src/desktop/LayerSurface.hpp>
+#include <hyprland/src/protocols/core/DataDevice.hpp>
+#include <hyprland/src/protocols/PointerConstraints.hpp>
+#include <hyprland/src/protocols/RelativePointer.hpp>
+#include <hyprland/src/protocols/SessionLock.hpp>
+#include <hyprland/src/protocols/LayerShell.hpp>
 
 #define private public
 #include <hyprland/src/render/pass/SurfacePassElement.hpp>
@@ -34,6 +40,7 @@
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/managers/KeybindManager.hpp>
+#include <hyprland/src/managers/input/InputManager.hpp>
 #undef private
 
 #include <hyprland/src/xwayland/XWayland.hpp>
@@ -46,7 +53,7 @@
 #include <hyprland/src/render/pass/RectPassElement.hpp>
 #include <hyprland/src/render/pass/BorderPassElement.hpp>
 #include <hyprland/src/managers/HookSystemManager.hpp>
-#include <hyprland/src/managers/input/InputManager.hpp>
+#include <hyprland/src/managers/PointerManager.hpp>
 #include <hyprland/src/managers/LayoutManager.hpp>
 #include <hyprland/src/SharedDefs.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
@@ -202,9 +209,12 @@ PHLWINDOW get_window_from_mouse() {
 }
 
 void on_open_monitor(PHLMONITOR m);
+void interleave_floating_and_tiled_windows();
 
 static void float_target(PHLWINDOW PWINDOW) {
     if (!PWINDOW)
+        return;
+    if (PWINDOW->m_isFloating)
         return;
 
     // remove drag status
@@ -635,26 +645,27 @@ void hook_RenderWindow(void* thisptr, PHLWINDOW pWindow, PHLMONITOR pMonitor, co
 }
 
 inline CFunctionHook* g_pWindowRoundingHook = nullptr;
-typedef float (*origWindowRoundingFunc)(void*);
+typedef float (*origWindowRoundingFunc)(CWindow *);
 float hook_WindowRounding(void* thisptr) {
-    float result = (*(origWindowRoundingFunc)g_pWindowRoundingHook->m_original)(thisptr);
+    float result = (*(origWindowRoundingFunc)g_pWindowRoundingHook->m_original)((CWindow *)thisptr);
     return result;
 }
 
 inline CFunctionHook* g_pWindowRoundingPowerHook = nullptr;
-typedef float (*origWindowRoundingPowerFunc)(void*);
+typedef float (*origWindowRoundingPowerFunc)(CWindow *);
 float hook_WindowRoundingPower(void* thisptr) {
-    float result = (*(origWindowRoundingPowerFunc)g_pWindowRoundingPowerHook->m_original)(thisptr);
+    float result = (*(origWindowRoundingPowerFunc)g_pWindowRoundingPowerHook->m_original)((CWindow *)thisptr);
     return result;
 }
 
 void hook_render_functions() {
     //return;
+    /*
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "rounding");
         for (auto m : METHODS) {
             if (m.signature.find("CWindow") != std::string::npos) {
-                g_pWindowRoundingHook       = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_WindowRounding);
+                g_pWindowRoundingHook       = HyprlandAPI::createFunctionHook(globals->api, m.address, (void*)&hook_WindowRounding);
                 g_pWindowRoundingHook->hook();
                 break;
             }
@@ -664,12 +675,13 @@ void hook_render_functions() {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "roundingPower");
         for (auto m : METHODS) {
             if (m.signature.find("CWindow") != std::string::npos) {
-                g_pWindowRoundingPowerHook       = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_WindowRoundingPower);
+                g_pWindowRoundingPowerHook       = HyprlandAPI::createFunctionHook(globals->api, m.address, (void*)&hook_WindowRoundingPower);
                 g_pWindowRoundingPowerHook->hook();
                 break;
             }
         }
     }
+    */
  
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderWindow");
@@ -684,14 +696,6 @@ void hook_render_functions() {
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderWorkspace");
         pRenderWorkspace = METHODS[0].address;
-    }
-    {
-        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderWorkspaceWindows");
-        pRenderWorkspaceWindows = METHODS[0].address;
-    }
-    {
-        static auto METHODS         = HyprlandAPI::findFunctionsByName(globals->api, "renderWorkspaceWindowsFullscreen");
-        pRenderWorkspaceWindowsFullscreen = METHODS[0].address;
     }
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderMonitor");
@@ -934,6 +938,7 @@ void HyprIso::create_hooks_and_callbacks() {
     detect_move_resize_requests();    
     overwrite_min();
     hook_render_functions();
+    interleave_floating_and_tiled_windows();
 }
 
 void HyprIso::end() {
@@ -1628,6 +1633,7 @@ TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA c
 
 void draw_texture(TextureInfo info, int x, int y, float a, float clip_w) {
     for (auto t : hyprtextures) {
+        
        if (t->info.id == info.id) {
             CTexPassElement::SRenderData data;
             data.tex = t->texture;
@@ -2304,11 +2310,11 @@ void screenshot_window_with_decos(CFramebuffer* buffer, PHLWINDOW w) {
     //makeSnapshot(w, buffer);
     //return;
     //return;
-    //if (!buffer || !pRenderWindow)
-        //return;
+    if (!buffer || !pRenderWindow || !w)
+        return;
     const auto m = w->m_monitor.lock();
-    //if (!m || !m->m_output || m->m_pixelSize.x <= 0 || m->m_pixelSize.y <= 0)
-        //return;
+    if (!m || !m->m_output || m->m_pixelSize.x <= 0 || m->m_pixelSize.y <= 0)
+        return;
     CRegion fakeDamage{0, 0, INT16_MAX, INT16_MAX};
 
     g_pHyprRenderer->makeEGLCurrent();
@@ -2359,8 +2365,9 @@ void screenshot_window_with_decos(CFramebuffer* buffer, PHLWINDOW w) {
 }
 
 void screenshot_window(HyprWindow *hw, PHLWINDOW w, bool include_decorations) {
+    
     //return;
-    if (!pRenderWindow)
+    if (!pRenderWindow || !w.get())
         return;
     const auto m = w->m_monitor.lock();
     if (!m || !m->m_output || m->m_pixelSize.x <= 0 || m->m_pixelSize.y <= 0)
@@ -2535,7 +2542,7 @@ void HyprIso::draw_thumbnail(int id, Bounds b, int rounding, float roundingPower
     // return;
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
-            if (hw->fb) {
+            if (hw->fb && hw->fb->isAllocated()) {
                 bool clip = this->clip;
                 Bounds clipbox = this->clipbox;
                 AnyPass::AnyData anydata([id, b, hw, rounding, roundingPower, cornermask, alpha, clip, clipbox](AnyPass* pass) {
@@ -2571,7 +2578,7 @@ void HyprIso::draw_deco_thumbnail(int id, Bounds b, int rounding, float rounding
     // return;
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
-            if (hw->deco_fb) {
+            if (hw->deco_fb && hw->deco_fb->isAllocated()) {
                 AnyPass::AnyData anydata([id, b, hw, rounding, roundingPower, cornermask](AnyPass* pass) {
                     auto tex = hw->deco_fb->getTexture();
                     auto box = tocbox(b);
@@ -2595,6 +2602,36 @@ void HyprIso::draw_deco_thumbnail(int id, Bounds b, int rounding, float rounding
         }
     }
 }
+
+void HyprIso::draw_raw_deco_thumbnail(int id, Bounds b, int rounding, float roundingPower, int cornermask) {
+    // return;
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            if (hw->deco_fb && hw->deco_fb->isAllocated()) {
+                AnyPass::AnyData anydata([id, b, hw, rounding, roundingPower, cornermask](AnyPass* pass) {
+                    auto tex = hw->deco_fb->getTexture();
+                    auto box = tocbox(b);
+                    CHyprOpenGLImpl::STextureRenderData data;
+                    data.allowCustomUV = true;
+                    data.round = rounding;
+                    data.roundingPower = roundingPower;
+                    //g_pHyprOpenGL->m_renderData.primarySurfaceUVTopLeft     = Vector2D(0, 0);
+                    //g_pHyprOpenGL->m_renderData.primarySurfaceUVBottomRight = Vector2D(
+                        //std::min(hw->w_decos_size.w / hw->deco_fb->m_size.x, 1.0), 
+                        //std::min(hw->w_decos_size.h / hw->deco_fb->m_size.y, 1.0) 
+                    //);
+                    set_rounding(cornermask);
+                    g_pHyprOpenGL->renderTexture(tex, box, data);
+                    set_rounding(0);
+                    g_pHyprOpenGL->m_renderData.primarySurfaceUVTopLeft     = Vector2D(-1, -1);
+                    g_pHyprOpenGL->m_renderData.primarySurfaceUVBottomRight = Vector2D(-1, -1);
+                });
+                g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
+            }
+        }
+    }
+}
+
 
 void HyprIso::set_zoom_factor(float amount) {
     Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("cursor:zoom_factor");
@@ -2801,4 +2838,763 @@ bool HyprIso::has_focus(int client) {
     return false;
 }
 
+PHLWINDOW vectorToWindowUnified(const Vector2D& pos, uint8_t properties, PHLWINDOW pIgnoreWindow) {
+    const auto  PMONITOR          = g_pCompositor->getMonitorFromVector(pos);
+    static auto PRESIZEONBORDER   = CConfigValue<Hyprlang::INT>("general:resize_on_border");
+    static auto PBORDERSIZE       = CConfigValue<Hyprlang::INT>("general:border_size");
+    static auto PBORDERGRABEXTEND = CConfigValue<Hyprlang::INT>("general:extend_border_grab_area");
+    static auto PSPECIALFALLTHRU  = CConfigValue<Hyprlang::INT>("input:special_fallthrough");
+    const auto  BORDER_GRAB_AREA  = *PRESIZEONBORDER ? *PBORDERSIZE + *PBORDERGRABEXTEND : 0;
+    const bool  ONLY_PRIORITY     = properties & FOCUS_PRIORITY;
 
+    // pinned windows on top of floating regardless
+    if (properties & ALLOW_FLOATING) {
+        for (auto const& w : g_pCompositor->m_windows | std::views::reverse) {
+            if (ONLY_PRIORITY && !w->priorityFocus())
+                continue;
+
+            if (w->m_isFloating && w->m_isMapped && !w->isHidden() && !w->m_X11ShouldntFocus && w->m_pinned && !w->m_windowData.noFocus.valueOrDefault() && w != pIgnoreWindow) {
+                const auto BB  = w->getWindowBoxUnified(properties);
+                CBox       box = BB.copy().expand(!w->isX11OverrideRedirect() ? BORDER_GRAB_AREA : 0);
+                if (box.containsPoint(g_pPointerManager->position()))
+                    return w;
+
+                if (!w->m_isX11) {
+                    if (w->hasPopupAt(pos))
+                        return w;
+                }
+            }
+        }
+    }
+
+    auto windowForWorkspace = [&](bool special) -> PHLWINDOW {
+        auto floating = [&](bool aboveFullscreen) -> PHLWINDOW {
+            for (auto const& w : g_pCompositor->m_windows | std::views::reverse) {
+
+                if (special && !w->onSpecialWorkspace()) // because special floating may creep up into regular
+                    continue;
+
+                if (!w->m_workspace)
+                    continue;
+
+                if (ONLY_PRIORITY && !w->priorityFocus())
+                    continue;
+
+                const auto PWINDOWMONITOR = w->m_monitor.lock();
+
+                // to avoid focusing windows behind special workspaces from other monitors
+                if (!*PSPECIALFALLTHRU && PWINDOWMONITOR && PWINDOWMONITOR->m_activeSpecialWorkspace && w->m_workspace != PWINDOWMONITOR->m_activeSpecialWorkspace) {
+                    const auto BB = w->getWindowBoxUnified(properties);
+                    if (BB.x >= PWINDOWMONITOR->m_position.x && BB.y >= PWINDOWMONITOR->m_position.y &&
+                        BB.x + BB.width <= PWINDOWMONITOR->m_position.x + PWINDOWMONITOR->m_size.x && BB.y + BB.height <= PWINDOWMONITOR->m_position.y + PWINDOWMONITOR->m_size.y)
+                        continue;
+                }
+
+                if (w->m_isMapped && w->m_workspace->isVisible() && !w->isHidden() && !w->m_windowData.noFocus.valueOrDefault() &&
++                    w != pIgnoreWindow) {
+                    // OR windows should add focus to parent
+                    if (w->m_X11ShouldntFocus && !w->isX11OverrideRedirect())
+                        continue;
+
+                    const auto BB  = w->getWindowBoxUnified(properties);
+                    CBox       box = BB.copy().expand(!w->isX11OverrideRedirect() ? BORDER_GRAB_AREA : 0);
+                    if (box.containsPoint(g_pPointerManager->position())) {
+
+                        if (w->m_isX11 && w->isX11OverrideRedirect() && !w->m_xwaylandSurface->wantsFocus()) {
+                            // Override Redirect
+                            return g_pCompositor->m_lastWindow.lock(); // we kinda trick everything here.
+                            // TODO: this is wrong, we should focus the parent, but idk how to get it considering it's nullptr in most cases.
+                        }
+
+                        return w;
+                    }
+
+                    if (!w->m_isX11) {
+                        if (w->hasPopupAt(pos))
+                            return w;
+                    }
+                }
+            }
+
+            return nullptr;
+        };
+
+        if (properties & ALLOW_FLOATING) {
+            // first loop over floating cuz they're above, m_lWindows should be sorted bottom->top, for tiled it doesn't matter.
+            auto found = floating(true);
+            if (found)
+                return found;
+        }
+
+        if (properties & FLOATING_ONLY) {
+            //return floating(false);
+            return nullptr;
+        }
+
+        const WORKSPACEID WSPID      = special ? PMONITOR->activeSpecialWorkspaceID() : PMONITOR->activeWorkspaceID();
+        const auto        PWORKSPACE = g_pCompositor->getWorkspaceByID(WSPID);
+
+        if (PWORKSPACE->m_hasFullscreenWindow && !(properties & SKIP_FULLSCREEN_PRIORITY) && !ONLY_PRIORITY)
+            return PWORKSPACE->getFullscreenWindow();
+
+        auto found = floating(false);
+        if (found)
+            return found;
+
+        // for windows, we need to check their extensions too, first.
+        for (auto const& w : g_pCompositor->m_windows) {
+            if (ONLY_PRIORITY && !w->priorityFocus())
+                continue;
+
+            if (special != w->onSpecialWorkspace())
+                continue;
+
+            if (!w->m_workspace)
+                continue;
+
+            if (!w->m_isX11 && !w->m_isFloating && w->m_isMapped && w->workspaceID() == WSPID && !w->isHidden() && !w->m_X11ShouldntFocus &&
+                !w->m_windowData.noFocus.valueOrDefault() && w != pIgnoreWindow) {
+                if (w->hasPopupAt(pos))
+                    return w;
+            }
+        }
+
+        for (auto const& w : g_pCompositor->m_windows) {
+            if (ONLY_PRIORITY && !w->priorityFocus())
+                continue;
+
+            if (special != w->onSpecialWorkspace())
+                continue;
+
+            if (!w->m_workspace)
+                continue;
+
+            if (!w->m_isFloating && w->m_isMapped && w->workspaceID() == WSPID && !w->isHidden() && !w->m_X11ShouldntFocus && !w->m_windowData.noFocus.valueOrDefault() &&
+                w != pIgnoreWindow) {
+                CBox box = (properties & USE_PROP_TILED) ? w->getWindowBoxUnified(properties) : CBox{w->m_position, w->m_size};
+                if (box.containsPoint(pos))
+                    return w;
+            }
+        }
+
+        return nullptr;
+    };
+
+    // special workspace
+    if (PMONITOR->m_activeSpecialWorkspace && !*PSPECIALFALLTHRU)
+        return windowForWorkspace(true);
+
+    if (PMONITOR->m_activeSpecialWorkspace) {
+        const auto PWINDOW = windowForWorkspace(true);
+
+        if (PWINDOW)
+            return PWINDOW;
+    }
+
+    return windowForWorkspace(false);
+}
+
+
+void mouseMoveUnified(uint32_t time, bool refocus, bool mouse, std::optional<Vector2D> overridePos) {
+    g_pInputManager->m_lastInputMouse = mouse;
+
+    if (!g_pCompositor->m_readyToProcess || g_pCompositor->m_isShuttingDown || g_pCompositor->m_unsafeState)
+        return;
+
+    Vector2D const mouseCoords        = overridePos.value_or(g_pInputManager->getMouseCoordsInternal());
+    auto const     MOUSECOORDSFLOORED = mouseCoords.floor();
+
+    if (MOUSECOORDSFLOORED == g_pInputManager->m_lastCursorPosFloored && !refocus)
+        return;
+
+    static auto PFOLLOWMOUSE          = CConfigValue<Hyprlang::INT>("input:follow_mouse");
+    static auto PFOLLOWMOUSETHRESHOLD = CConfigValue<Hyprlang::FLOAT>("input:follow_mouse_threshold");
+    static auto PMOUSEREFOCUS         = CConfigValue<Hyprlang::INT>("input:mouse_refocus");
+    static auto PFOLLOWONDND          = CConfigValue<Hyprlang::INT>("misc:always_follow_on_dnd");
+    static auto PFLOATBEHAVIOR        = CConfigValue<Hyprlang::INT>("input:float_switch_override_focus");
+    static auto PMOUSEFOCUSMON        = CConfigValue<Hyprlang::INT>("misc:mouse_move_focuses_monitor");
+    static auto PRESIZEONBORDER       = CConfigValue<Hyprlang::INT>("general:resize_on_border");
+    static auto PRESIZECURSORICON     = CConfigValue<Hyprlang::INT>("general:hover_icon_on_border");
+
+//CWLDataDeviceProtocol
+
+    const auto  FOLLOWMOUSE = *PFOLLOWONDND && PROTO::data->dndActive() ? 1 : *PFOLLOWMOUSE;
+
+    if (FOLLOWMOUSE == 1 && g_pInputManager->m_lastCursorMovement.getSeconds() < 0.5)
+        g_pInputManager->m_mousePosDelta += MOUSECOORDSFLOORED.distance(g_pInputManager->m_lastCursorPosFloored);
+    else
+        g_pInputManager->m_mousePosDelta = 0;
+
+    g_pInputManager->m_foundSurfaceToFocus.reset();
+    g_pInputManager->m_foundLSToFocus.reset();
+    g_pInputManager->m_foundWindowToFocus.reset();
+    SP<CWLSurfaceResource> foundSurface;
+    Vector2D               surfaceCoords;
+    Vector2D               surfacePos = Vector2D(-1337, -1337);
+    PHLWINDOW              pFoundWindow;
+    PHLLS                  pFoundLayerSurface;
+
+    EMIT_HOOK_EVENT_CANCELLABLE("mouseMove", MOUSECOORDSFLOORED);
+
+    g_pInputManager->m_lastCursorPosFloored = MOUSECOORDSFLOORED;
+
+    const auto PMONITOR = g_pInputManager->isLocked() && g_pCompositor->m_lastMonitor ? g_pCompositor->m_lastMonitor.lock() : g_pCompositor->getMonitorFromCursor();
+
+    // this can happen if there are no displays hooked up to Hyprland
+    if (PMONITOR == nullptr)
+        return;
+
+    if (PMONITOR->m_cursorZoom->value() != 1.f)
+        g_pHyprRenderer->damageMonitor(PMONITOR);
+
+    bool skipFrameSchedule = PMONITOR->shouldSkipScheduleFrameOnMouseEvent();
+
+    if (!PMONITOR->m_solitaryClient.lock() && g_pHyprRenderer->shouldRenderCursor() && g_pPointerManager->softwareLockedFor(PMONITOR->m_self.lock()) && !skipFrameSchedule)
+        g_pCompositor->scheduleFrameForMonitor(PMONITOR, Aquamarine::IOutput::AQ_SCHEDULE_CURSOR_MOVE);
+
+    // constraints
+    if (!g_pSeatManager->m_mouse.expired() && g_pInputManager->isConstrained()) {
+        const auto SURF       = CWLSurface::fromResource(g_pCompositor->m_lastFocus.lock());
+        const auto CONSTRAINT = SURF ? SURF->constraint() : nullptr;
+
+        if (CONSTRAINT) {
+            if (CONSTRAINT->isLocked()) {
+                const auto HINT = CONSTRAINT->logicPositionHint();
+                g_pCompositor->warpCursorTo(HINT, true);
+            } else {
+                const auto RG           = CONSTRAINT->logicConstraintRegion();
+                const auto CLOSEST      = RG.closestPoint(mouseCoords);
+                const auto BOX          = SURF->getSurfaceBoxGlobal();
+                const auto CLOSESTLOCAL = (CLOSEST - (BOX.has_value() ? BOX->pos() : Vector2D{})) * (SURF->getWindow() ? SURF->getWindow()->m_X11SurfaceScaledBy : 1.0);
+
+                g_pCompositor->warpCursorTo(CLOSEST, true);
+                g_pSeatManager->sendPointerMotion(time, CLOSESTLOCAL);
+                PROTO::relativePointer->sendRelativeMotion(sc<uint64_t>(time) * 1000, {}, {});
+            }
+
+            return;
+
+        } else
+            Debug::log(ERR, "BUG THIS: Null SURF/CONSTRAINT in mouse refocus. Ignoring constraints. {:x} {:x}", rc<uintptr_t>(SURF.get()), rc<uintptr_t>(CONSTRAINT.get()));
+    }
+
+    if (PMONITOR != g_pCompositor->m_lastMonitor && (*PMOUSEFOCUSMON || refocus) && g_pInputManager->m_forcedFocus.expired())
+        g_pCompositor->setActiveMonitor(PMONITOR);
+
+    // check for windows that have focus priority like our permission popups
+    pFoundWindow = g_pCompositor->vectorToWindowUnified(mouseCoords, FOCUS_PRIORITY);
+    if (pFoundWindow)
+        foundSurface = g_pCompositor->vectorWindowToSurface(mouseCoords, pFoundWindow, surfaceCoords);
+
+    if (!foundSurface && g_pSessionLockManager->isSessionLocked()) {
+
+        // set keyboard focus on session lock surface regardless of layers
+        const auto PSESSIONLOCKSURFACE = g_pSessionLockManager->getSessionLockSurfaceForMonitor(PMONITOR->m_id);
+        const auto foundLockSurface    = PSESSIONLOCKSURFACE ? PSESSIONLOCKSURFACE->surface->surface() : nullptr;
+
+        g_pCompositor->focusSurface(foundLockSurface);
+
+        // search for interactable abovelock surfaces for pointer focus, or use session lock surface if not found
+        for (auto& lsl : PMONITOR->m_layerSurfaceLayers | std::views::reverse) {
+            foundSurface = g_pCompositor->vectorToLayerSurface(mouseCoords, &lsl, &surfaceCoords, &pFoundLayerSurface, true);
+
+            if (foundSurface)
+                break;
+        }
+
+        if (!foundSurface) {
+            surfaceCoords = mouseCoords - PMONITOR->m_position;
+            foundSurface  = foundLockSurface;
+        }
+
+        if (refocus) {
+            g_pInputManager->m_foundLSToFocus      = pFoundLayerSurface;
+            g_pInputManager->m_foundWindowToFocus  = pFoundWindow;
+            g_pInputManager->m_foundSurfaceToFocus = foundSurface;
+        }
+
+        g_pSeatManager->setPointerFocus(foundSurface, surfaceCoords);
+        g_pSeatManager->sendPointerMotion(time, surfaceCoords);
+
+        return;
+    }
+
+    PHLWINDOW forcedFocus = g_pInputManager->m_forcedFocus.lock();
+
+    if (!forcedFocus)
+        forcedFocus = g_pCompositor->getForceFocus();
+
+    if (forcedFocus && !foundSurface) {
+        pFoundWindow = forcedFocus;
+        surfacePos   = pFoundWindow->m_realPosition->value();
+        foundSurface = pFoundWindow->m_wlSurface->resource();
+    }
+
+    // if we are holding a pointer button,
+    // and we're not dnd-ing, don't refocus. Keep focus on last surface.
+    if (!PROTO::data->dndActive() && !g_pInputManager->m_currentlyHeldButtons.empty() && g_pCompositor->m_lastFocus && g_pCompositor->m_lastFocus->m_mapped &&
+        g_pSeatManager->m_state.pointerFocus && !g_pInputManager->m_hardInput) {
+        foundSurface = g_pSeatManager->m_state.pointerFocus.lock();
+
+        // IME popups aren't desktop-like elements
+        // TODO: make them.
+        CInputPopup* foundPopup = g_pInputManager->m_relay.popupFromSurface(foundSurface);
+        if (foundPopup) {
+            surfacePos             = foundPopup->globalBox().pos();
+            g_pInputManager->m_focusHeldByButtons   = true;
+            g_pInputManager->m_refocusHeldByButtons = refocus;
+        } else {
+            auto HLSurface = CWLSurface::fromResource(foundSurface);
+
+            if (HLSurface) {
+                const auto BOX = HLSurface->getSurfaceBoxGlobal();
+
+                if (BOX) {
+                    const auto PWINDOW = HLSurface->getWindow();
+                    surfacePos         = BOX->pos();
+                    pFoundLayerSurface = HLSurface->getLayer();
+                    if (!pFoundLayerSurface)
+                        pFoundWindow = !PWINDOW || PWINDOW->isHidden() ? g_pCompositor->m_lastWindow.lock() : PWINDOW;
+                } else // reset foundSurface, find one normally
+                    foundSurface = nullptr;
+            } else // reset foundSurface, find one normally
+                foundSurface = nullptr;
+        }
+    }
+
+    g_pLayoutManager->getCurrentLayout()->onMouseMove(g_pInputManager->getMouseCoordsInternal());
+
+    // forced above all
+    if (!g_pInputManager->m_exclusiveLSes.empty()) {
+        if (!foundSurface)
+            foundSurface = g_pCompositor->vectorToLayerSurface(mouseCoords, &g_pInputManager->m_exclusiveLSes, &surfaceCoords, &pFoundLayerSurface);
+
+        if (!foundSurface) {
+            foundSurface = (*g_pInputManager->m_exclusiveLSes.begin())->m_surface->resource();
+            surfacePos   = (*g_pInputManager->m_exclusiveLSes.begin())->m_realPosition->goal();
+        }
+    }
+
+    if (!foundSurface)
+        foundSurface = g_pCompositor->vectorToLayerPopupSurface(mouseCoords, PMONITOR, &surfaceCoords, &pFoundLayerSurface);
+
+    // overlays are above fullscreen
+    if (!foundSurface)
+        foundSurface = g_pCompositor->vectorToLayerSurface(mouseCoords, &PMONITOR->m_layerSurfaceLayers[ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY], &surfaceCoords, &pFoundLayerSurface);
+
+    // also IME popups
+    if (!foundSurface) {
+        auto popup = g_pInputManager->m_relay.popupFromCoords(mouseCoords);
+        if (popup) {
+            foundSurface = popup->getSurface();
+            surfacePos   = popup->globalBox().pos();
+        }
+    }
+
+    // also top layers
+    if (!foundSurface)
+        foundSurface = g_pCompositor->vectorToLayerSurface(mouseCoords, &PMONITOR->m_layerSurfaceLayers[ZWLR_LAYER_SHELL_V1_LAYER_TOP], &surfaceCoords, &pFoundLayerSurface);
+
+    // then, we check if the workspace doesn't have a fullscreen window
+    const auto PWORKSPACE   = PMONITOR->m_activeSpecialWorkspace ? PMONITOR->m_activeSpecialWorkspace : PMONITOR->m_activeWorkspace;
+    const auto PWINDOWIDEAL = g_pCompositor->vectorToWindowUnified(mouseCoords, RESERVED_EXTENTS | INPUT_EXTENTS | ALLOW_FLOATING);
+    if (PWORKSPACE->m_hasFullscreenWindow && !foundSurface && PWORKSPACE->m_fullscreenMode == FSMODE_FULLSCREEN) {
+        pFoundWindow = PWORKSPACE->getFullscreenWindow();
+
+        if (!pFoundWindow) {
+            // what the fuck, somehow happens occasionally??
+            PWORKSPACE->m_hasFullscreenWindow = false;
+            return;
+        }
+
+        if (PWINDOWIDEAL &&
+            ((PWINDOWIDEAL->m_isFloating && (PWINDOWIDEAL->m_createdOverFullscreen || PWINDOWIDEAL->m_pinned)) /* floating over fullscreen or pinned */
+             || (PMONITOR->m_activeSpecialWorkspace == PWINDOWIDEAL->m_workspace) /* on an open special workspace */))
+            pFoundWindow = PWINDOWIDEAL;
+
+        if (!pFoundWindow->m_isX11) {
+            foundSurface = g_pCompositor->vectorWindowToSurface(mouseCoords, pFoundWindow, surfaceCoords);
+            surfacePos   = Vector2D(-1337, -1337);
+        } else {
+            foundSurface = pFoundWindow->m_wlSurface->resource();
+            surfacePos   = pFoundWindow->m_realPosition->value();
+        }
+    }
+
+    // then windows
+    if (!foundSurface) {
+        if (PWORKSPACE->m_hasFullscreenWindow && PWORKSPACE->m_fullscreenMode == FSMODE_MAXIMIZED) {
+            if (!foundSurface) {
+                if (PMONITOR->m_activeSpecialWorkspace) {
+                    if (pFoundWindow != PWINDOWIDEAL)
+                        pFoundWindow = g_pCompositor->vectorToWindowUnified(mouseCoords, RESERVED_EXTENTS | INPUT_EXTENTS | ALLOW_FLOATING);
+
+                    if (pFoundWindow && !pFoundWindow->onSpecialWorkspace()) {
+                        pFoundWindow = PWORKSPACE->getFullscreenWindow();
+                    }
+                } else {
+                    // if we have a maximized window, allow focusing on a bar or something if in reserved area.
+                    if (g_pCompositor->isPointOnReservedArea(mouseCoords, PMONITOR)) {
+                        foundSurface = g_pCompositor->vectorToLayerSurface(mouseCoords, &PMONITOR->m_layerSurfaceLayers[ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM], &surfaceCoords,
+                                                                           &pFoundLayerSurface);
+                    }
+
+                    if (!foundSurface) {
+                        if (pFoundWindow != PWINDOWIDEAL)
+                            pFoundWindow = g_pCompositor->vectorToWindowUnified(mouseCoords, RESERVED_EXTENTS | INPUT_EXTENTS | ALLOW_FLOATING);
+
+                        if (!(pFoundWindow && (pFoundWindow->m_isFloating && (pFoundWindow->m_createdOverFullscreen || pFoundWindow->m_pinned))))
+                            pFoundWindow = PWORKSPACE->getFullscreenWindow();
+                    }
+                }
+            }
+
+        } else {
+            if (pFoundWindow != PWINDOWIDEAL)
+                pFoundWindow = g_pCompositor->vectorToWindowUnified(mouseCoords, RESERVED_EXTENTS | INPUT_EXTENTS | ALLOW_FLOATING);
+        }
+
+        if (pFoundWindow) {
+            if (!pFoundWindow->m_isX11) {
+                foundSurface = g_pCompositor->vectorWindowToSurface(mouseCoords, pFoundWindow, surfaceCoords);
+                if (!foundSurface) {
+                    foundSurface = pFoundWindow->m_wlSurface->resource();
+                    surfacePos   = pFoundWindow->m_realPosition->value();
+                }
+            } else {
+                foundSurface = pFoundWindow->m_wlSurface->resource();
+                surfacePos   = pFoundWindow->m_realPosition->value();
+            }
+        }
+    }
+
+    // then surfaces below
+    if (!foundSurface)
+        foundSurface = g_pCompositor->vectorToLayerSurface(mouseCoords, &PMONITOR->m_layerSurfaceLayers[ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM], &surfaceCoords, &pFoundLayerSurface);
+
+    if (!foundSurface)
+        foundSurface = g_pCompositor->vectorToLayerSurface(mouseCoords, &PMONITOR->m_layerSurfaceLayers[ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND], &surfaceCoords, &pFoundLayerSurface);
+
+    if (g_pPointerManager->softwareLockedFor(PMONITOR->m_self.lock()) > 0 && !skipFrameSchedule)
+        g_pCompositor->scheduleFrameForMonitor(g_pCompositor->m_lastMonitor.lock(), Aquamarine::IOutput::AQ_SCHEDULE_CURSOR_MOVE);
+
+    // FIXME: This will be disabled during DnD operations because we do not exactly follow the spec
+    // xdg-popup grabs should be keyboard-only, while they are absolute in our case...
+    if (g_pSeatManager->m_seatGrab && !g_pSeatManager->m_seatGrab->accepts(foundSurface) && !PROTO::data->dndActive()) {
+        if (g_pInputManager->m_hardInput || refocus) {
+            g_pSeatManager->setGrab(nullptr);
+            return; // setGrab will refocus
+        } else {
+            // we need to grab the last surface.
+            foundSurface = g_pSeatManager->m_state.pointerFocus.lock();
+
+            auto HLSurface = CWLSurface::fromResource(foundSurface);
+
+            if (HLSurface) {
+                const auto BOX = HLSurface->getSurfaceBoxGlobal();
+
+                if (BOX.has_value())
+                    surfacePos = BOX->pos();
+            }
+        }
+    }
+
+    if (!foundSurface) {
+        if (!g_pInputManager->m_emptyFocusCursorSet) {
+            if (*PRESIZEONBORDER && *PRESIZECURSORICON && g_pInputManager->m_borderIconDirection != BORDERICON_NONE) {
+                g_pInputManager->m_borderIconDirection = BORDERICON_NONE;
+                unsetCursorImage();
+            }
+
+            // TODO: maybe wrap?
+            if (g_pInputManager->m_clickBehavior == CLICKMODE_KILL)
+                g_pInputManager->setCursorImageOverride("crosshair");
+            else
+                g_pInputManager->setCursorImageOverride("left_ptr");
+
+            g_pInputManager->m_emptyFocusCursorSet = true;
+        }
+
+        g_pSeatManager->setPointerFocus(nullptr, {});
+
+        if (refocus || g_pCompositor->m_lastWindow.expired()) // if we are forcing a refocus, and we don't find a surface, clear the kb focus too!
+            g_pCompositor->focusWindow(nullptr);
+
+        return;
+    }
+
+    g_pInputManager->m_emptyFocusCursorSet = false;
+
+    Vector2D surfaceLocal = surfacePos == Vector2D(-1337, -1337) ? surfaceCoords : mouseCoords - surfacePos;
+
+    if (pFoundWindow && !pFoundWindow->m_isX11 && surfacePos != Vector2D(-1337, -1337)) {
+        // calc for oversized windows... fucking bullshit.
+        CBox geom = pFoundWindow->m_xdgSurface->m_current.geometry;
+
+        surfaceLocal = mouseCoords - surfacePos + geom.pos();
+    }
+
+    if (pFoundWindow && pFoundWindow->m_isX11) // for x11 force scale zero
+        surfaceLocal = surfaceLocal * pFoundWindow->m_X11SurfaceScaledBy;
+
+    bool allowKeyboardRefocus = true;
+
+    if (!refocus && g_pCompositor->m_lastFocus) {
+        const auto PLS = g_pCompositor->getLayerSurfaceFromSurface(g_pCompositor->m_lastFocus.lock());
+
+        if (PLS && PLS->m_layerSurface->m_current.interactivity == ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE)
+            allowKeyboardRefocus = false;
+    }
+
+    // set the values for use
+    if (refocus) {
+        g_pInputManager->m_foundLSToFocus      = pFoundLayerSurface;
+        g_pInputManager->m_foundWindowToFocus  = pFoundWindow;
+        g_pInputManager->m_foundSurfaceToFocus = foundSurface;
+    }
+
+    if (g_pInputManager->m_currentlyDraggedWindow.lock() && pFoundWindow != g_pInputManager->m_currentlyDraggedWindow) {
+        g_pSeatManager->setPointerFocus(foundSurface, surfaceLocal);
+        return;
+    }
+
+    if (pFoundWindow && foundSurface == pFoundWindow->m_wlSurface->resource() && !g_pInputManager->m_cursorImageOverridden) {
+        const auto BOX = pFoundWindow->getWindowMainSurfaceBox();
+        if (VECNOTINRECT(mouseCoords, BOX.x, BOX.y, BOX.x + BOX.width, BOX.y + BOX.height))
+            g_pInputManager->setCursorImageOverride("left_ptr");
+        else
+            g_pInputManager->restoreCursorIconToApp();
+    }
+
+    if (pFoundWindow) {
+        // change cursor icon if hovering over border
+        if (*PRESIZEONBORDER && *PRESIZECURSORICON) {
+            if (!pFoundWindow->isFullscreen() && !pFoundWindow->hasPopupAt(mouseCoords)) {
+                g_pInputManager->setCursorIconOnBorder(pFoundWindow);
+            } else if (g_pInputManager->m_borderIconDirection != BORDERICON_NONE) {
+                unsetCursorImage();
+            }
+        }
+
+        if (FOLLOWMOUSE != 1 && !refocus) {
+            if (pFoundWindow != g_pCompositor->m_lastWindow.lock() && g_pCompositor->m_lastWindow.lock() &&
+                ((pFoundWindow->m_isFloating && *PFLOATBEHAVIOR == 2) || (g_pCompositor->m_lastWindow->m_isFloating != pFoundWindow->m_isFloating && *PFLOATBEHAVIOR != 0))) {
+                // enter if change floating style
+                if (FOLLOWMOUSE != 3 && allowKeyboardRefocus)
+                    g_pCompositor->focusWindow(pFoundWindow, foundSurface);
+                g_pSeatManager->setPointerFocus(foundSurface, surfaceLocal);
+            } else if (FOLLOWMOUSE == 2 || FOLLOWMOUSE == 3)
+                g_pSeatManager->setPointerFocus(foundSurface, surfaceLocal);
+
+            if (pFoundWindow == g_pCompositor->m_lastWindow)
+                g_pSeatManager->setPointerFocus(foundSurface, surfaceLocal);
+
+            if (FOLLOWMOUSE != 0 || pFoundWindow == g_pCompositor->m_lastWindow)
+                g_pSeatManager->setPointerFocus(foundSurface, surfaceLocal);
+
+            if (g_pSeatManager->m_state.pointerFocus == foundSurface)
+                g_pSeatManager->sendPointerMotion(time, surfaceLocal);
+
+            g_pInputManager->m_lastFocusOnLS = false;
+            return; // don't enter any new surfaces
+        } else {
+            if (time == 0 && refocus) {
+                g_pInputManager->m_lastMouseFocus = pFoundWindow;
+
+                // TODO: this looks wrong. When over a popup, it constantly is switching.
+                // Temp fix until that's figured out. Otherwise spams windowrule lookups and other shit.
+                if (g_pInputManager->m_lastMouseFocus.lock() != pFoundWindow || g_pCompositor->m_lastWindow.lock() != pFoundWindow) {
+                    if (g_pInputManager->m_mousePosDelta > *PFOLLOWMOUSETHRESHOLD || refocus) {
+                        const bool hasNoFollowMouse = pFoundWindow && pFoundWindow->m_windowData.noFollowMouse.valueOrDefault();
+
+                        if (refocus || !hasNoFollowMouse)
+                            g_pCompositor->focusWindow(pFoundWindow, foundSurface);
+                    }
+                } else
+                    g_pCompositor->focusSurface(foundSurface, pFoundWindow);
+            }
+            /*if (allowKeyboardRefocus && ((FOLLOWMOUSE != 3 && (*PMOUSEREFOCUS || m_lastMouseFocus.lock() != pFoundWindow)) || refocus)) {
+                if (m_lastMouseFocus.lock() != pFoundWindow || g_pCompositor->m_lastWindow.lock() != pFoundWindow || g_pCompositor->m_lastFocus != foundSurface || refocus) {
+                    m_lastMouseFocus = pFoundWindow;
+
+                    // TODO: this looks wrong. When over a popup, it constantly is switching.
+                    // Temp fix until that's figured out. Otherwise spams windowrule lookups and other shit.
+                    if (m_lastMouseFocus.lock() != pFoundWindow || g_pCompositor->m_lastWindow.lock() != pFoundWindow) {
+                        if (m_mousePosDelta > *PFOLLOWMOUSETHRESHOLD || refocus) {
+                            const bool hasNoFollowMouse = pFoundWindow && pFoundWindow->m_windowData.noFollowMouse.valueOrDefault();
+
+                            if (refocus || !hasNoFollowMouse)
+                                g_pCompositor->focusWindow(pFoundWindow, foundSurface);
+                        }
+                    } else
+                        g_pCompositor->focusSurface(foundSurface, pFoundWindow);
+                }
+            }*/
+        }
+
+        if (g_pSeatManager->m_state.keyboardFocus == nullptr)
+            g_pCompositor->focusWindow(pFoundWindow, foundSurface);
+
+        g_pInputManager->m_lastFocusOnLS = false;
+    } else {
+        if (*PRESIZEONBORDER && *PRESIZECURSORICON && g_pInputManager->m_borderIconDirection != BORDERICON_NONE) {
+            g_pInputManager->m_borderIconDirection = BORDERICON_NONE;
+            unsetCursorImage();
+        }
+
+        if (pFoundLayerSurface && (pFoundLayerSurface->m_layerSurface->m_current.interactivity != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE) && FOLLOWMOUSE != 3 &&
+            (allowKeyboardRefocus || pFoundLayerSurface->m_layerSurface->m_current.interactivity == ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE)) {
+            g_pCompositor->focusSurface(foundSurface);
+        }
+
+        if (pFoundLayerSurface)
+            g_pInputManager->m_lastFocusOnLS = true;
+    }
+
+    g_pSeatManager->setPointerFocus(foundSurface, surfaceLocal);
+    g_pSeatManager->sendPointerMotion(time, surfaceLocal);
+}
+
+void renderWorkspaceWindows(PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& time) {
+    PHLWINDOW lastWindow;
+
+    EMIT_HOOK_EVENT("render", RENDER_PRE_WINDOWS);
+
+    std::vector<PHLWINDOWREF> windows, fadingOut, pinned;
+    windows.reserve(g_pCompositor->m_windows.size());
+
+    // collect renderable windows
+    for (auto const& w : g_pCompositor->m_windows) {
+        if (w->isHidden() || (!w->m_isMapped && !w->m_fadingOut))
+            continue;
+        if (!g_pHyprRenderer->shouldRenderWindow(w, pMonitor))
+            continue;
+
+        windows.emplace_back(w);
+    }
+
+    // categorize + interleave
+    for (auto& wref : windows) {
+        auto w = wref.lock();
+        if (!w)
+            continue;
+
+        // pinned go to separate pass (still above everything)
+        if (w->m_pinned) {
+            pinned.emplace_back(w);
+            continue;
+        }
+
+        // some things may force us to ignore the special/not special disparity
+        const bool IGNORE_SPECIAL_CHECK = w->m_monitorMovedFrom != -1 &&
+                                          (w->m_workspace && !w->m_workspace->isVisible());
+
+        if (!IGNORE_SPECIAL_CHECK && pWorkspace->m_isSpecialWorkspace != w->onSpecialWorkspace())
+            continue;
+
+        if (pWorkspace->m_isSpecialWorkspace && w->m_monitor != pWorkspace->m_monitor)
+            continue; // special on another monitor drawn elsewhere
+
+        // last window drawn after others
+        if (w == g_pCompositor->m_lastWindow) {
+            lastWindow = w;
+            continue;
+        }
+
+        if (w->m_fadingOut) {
+            fadingOut.emplace_back(w);
+            continue;
+        }
+
+        // main pass (interleaved tiled/floating)
+        g_pHyprRenderer->renderWindow(w, pMonitor, time, true, RENDER_PASS_MAIN);
+
+        // popup directly after main
+        g_pHyprRenderer->renderWindow(w, pMonitor, time, true, RENDER_PASS_POPUP);
+    }
+
+    // render last focused window after the rest
+    if (lastWindow) {
+        g_pHyprRenderer->renderWindow(lastWindow, pMonitor, time, true, RENDER_PASS_MAIN);
+        g_pHyprRenderer->renderWindow(lastWindow, pMonitor, time, true, RENDER_PASS_POPUP);
+    }
+
+    // fading out (tiled or floating) — after main windows
+    for (auto& wref : fadingOut) {
+        auto w = wref.lock();
+        if (w)
+            g_pHyprRenderer->renderWindow(w, pMonitor, time, true, RENDER_PASS_MAIN);
+    }
+
+    // pinned last, above everything
+    for (auto& wref : pinned) {
+        auto w = wref.lock();
+        if (w)
+            g_pHyprRenderer->renderWindow(w, pMonitor, time, true, RENDER_PASS_ALL);
+    }
+}
+
+// for interleaving tiled and floating windows
+//void CInputManager::mouseMoveUnified(uint32_t time, bool refocus, bool mouse, std::optional<Vector2D> overridePos) {
+//PHLWINDOW CCompositor::vectorToWindowUnified(const Vector2D& pos, uint8_t properties, PHLWINDOW pIgnoreWindow) {
+//void CHyprRenderer::renderWorkspaceWindows(PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& time) {
+
+inline CFunctionHook* g_pOnRenderWorkspaceWindows = nullptr;
+typedef void (*origRenderWorkspaceWindows)(CHyprRenderer *, PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& time);
+void hook_onRenderWorkspaceWindows(void* thisptr,  PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& time) {
+    //auto chr = (CHyprRenderer *) thisptr;
+    //(*(origRenderWorkspaceWindows)g_pOnRenderWorkspaceWindows->m_original)(chr, pMonitor, pWorkspace, time);
+    renderWorkspaceWindows(pMonitor, pWorkspace, time);
+}
+
+inline CFunctionHook* g_pOnVectorToWindowUnified = nullptr;
+typedef void (*origVectorToWindowUnified)(CCompositor *, const Vector2D& pos, uint8_t properties, PHLWINDOW pIgnoreWindow);
+PHLWINDOW hook_onVectorToWindowUnified(void* thisptr, const Vector2D& pos, uint8_t properties, PHLWINDOW pIgnoreWindow) {
+    return vectorToWindowUnified(pos, properties, pIgnoreWindow);
+}
+
+inline CFunctionHook* g_pOnMouseMoveUnified = nullptr;
+typedef void (*origMouseMoveUnifiedd)(CInputManager *, uint32_t time, bool refocus, bool mouse, std::optional<Vector2D> overridePos);
+void hook_onMouseMoveUnified(void* thisptr, uint32_t time, bool refocus, bool mouse, std::optional<Vector2D> overridePos) {
+    mouseMoveUnified(time, refocus, mouse, overridePos);
+}
+
+void interleave_floating_and_tiled_windows() {
+    return;
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderWorkspaceWindows");
+        for (auto m : METHODS) {
+            if (m.signature.find("_ZN13CHyprRenderer22renderWorkspaceWindowsEN9Hyprutils6Memory14CSharedPointerI8CMonitorEENS2_I10CWorkspaceEERKNSt6chrono10time_pointINS7_3_V212steady_clockENS7_8durationIlSt5ratioILl1ELl1000000000EEEEEE") != std::string::npos) {
+                pRenderWorkspaceWindows = m.address;
+                g_pOnRenderWorkspaceWindows = HyprlandAPI::createFunctionHook(globals->api, m.address, (void*)&hook_onRenderWorkspaceWindows);
+                g_pOnRenderWorkspaceWindows->hook();
+            }
+        }
+    }
+    {
+        static auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderWorkspaceWindowsFullscreen");
+        pRenderWorkspaceWindowsFullscreen = METHODS[0].address;
+    }    
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "vectorToWindowUnified");
+        for (auto m : METHODS) {
+            if (m.signature.find("CCompositor") != std::string::npos) {
+                g_pOnVectorToWindowUnified = HyprlandAPI::createFunctionHook(globals->api, m.address, (void*)&hook_onVectorToWindowUnified);
+                g_pOnVectorToWindowUnified->hook();
+            }
+        }
+    }
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "mouseMoveUnified");
+        for (auto m : METHODS) {
+            if (m.signature.find("CInputManager") != std::string::npos) {
+                g_pOnMouseMoveUnified = HyprlandAPI::createFunctionHook(globals->api, m.address, (void*)&hook_onMouseMoveUnified);
+                g_pOnMouseMoveUnified->hook();
+            }
+        }
+    }
+
+    
+}
+
+    
