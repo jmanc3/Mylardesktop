@@ -3655,11 +3655,13 @@ void startup::begin() {
     // hooks need to be created last because otherwise we miss initial loading of all windows with on_window_open
 	hypriso->create_hooks_and_callbacks(); 
     if (icon_cache_needs_update()) {
-        icon_cache_generate();
+        std::thread th([] {
+            icon_cache_generate();
+            icon_cache_load();
+        });
+        th.detach();
         //notify("generated");
-    }
-    
-    {
+    } else {
         //notify("icon load");
         icon_cache_load();
     }
