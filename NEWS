@@ -1,4 +1,10 @@
 
+v0.2.1 (2025-10-18) [targets Hyprland 0.51.0]
+-------------------
+
+- Add border to active alt tab element for clarity
+
+
 v0.2.0 (2025-10-18) [targets Hyprland 0.51.0]
 -------------------
 
