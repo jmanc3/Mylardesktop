@@ -3597,4 +3597,18 @@ void interleave_floating_and_tiled_windows() {
     
 }
 
-    
+static PHLWINDOWREF prev;
+
+void HyprIso::all_lose_focus() {
+    prev = g_pCompositor->m_lastWindow;
+    g_pSeatManager->setPointerFocus(nullptr, {});
+    g_pCompositor->focusWindow(nullptr);
+}
+
+void HyprIso::all_gain_focus() {
+    if (auto p = prev.lock()) {
+        //g_pSeatManager->setPointerFocus(p, {});
+        g_pCompositor->focusWindow(p);        
+    }
+}
+     

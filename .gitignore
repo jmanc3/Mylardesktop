@@ -4,3 +4,12 @@ cmake*
 hyprland
 build
 .*
+*.o
+*.txt
+*.svg
+prog
+out/*
+oldmakefile
+*.sh
+events
+*.so

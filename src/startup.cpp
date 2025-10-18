@@ -434,11 +434,15 @@ class AltTabMenu {
             }
 
             if (state) {
+                hypriso->all_lose_focus();
+                
                 update_visible_window();
                 screenshot_all();
                 if (timer == nullptr)
                     timer = start_producing_thumbnails();
             } else {
+                //hypriso->all_gain_focus();
+                
                 if (timer) {
                     timer->keep_running = false;
                     timer = nullptr;

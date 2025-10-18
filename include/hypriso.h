@@ -215,6 +215,8 @@ struct HyprIso {
     void set_hidden(int id, bool state);
     
     bool has_focus(int client);
+    void all_lose_focus();
+    void all_gain_focus();
     
     bool is_hidden(int id);
     
