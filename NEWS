@@ -1,4 +1,10 @@
 
+v0.2.2 (2025-10-18) [targets Hyprland 0.51.0]
+-------------------
+
+- Don't crash if no icon cache found
+
+
 v0.2.1 (2025-10-18) [targets Hyprland 0.51.0]
 -------------------
 
