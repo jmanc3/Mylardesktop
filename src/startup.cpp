@@ -1271,9 +1271,13 @@ void create_snap_helper(ThinClient *c, SnapPosition window_snap_target) {
                                         
                                     }
 
+                                    // So that we get rid of one pixel gap between titlebar and thumb quickly
+                                    float yscalar = scalar * 1.2;
+                                    if (yscalar > 1.0)
+                                        yscalar = 1.0;
 
                                     tchild->real_bounds.x = tchild->real_bounds.x + ((b.x - tchild->real_bounds.x) * scalar);
-                                    tchild->real_bounds.y = tchild->real_bounds.y + ((b.y - tchild->real_bounds.y) * scalar);
+                                    tchild->real_bounds.y = tchild->real_bounds.y + ((b.y - tchild->real_bounds.y) * yscalar);
                                     tchild->real_bounds.w = tchild->real_bounds.w + ((b.w - tchild->real_bounds.w) * scalar);
                                     tchild->real_bounds.h = tchild->real_bounds.h + ((b.h - tchild->real_bounds.h) * scalar);
 
@@ -3645,15 +3649,15 @@ void startup::begin() {
     create_rounding_shader();
 
     std::thread th([]() {
-        start_dock();        
+        //start_dock();        
     });
     th.detach();
 }
 
 void startup::end() {
-    stop_dock();
+    //stop_dock();
+    //std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     hypriso->end();
 }
 
