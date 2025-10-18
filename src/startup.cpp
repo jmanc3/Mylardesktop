@@ -2546,6 +2546,24 @@ void on_window_open(int id) {
         
         auto thumbnail_parent = alt_tab_menu->root->child(::vbox, FILL_SPACE, FILL_SPACE);
         thumbnail_parent->user_data = td;
+        thumbnail_parent->after_paint = paint {
+            auto td = (TabData *) c->user_data;
+            auto focus = alt_tab_menu->root->children[alt_tab_menu->index];
+            auto data = (TabData *) focus->user_data;
+            bool focused = data->wid == td->wid;
+            auto rdata = (RootData *) root;
+            auto s = scale(rdata->id);
+            if (focused) {
+               Bounds bo = c->real_bounds;
+               bo.y -= 1 * s;
+               bo.h += 1 *s;
+               bo.grow(3 * s);
+               auto bb = bo;
+               bo.grow(3 * s);
+               border(bo, {.1, .6, .84, 1}, 2 * s, 0, (rounding + (rounding * .3)) * s);
+               border(bb, {0, 0, 0, 1}, 2 * s, 0, rounding * s);
+            }
+        };
 
         auto titlebar = thumbnail_parent->child(::hbox, FILL_SPACE, titlebar_h * s);
         titlebar->alignment = ALIGN_RIGHT;
