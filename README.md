@@ -53,7 +53,7 @@ First install build dependencies
 sudo pacman -S git gcc cmake make pkg-config pango cairo librsvg libxkbcommon dbus
 ```
 
-Download the latest Mylardesktop release 0.2.0 (for Hyprland 0.51.0) and unzip it (or untar it), and enter the folder.
+Download the latest Mylardesktop release 0.2.1 (for Hyprland 0.51.0) and unzip it (or untar it), and enter the folder.
 
 ```
 cd Mylardesktop
