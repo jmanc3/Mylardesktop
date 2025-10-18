@@ -1,6 +1,9 @@
 wayland-scanner client-header wlr-layer-shell-unstable-v1.xml wlr-layer-shell-unstable-v1-client-protocol.h
 wayland-scanner private-code wlr-layer-shell-unstable-v1.xml wlr-layer-shell-unstable-v1-protocol.c
 
+wayland-scanner client-header xdg-output-unstable-v1.xml xdg-output-unstable-v1-client-protocol.h
+wayland-scanner private-code xdg-output-unstable-v1.xml xdg-output-unstable-v1-protocol.c
+
 #hyprwayland-scanner client ./protocols/wlr-layer-shell-unstable-v1.xml wlr-layer-shell-unstable-v1
 
 # Compile C files with gcc

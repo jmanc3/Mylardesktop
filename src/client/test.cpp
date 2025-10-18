@@ -19,6 +19,7 @@ extern "C" {
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #undef namespace
 #include "xdg-shell-client-protocol.h"
+#include "xdg-output-unstable-v1-client-protocol.h"
 }
 
 #include <xkbcommon/xkbcommon.h>
@@ -33,6 +34,7 @@ struct display {
     struct zwlr_layer_shell_v1 *layer_shell;
     struct zwlr_layer_surface_v1 *layer_surface;
     struct wl_surface *surface;
+    struct wl_output *output;
     struct xdg_surface *xdg_surface;
     struct xdg_toplevel *xdg_toplevel;
     struct wl_keyboard *keyboard;
@@ -73,6 +75,16 @@ static struct wl_buffer *create_shm_buffer(struct display *d, int width, int hei
     }
     // fill with transparent black
     memset(data, 0, size);
+        // Fill with white (255,255,255) at 60% transparency (A=153)
+    uint8_t *pixels = (uint8_t *) data;
+    const uint8_t alpha = 154;
+    const uint8_t value = 255 * alpha / 255; // premultiplied: 153
+    for (size_t i = 0; i < size; i += 4) {
+        pixels[i + 0] = value; // B
+        pixels[i + 1] = value; // G
+        pixels[i + 2] = value; // R
+        pixels[i + 3] = alpha; // A
+    }
 
     struct wl_shm_pool *pool = wl_shm_create_pool(d->shm, fd, size);
     struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0,
@@ -106,6 +118,8 @@ static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer,
     double dx = wl_fixed_to_double(sx);
     double dy = wl_fixed_to_double(sy);
     printf("pointer: motion at %.2f, %.2f\n", dx, dy);
+    running = false;
+    
 }
 
 static void pointer_handle_button(void *data, struct wl_pointer *wl_pointer,
@@ -114,6 +128,8 @@ static void pointer_handle_button(void *data, struct wl_pointer *wl_pointer,
     (void) data; (void) wl_pointer; (void) serial; (void) time;
     const char *st = (state == WL_POINTER_BUTTON_STATE_PRESSED) ? "pressed" : "released";
     printf("pointer: button %u %s\n", button, st);
+    running = false;
+    //stop_dock();
 }
 
 static void pointer_handle_axis(void *data, struct wl_pointer *wl_pointer,
@@ -327,7 +343,7 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
         d->compositor = (wl_compositor *) wl_registry_bind(registry, id, &wl_compositor_interface, 4);
     } else if (strcmp(interface, wl_shm_interface.name) == 0) {
         d->shm = (wl_shm *) wl_registry_bind(registry, id, &wl_shm_interface, 1);
-        d->shm_format = WL_SHM_FORMAT_XRGB8888;
+        d->shm_format = WL_SHM_FORMAT_ARGB8888;
     } else if (strcmp(interface, wl_seat_interface.name) == 0) {
         d->seat = (wl_seat *) wl_registry_bind(registry, id, &wl_seat_interface, 5);
         wl_seat_add_listener(d->seat, &seat_listener, d);
@@ -336,6 +352,8 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
         xdg_wm_base_add_listener(d->wm_base, &wm_base_listener, d);
     } else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
         d->layer_shell = (zwlr_layer_shell_v1 *) wl_registry_bind(registry, id, &zwlr_layer_shell_v1_interface, 5);
+    } else if (strcmp(interface, wl_output_interface.name) == 0) {
+        d->output = (wl_output *) wl_registry_bind(registry, id, &wl_output_interface, 3);
     }
 }
 
@@ -408,12 +426,12 @@ int open_dock() {
     d->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
         d->layer_shell,
         d->surface,
-        NULL, // output (NULL = compositor decides)
+        d->output, // output (NULL = compositor decides)
         ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM, // or TOP / OVERLAY / BACKGROUND
         "Mylardock" // namespace (used for compositor config)
-    );
+    );   
 
-    zwlr_layer_surface_v1_set_size(d->layer_surface, 300, 40); // width auto, height 50
+    zwlr_layer_surface_v1_set_size(d->layer_surface, 0, 40); // width auto, height 50
     zwlr_layer_surface_v1_set_anchor(d->layer_surface,
         ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
         ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
@@ -423,6 +441,15 @@ int open_dock() {
     zwlr_layer_surface_v1_set_exclusive_zone(d->layer_surface, 40);
 
     zwlr_layer_surface_v1_add_listener(d->layer_surface, &layer_shell_listener, d);
+
+/*
+    zwlr_layer_surface_v1 *layer = zwlr_layer_shell_v1_get_layer_surface(
+        d->layer_shell, d->surface, d->output,
+        ZWLR_LAYER_SHELL_V1_LAYER_TOP,
+        "dock" // this is the namespace
+    );
+    */
+ 
 
     wl_surface_commit(d->surface);
 

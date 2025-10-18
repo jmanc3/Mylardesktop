@@ -491,6 +491,7 @@ void paint_thumbnail_raw(Container *root, Container *c, float alpha) {
     auto rdata = (RootData *) root->user_data;
     auto s = scale(rdata->id);
     hypriso->draw_thumbnail(tdata->wid, c->real_bounds, thumb_rounding * s, 2.0f, 3, alpha);
+    return;
     if (alt_tab_menu->index <= alt_tab_menu->root->children.size()) {
         auto r = alt_tab_menu->root->children[alt_tab_menu->index];
         if (r == c->parent) {
@@ -503,12 +504,14 @@ void paint_thumbnail(Container *root, Container *c) {
     paint_thumbnail_raw(root, c, 1.0); 
 }
 
-void paint_titlebar_raw(Container *root, Container *c, float a, bool subtract_close = true) {
+void paint_titlebar_raw(Container *root, Container *c, float a, bool subtract_close = true, bool as_focused = true) {
     auto tdata = (TabData *) c->user_data;
     auto rdata = (RootData *) root->user_data;
     auto s = scale(rdata->id);
     
     auto ct = color_titlebar_focused();
+    if (!as_focused)
+        ct = color_titlebar_unfocused();
     ct.a = a;
     rect(c->real_bounds, ct, 12, thumb_rounding * s, 2.0f, true, a);
     Container *cdata = nullptr;
@@ -624,6 +627,7 @@ ClientData *get_cdata(int id) {
 void resize_start(int id, RESIZE_TYPE type) {
     hypriso->floatit(id);
     hypriso->resizing = true;
+    hypriso->bring_to_front(id);
     hypriso->resizing_id = id;
     auto client = c_from_id(hypriso->resizing_id);
     if (!client)
@@ -966,6 +970,7 @@ void paper() {
 
 void drag_start(int id) {
     hypriso->floatit(id);
+    hypriso->bring_to_front(id);
     paper();
     start_workspace_screenshotting();
     hypriso->dragging_id = id;
@@ -2541,7 +2546,14 @@ void on_window_open(int id) {
         auto titlebar = thumbnail_parent->child(::hbox, FILL_SPACE, titlebar_h * s);
         titlebar->alignment = ALIGN_RIGHT;
         titlebar->skip_delete = true;
-        titlebar->when_paint = paint_titlebar; 
+        titlebar->when_paint = paint {
+            bool focused = false;
+            auto td = (TabData *) c->user_data;
+            auto focus = alt_tab_menu->root->children[alt_tab_menu->index];
+            auto data = (TabData *) focus->user_data;
+            focused = data->wid == td->wid;
+            paint_titlebar_raw(root, c, 1.0, true, focused);
+        }; 
         titlebar->user_data = td;
         
         auto close = titlebar->child(::hbox, titlebar_h * s * title_button_wratio, FILL_SPACE);
@@ -3217,6 +3229,21 @@ void on_monitor_open(int id) {
     auto workspace = c->child(::hbox, FILL_SPACE, FILL_SPACE); 
     workspace->custom_type = (int) TYPE::WORKSPACE_SWITCHER;
     workspace->receive_events_even_if_obstructed = true;
+    workspace->when_mouse_enters_container = paint {
+        hypriso->all_lose_focus();
+    };
+    workspace->when_mouse_motion = paint {
+        root->consumed_event = true;
+    };
+    workspace->when_mouse_down = paint {
+        root->consumed_event = true;
+    };
+    workspace->when_mouse_up = paint {
+        root->consumed_event = true;
+    };
+    workspace->when_mouse_leaves_container = paint {
+        hypriso->all_gain_focus();
+    };
     workspace->pre_layout = [](Container* root, Container* c, const Bounds& bound) {
         auto rdata = (RootData *) root->user_data;
         auto s = scale(rdata->id);
