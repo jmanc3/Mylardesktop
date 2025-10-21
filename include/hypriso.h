@@ -157,7 +157,8 @@ struct HyprIso {
     void create_config_variables();
     
     // The main workhorse of the program which pumps events from hyprland to mylar
-    void create_hooks_and_callbacks();
+    void create_hooks();
+    void create_callbacks();
 
     // So things can be cleaned
     void end(); 

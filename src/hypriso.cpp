@@ -776,7 +776,7 @@ void HyprIso::create_config_variables() {
     //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_part_of_window", Hyprlang::INT{1});
 }
 
-void HyprIso::create_hooks_and_callbacks() {
+void HyprIso::create_callbacks() {
     for (auto m : g_pCompositor->m_monitors) {
         on_open_monitor(m);
     }
@@ -929,9 +929,9 @@ void HyprIso::create_hooks_and_callbacks() {
             }
         }
     });
+}
 
-    
-
+void HyprIso::create_hooks() {
     fix_window_corner_rendering();
     disable_default_alt_tab_behaviour();
     detect_csd_request_change();

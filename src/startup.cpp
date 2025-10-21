@@ -3653,7 +3653,8 @@ void startup::begin() {
 	// so that hen we receive a mouse down, we know if we have to consume it (snap resizing, title bar interactions, alt tab menu, overview dragging, overview drop down, desktop folders, desktop folder selection, so on)
  
     // hooks need to be created last because otherwise we miss initial loading of all windows with on_window_open
-	hypriso->create_hooks_and_callbacks(); 
+	hypriso->create_callbacks(); 
+	hypriso->create_hooks(); 
     if (icon_cache_needs_update()) {
         std::thread th([] {
             icon_cache_generate();

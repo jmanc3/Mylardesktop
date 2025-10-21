@@ -1,6 +1,7 @@
 #include "first.h"
 
-#include "startup.h"
+//#include "startup.h"
+#include "second.h"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
@@ -65,13 +66,15 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) { // When star
 
     //new_test();
                                                                   
-    startup::begin();
+    second::begin();
+    //startup::begin();
 
     return {"Mylardesktop", "Mylar is a smooth and beautiful wayland desktop, written on Hyprland", "jmanc3", "1.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-   startup::end(); 
+   //startup::end(); 
+   second::end(); 
 }
 
 void init_mylar(void* h) { // When started directly from hyprland

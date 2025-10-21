@@ -1,5 +1,6 @@
 // wl_input.c
 #include <cstddef>
+#include <wayland-client-core.h>
 #define _POSIX_C_SOURCE 200809L
 #include <poll.h>    // for POLLIN, POLLOUT, POLLERR, etc.
 #include <errno.h>   // for EAGAIN, EINTR, and other errno constants
@@ -7,12 +8,16 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <string>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 
 #include <wayland-client.h>
+#include <vector>
+#include <cairo.h>
+#include <pango/pangocairo.h>
 
 extern "C" {
 #define namespace namespace_
@@ -24,7 +29,11 @@ extern "C" {
 
 #include <xkbcommon/xkbcommon.h>
 
-struct display {
+bool running = true;
+
+struct wl_window;
+
+struct wl_context {
     struct wl_display *display;
     struct wl_registry *registry;
     struct wl_compositor *compositor;
@@ -32,22 +41,156 @@ struct display {
     struct wl_seat *seat;
     struct xdg_wm_base *wm_base;
     struct zwlr_layer_shell_v1 *layer_shell;
-    struct zwlr_layer_surface_v1 *layer_surface;
-    struct wl_surface *surface;
-    struct wl_output *output;
-    struct xdg_surface *xdg_surface;
-    struct xdg_toplevel *xdg_toplevel;
     struct wl_keyboard *keyboard;
     struct wl_pointer *pointer;
     struct xkb_context *xkb_ctx;
-    struct xkb_keymap *keymap;
-    struct xkb_state *xkb_state;
+    //struct wl_output *output;
     uint32_t shm_format;
-    int width, height;
+
+    std::vector<wl_window *> windows;
 };
 
-static struct display g = {0};
-bool running = true;
+struct wl_window {
+    struct wl_context *ctx = nullptr;
+    struct wl_surface *surface = nullptr;
+    struct xdg_surface *xdg_surface = nullptr;
+    struct xdg_toplevel *xdg_toplevel = nullptr;
+    struct zwlr_layer_surface_v1 *layer_surface = nullptr;
+    struct wl_output *output = nullptr;
+    struct xkb_keymap *keymap = nullptr;
+    struct xkb_state *xkb_state = nullptr;
+    int width, height;
+
+    std::string title;
+    bool has_pointer_focus = false;
+    bool has_keyboard_focus = false;
+    bool is_layer = true;
+    bool marked_for_closing = false;
+};
+
+static struct wl_buffer *create_shm_buffer(struct wl_context *d, int width, int height);
+
+static void handle_toplevel_close(void *data, struct xdg_toplevel *toplevel) {
+    auto win = (wl_window *) data;
+    win->marked_for_closing = true;
+    printf("Compositor requested window close\n");
+    //running = false;  // set your main loop flag to exit
+}
+
+static void handle_toplevel_configure(
+    void *data,
+    struct xdg_toplevel *toplevel,
+    int32_t width,
+    int32_t height,
+    struct wl_array *states) 
+{
+    auto win = (wl_window *) data;
+    win->width = width;
+    win->height = height;
+    
+    // Usually you’d handle resize here
+    printf("size reconfigured\n");
+}
+
+static const struct xdg_toplevel_listener xdg_toplevel_listener = {
+    .configure = handle_toplevel_configure,
+    .close = handle_toplevel_close,
+};
+
+struct wl_window *wl_window_create(struct wl_context *ctx, int width, int height, const char *title) {
+    struct wl_window *win = new wl_window;
+    win->ctx = ctx;
+    win->width = width;
+    win->title = title;
+    win->height = height;
+
+    win->surface = wl_compositor_create_surface(ctx->compositor);
+    if (!win->surface) {
+        fprintf(stderr, "Failed to create wl_surface\n");
+        free(win);
+        return nullptr;
+    }
+
+    win->xdg_surface = xdg_wm_base_get_xdg_surface(ctx->wm_base, win->surface);
+    win->xdg_toplevel = xdg_surface_get_toplevel(win->xdg_surface);
+
+    xdg_toplevel_set_title(win->xdg_toplevel, title ? title : "Wayland Window");
+    wl_surface_commit(win->surface);
+    
+    xdg_toplevel_add_listener(win->xdg_toplevel, &xdg_toplevel_listener, win);
+
+    // create and attach a tiny shm buffer so our surface becomes mapped
+    wl_display_roundtrip(ctx->display);
+    struct wl_buffer *buf = create_shm_buffer(ctx, width, height);
+    if (!buf) {
+        fprintf(stderr, "Failed to create shm buffer\n");
+        return nullptr;
+    }
+    wl_surface_attach(win->surface, buf, 0, 0);
+    wl_surface_damage(win->surface, 0, 0, width, height);
+    wl_surface_commit(win->surface);
+    wl_display_roundtrip(ctx->display);
+    
+
+    ctx->windows.push_back(win);
+    return win;
+}
+
+static void configure_layer_shell(void *data,
+                        		  struct zwlr_layer_surface_v1 *surf,
+                        		  uint32_t serial,
+                        		  uint32_t width,
+                            	  uint32_t height) {
+    zwlr_layer_surface_v1_ack_configure(surf, serial); 
+}
+
+static const struct zwlr_layer_surface_v1_listener layer_shell_listener = {
+    .configure = configure_layer_shell,
+    .closed = nullptr
+};
+
+struct wl_window *wl_layer_window_create(struct wl_context *ctx, int width, int height,
+                                         zwlr_layer_shell_v1_layer layer, const char *title) {
+    struct wl_window *win = new wl_window;
+    win->title = title;
+    win->ctx = ctx;
+    win->width = width;
+    win->height = height;
+    win->title = title;
+
+
+    win->surface = wl_compositor_create_surface(ctx->compositor);
+    win->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
+        ctx->layer_shell, win->surface, NULL, ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM, title);
+
+    zwlr_layer_surface_v1_set_size(win->layer_surface, 0, 40); // width auto, height 50
+    zwlr_layer_surface_v1_set_anchor(win->layer_surface,
+        ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+        ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
+        ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+    zwlr_layer_surface_v1_set_keyboard_interactivity(win->layer_surface, ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+
+    zwlr_layer_surface_v1_set_exclusive_zone(win->layer_surface, 40);
+
+    zwlr_layer_surface_v1_add_listener(win->layer_surface, &layer_shell_listener, win);
+
+    wl_surface_commit(win->surface);
+
+    // create and attach a tiny shm buffer so our surface becomes mapped
+    wl_display_roundtrip(ctx->display);
+    struct wl_buffer *buf = create_shm_buffer(ctx, width, height);
+    if (!buf) {
+        fprintf(stderr, "Failed to create shm buffer\n");
+        return nullptr;
+    }
+    wl_surface_attach(win->surface, buf, 0, 0);
+    wl_surface_damage(win->surface, 0, 0, width, height);
+    wl_surface_commit(win->surface);
+    wl_display_roundtrip(ctx->display);
+    
+    ctx->windows.push_back(win);
+    return win;
+}
 
 /* ---- helper: create a simple shm buffer so surface is mapped ---- */
 static int create_shm_file(size_t size) {
@@ -63,7 +206,7 @@ static int create_shm_file(size_t size) {
     return fd;
 }
 
-static struct wl_buffer *create_shm_buffer(struct display *d, int width, int height) {
+static struct wl_buffer *create_shm_buffer(struct wl_context *ctx, int width, int height) {
     int stride = width * 4;
     size_t size = stride * height;
     int fd = create_shm_file(size);
@@ -77,7 +220,7 @@ static struct wl_buffer *create_shm_buffer(struct display *d, int width, int hei
     memset(data, 0, size);
         // Fill with white (255,255,255) at 60% transparency (A=153)
     uint8_t *pixels = (uint8_t *) data;
-    const uint8_t alpha = 154;
+    const uint8_t alpha = (255.f * .2);
     const uint8_t value = 255 * alpha / 255; // premultiplied: 153
     for (size_t i = 0; i < size; i += 4) {
         pixels[i + 0] = value; // B
@@ -86,10 +229,10 @@ static struct wl_buffer *create_shm_buffer(struct display *d, int width, int hei
         pixels[i + 3] = alpha; // A
     }
 
-    struct wl_shm_pool *pool = wl_shm_create_pool(d->shm, fd, size);
+    struct wl_shm_pool *pool = wl_shm_create_pool(ctx->shm, fd, size);
     struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0,
                                                          width, height,
-                                                         stride, d->shm_format);
+                                                         stride, ctx->shm_format);
     wl_shm_pool_destroy(pool);
     munmap(data, size);
     close(fd);
@@ -100,26 +243,41 @@ static struct wl_buffer *create_shm_buffer(struct display *d, int width, int hei
 static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer,
                                  uint32_t serial, struct wl_surface *surface,
                                  wl_fixed_t sx, wl_fixed_t sy) {
-    (void) data; (void) wl_pointer; (void) serial; (void) surface;
     double dx = wl_fixed_to_double(sx);
     double dy = wl_fixed_to_double(sy);
     printf("pointer: enter at %.2f, %.2f\n", dx, dy);
+    auto ctx = (wl_context *) data;
+    for (auto w : ctx->windows) {
+        if (w->surface == surface) {
+            printf("pointer: enter at %.2f, %.2f for %s\n", dx, dy, w->title.data());
+            w->has_pointer_focus = true;
+        }
+    }
 }
 
 static void pointer_handle_leave(void *data, struct wl_pointer *wl_pointer,
                                  uint32_t serial, struct wl_surface *surface) {
-    (void) data; (void) wl_pointer; (void) serial; (void) surface;
+    (void) wl_pointer; (void) serial; (void) surface;
     printf("pointer: leave\n");
+    auto ctx = (wl_context *) data;
+    for (auto w : ctx->windows) {
+        if (w->surface == surface) {
+            w->has_pointer_focus = false;
+        }
+    }
 }
 
 static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer,
                                   uint32_t time, wl_fixed_t sx, wl_fixed_t sy) {
-    (void) data; (void) wl_pointer; (void) time;
+    (void) wl_pointer; (void) time;
     double dx = wl_fixed_to_double(sx);
     double dy = wl_fixed_to_double(sy);
-    printf("pointer: motion at %.2f, %.2f\n", dx, dy);
-    running = false;
-    
+    auto ctx = (wl_context *) data;
+    for (auto w : ctx->windows) {
+        if (w->has_pointer_focus)
+            printf("pointer: motion at %.2f, %.2f for %s\n", dx, dy, w->title.data());
+    }
+    //running = false;
 }
 
 static void pointer_handle_button(void *data, struct wl_pointer *wl_pointer,
@@ -128,7 +286,9 @@ static void pointer_handle_button(void *data, struct wl_pointer *wl_pointer,
     (void) data; (void) wl_pointer; (void) serial; (void) time;
     const char *st = (state == WL_POINTER_BUTTON_STATE_PRESSED) ? "pressed" : "released";
     printf("pointer: button %u %s\n", button, st);
-    running = false;
+    //win->marked_for_closing = true;
+    
+    //running = false;
     //stop_dock();
 }
 
@@ -172,7 +332,6 @@ static void pointer_handle_axis_relative_direction(void *data,
 				uint32_t direction) {
 }
 
-
 static const struct wl_pointer_listener pointer_listener = {
     .enter = pointer_handle_enter,
     .leave = pointer_handle_leave,
@@ -190,7 +349,18 @@ static const struct wl_pointer_listener pointer_listener = {
 /* ---- keyboard callbacks ---- */
 static void keyboard_handle_keymap(void *data, struct wl_keyboard *wl_keyboard,
                                    uint32_t format, int fd, uint32_t size) {
-    display *d = (display *) data;
+    wl_context *ctx = (wl_context *) data;
+    wl_window *win = nullptr;
+    for (auto w : ctx->windows)
+        if (w->has_keyboard_focus)
+            win = w;
+    if (!win) {
+        for (auto w : ctx->windows)
+            if (w->has_pointer_focus)
+                win = w;
+    }
+    if (!win)
+        return;
     if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1) {
         close(fd);
         return;
@@ -202,17 +372,17 @@ static void keyboard_handle_keymap(void *data, struct wl_keyboard *wl_keyboard,
         return;
     }
 
-    struct xkb_keymap *keymap = xkb_keymap_new_from_string(d->xkb_ctx,
+    struct xkb_keymap *keymap = xkb_keymap_new_from_string(ctx->xkb_ctx,
                                                            map_shm,
                                                            XKB_KEYMAP_FORMAT_TEXT_V1,
                                                            XKB_KEYMAP_COMPILE_NO_FLAGS);
     if (!keymap) {
         printf("Failed to compile xkb keymap\n");
     } else {
-        if (d->keymap) xkb_keymap_unref(d->keymap);
-        if (d->xkb_state) xkb_state_unref(d->xkb_state);
-        d->keymap = keymap;
-        d->xkb_state = xkb_state_new(d->keymap);
+        if (win->keymap) xkb_keymap_unref(win->keymap);
+        if (win->xkb_state) xkb_state_unref(win->xkb_state);
+        win->keymap = keymap;
+        win->xkb_state = xkb_state_new(win->keymap);
     }
 
     munmap(map_shm, size);
@@ -222,25 +392,51 @@ static void keyboard_handle_keymap(void *data, struct wl_keyboard *wl_keyboard,
 static void keyboard_handle_enter(void *data, struct wl_keyboard *wl_keyboard,
                                  uint32_t serial, struct wl_surface *surface,
                                  struct wl_array *keys) {
-    (void) wl_keyboard; (void) serial; (void) surface; (void) keys;
+    //(void) wl_keyboard; (void) serial; (void) surface; (void) keys;
+    auto ctx = (wl_context *) data;
     printf("keyboard: enter (focus)\n");
+    for (auto w : ctx->windows) {
+        if (w->surface == surface) {
+            w->has_keyboard_focus = true;
+        }
+    }
 }
 
 static void keyboard_handle_leave(void *data, struct wl_keyboard *wl_keyboard,
                                  uint32_t serial, struct wl_surface *surface) {
-    (void) data; (void) wl_keyboard; (void) serial; (void) surface;
+    //(void) wl_keyboard; (void) serial; (void) surface;
     printf("keyboard: leave (lost focus)\n");
+    auto ctx = (wl_context *) data;
+    for (auto w : ctx->windows) {
+        if (w->surface == surface) {
+            w->has_keyboard_focus = false;
+        }
+    }
 }
+
 
 static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
                                 uint32_t serial, uint32_t time, uint32_t key, uint32_t state) {
-    display *d = (display *) data;
+    wl_context *ctx = (wl_context *) data;
+    wl_window *win = nullptr;
+    for (auto w : ctx->windows)
+        if (w->has_keyboard_focus)
+            win = w;
+    if (!win) {
+        for (auto w : ctx->windows)
+            if (w->has_pointer_focus)
+                win = w;
+    }
+    if (!win)
+        return;
+                                    
+    //display *d = (display *) data;
     const char *st = (state == WL_KEYBOARD_KEY_STATE_PRESSED) ? "pressed" : "released";
-    printf("keyboard: key %u %s", key, st);
+    printf("keyboard: key %u %s for %s", key, st, win->title.data());
 
-    if (d->xkb_state) {
+    if (win->xkb_state) {
         // Wayland keycodes are +8 from evdev
-        xkb_keysym_t sym = xkb_state_key_get_one_sym(d->xkb_state, key + 8);
+        xkb_keysym_t sym = xkb_state_key_get_one_sym(win->xkb_state, key + 8);
         char buf[64];
         int n = xkb_keysym_get_name(sym, buf, sizeof(buf));
         if (n > 0) {
@@ -286,7 +482,7 @@ static const struct wl_keyboard_listener keyboard_listener = {
 
 /* ---- seat listener ---- */
 static void seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t caps) {
-    display *d = (display *) data;
+    wl_context *d = (wl_context *) data;
     if ((caps & WL_SEAT_CAPABILITY_POINTER) && !d->pointer) {
         d->pointer = wl_seat_get_pointer(seat);
         wl_pointer_add_listener(d->pointer, &pointer_listener, d);
@@ -321,24 +517,10 @@ static const struct xdg_wm_base_listener wm_base_listener = {
     .ping = xdg_wm_base_ping
 };
 
-static void configure_layer_shell(void *data,
-                        		  struct zwlr_layer_surface_v1 *surf,
-                        		  uint32_t serial,
-                        		  uint32_t width,
-                            	  uint32_t height) {
-    zwlr_layer_surface_v1_ack_configure(surf, serial); 
-}
-
-static const struct zwlr_layer_surface_v1_listener layer_shell_listener = {
-    .configure = configure_layer_shell,
-    .closed = nullptr
-};
-
-
 /* ---- registry ---- */
 static void registry_handle_global(void *data, struct wl_registry *registry,
                                    uint32_t id, const char *interface, uint32_t version) {
-    display *d = (display *)data;
+    wl_context *d = (wl_context *)data;
     if (strcmp(interface, wl_compositor_interface.name) == 0) {
         d->compositor = (wl_compositor *) wl_registry_bind(registry, id, &wl_compositor_interface, 4);
     } else if (strcmp(interface, wl_shm_interface.name) == 0) {
@@ -347,13 +529,14 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
     } else if (strcmp(interface, wl_seat_interface.name) == 0) {
         d->seat = (wl_seat *) wl_registry_bind(registry, id, &wl_seat_interface, 5);
         wl_seat_add_listener(d->seat, &seat_listener, d);
+        printf("here\n");
     } else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
         d->wm_base = (xdg_wm_base *) wl_registry_bind(registry, id, &xdg_wm_base_interface, 1);
         xdg_wm_base_add_listener(d->wm_base, &wm_base_listener, d);
     } else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
         d->layer_shell = (zwlr_layer_shell_v1 *) wl_registry_bind(registry, id, &zwlr_layer_shell_v1_interface, 5);
     } else if (strcmp(interface, wl_output_interface.name) == 0) {
-        d->output = (wl_output *) wl_registry_bind(registry, id, &wl_output_interface, 3);
+        //d->output = (wl_output *) wl_registry_bind(registry, id, &wl_output_interface, 3);
     }
 }
 
@@ -366,161 +549,130 @@ static const struct wl_registry_listener registry_listener = {
     .global_remove = registry_handle_global_remove
 };
 
-static void handle_toplevel_close(void *data, struct xdg_toplevel *toplevel) {
-    printf("Compositor requested window close\n");
-    running = false;  // set your main loop flag to exit
+struct wl_context *wl_context_create(void) {
+    wl_context *ctx = new wl_context;
+    ctx->display = wl_display_connect(NULL);
+    if (!ctx->display) {
+        fprintf(stderr, "Failed to connect to Wayland display\n");
+        free(ctx);
+        return NULL;
+    }
+
+    ctx->registry = wl_display_get_registry(ctx->display);
+    wl_registry_add_listener(ctx->registry, &registry_listener, ctx);
+    wl_display_roundtrip(ctx->display); // populate globals
+
+    ctx->xkb_ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    ctx->shm_format = WL_SHM_FORMAT_ARGB8888; // default; discover if needed
+    return ctx;
 }
 
-static void handle_toplevel_configure(
-    void *data,
-    struct xdg_toplevel *toplevel,
-    int32_t width,
-    int32_t height,
-    struct wl_array *states) 
-{
-    // Usually you’d handle resize here
-    printf("size reconfigured\n");
+void wl_window_destroy(struct wl_window *win) {
+    if (!win) return;
+
+    if (win->xdg_toplevel) xdg_toplevel_destroy(win->xdg_toplevel);
+    if (win->xdg_surface) xdg_surface_destroy(win->xdg_surface);
+    if (win->layer_surface) zwlr_layer_surface_v1_destroy(win->layer_surface);
+
+    if (win->surface) wl_surface_destroy(win->surface);
+
+    if (win->xkb_state) xkb_state_unref(win->xkb_state);
+    if (win->keymap) xkb_keymap_unref(win->keymap);
+
+    free(win);
 }
 
-static const struct xdg_toplevel_listener xdg_toplevel_listener = {
-    .configure = handle_toplevel_configure,
-    .close = handle_toplevel_close,
-};
+void wl_context_destroy(struct wl_context *ctx) {
+    if (!ctx) return;
+
+    for (auto w : ctx->windows)
+        wl_window_destroy(w); 
+
+    if (ctx->keyboard) wl_keyboard_release(ctx->keyboard);
+    if (ctx->pointer) wl_pointer_release(ctx->pointer);
+    if (ctx->seat) wl_seat_release(ctx->seat);
+    if (ctx->shm) wl_shm_destroy(ctx->shm);
+    if (ctx->compositor) wl_compositor_destroy(ctx->compositor);
+    if (ctx->wm_base) xdg_wm_base_destroy(ctx->wm_base);
+    if (ctx->layer_shell) zwlr_layer_shell_v1_destroy(ctx->layer_shell);
+    if (ctx->xkb_ctx) xkb_context_unref(ctx->xkb_ctx);
+
+    wl_registry_destroy(ctx->registry);
+    wl_display_disconnect(ctx->display);
+    free(ctx);
+}
 
 int wake_pipe[2];
 
 int open_dock() {
     pipe2(wake_pipe, O_CLOEXEC | O_NONBLOCK);
     
-    struct display *d = &g;
-    d->display = wl_display_connect(NULL);
-    if (!d->display) {
-        fprintf(stderr, "Failed to connect to Wayland display\n");
+    struct wl_context *ctx = wl_context_create();
+    if (!ctx) {
+        fprintf(stderr, "Failed to initialize Wayland context\n");
         return 1;
     }
 
-    d->registry = wl_display_get_registry(d->display);
-    wl_registry_add_listener(d->registry, &registry_listener, d);
-    wl_display_roundtrip(d->display);
+    wl_layer_window_create(ctx, 800, 600, ZWLR_LAYER_SHELL_V1_LAYER_TOP, "quickshell:dock");
+    wl_window_create(ctx, 800, 600, "Settings");
+    wl_window_create(ctx, 800, 600, "Onboarding");
 
-    if (!d->compositor || !d->wm_base || !d->shm) {
-        fprintf(stderr, "Wayland compositor did not provide required globals (compositor, shm, xdg_wm_base)\n");
-        return 1;
-    }
+    printf("Window created. Entering main loop.\n");
 
-    d->xkb_ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    bool need_flush = false;
+    int fd = wl_display_get_fd(ctx->display);
 
-    d->width = 320; d->height = 240;
-
-    d->surface = wl_compositor_create_surface(d->compositor);
-            /*
-
-
-        */
-    //d->xdg_surface = xdg_wm_base_get_xdg_surface(d->wm_base, d->surface);
-    //d->xdg_toplevel = xdg_surface_get_toplevel(d->xdg_surface);
-   
-    //xdg_toplevel_add_listener(d->xdg_toplevel, &xdg_toplevel_listener, NULL);
-    //xdg_toplevel_set_title(d->xdg_toplevel, "wl-input - minimal");
-
-    d->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
-        d->layer_shell,
-        d->surface,
-        d->output, // output (NULL = compositor decides)
-        ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM, // or TOP / OVERLAY / BACKGROUND
-        "Mylardock" // namespace (used for compositor config)
-    );   
-
-    zwlr_layer_surface_v1_set_size(d->layer_surface, 0, 40); // width auto, height 50
-    zwlr_layer_surface_v1_set_anchor(d->layer_surface,
-        ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
-        ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
-        ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
-    zwlr_layer_surface_v1_set_keyboard_interactivity(d->layer_surface, ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
-
-    zwlr_layer_surface_v1_set_exclusive_zone(d->layer_surface, 40);
-
-    zwlr_layer_surface_v1_add_listener(d->layer_surface, &layer_shell_listener, d);
-
-/*
-    zwlr_layer_surface_v1 *layer = zwlr_layer_shell_v1_get_layer_surface(
-        d->layer_shell, d->surface, d->output,
-        ZWLR_LAYER_SHELL_V1_LAYER_TOP,
-        "dock" // this is the namespace
-    );
-    */
- 
-
-    wl_surface_commit(d->surface);
-
-    // create and attach a tiny shm buffer so our surface becomes mapped
-    wl_display_roundtrip(d->display);
-    struct wl_buffer *buf = create_shm_buffer(d, d->width, d->height);
-    if (!buf) {
-        fprintf(stderr, "Failed to create shm buffer\n");
-        return 1;
-    }
-    wl_surface_attach(d->surface, buf, 0, 0);
-    wl_surface_damage(d->surface, 0, 0, d->width, d->height);
-    wl_surface_commit(d->surface);
-
-    // enter main loop: listen for events and print pointer/keyboard events
-    printf("Running. Move mouse over window or press keys. Ctrl+C to quit.\n");
-
-    int fd = wl_display_get_fd(d->display);
+    int x = 0;
     while (running) {
-        if (wl_display_flush(d->display) < 0 && errno != EAGAIN) {
-            perror("wl_display_flush");
-            break;
-        }
+        //printf("x: %d\n", x++);
+        short events = POLLIN | POLLERR;
+        if (need_flush)
+            events |= POLLOUT;
 
-        //struct pollfd pfd = { .fd = fd, .events = POLLIN | POLLOUT | POLLERR };
-        // in your poll loop:
         struct pollfd pfds[2] = {
-            { .fd = fd, .events = POLLIN | POLLOUT | POLLERR },
+            { .fd = fd, .events = events },
             { .fd = wake_pipe[0], .events = POLLIN },
         };
 
-        if (poll(pfds, 2, -1) < 0) break;
+        if (poll(pfds, 2, -1) < 0)
+            break;
 
         if (pfds[1].revents & POLLIN) {
             char buf[64];
-            read(wake_pipe[0], buf, sizeof buf); // drain wake
-            continue; // recheck `running`
+            read(wake_pipe[0], buf, sizeof buf);
+            continue;
         }
-        //if (poll(&pfd, 1, -1) < 0) {
-            //perror("poll");
-            //break;
-        //}
 
         if (pfds[0].revents & POLLIN) {
-            if (wl_display_dispatch(d->display) < 0) break;
-        } else {
-            wl_display_dispatch_pending(d->display);
+            if (wl_display_dispatch(ctx->display) < 0)
+                break;
         }
+
+        if (pfds[0].revents & POLLOUT) {
+            if (wl_display_flush(ctx->display) == 0)
+                need_flush = false;
+        }
+
+        if (wl_display_flush(ctx->display) < 0 && errno == EAGAIN)
+            need_flush = true;
+
+
+        bool removed = false;
+        for (int i = ctx->windows.size() - 1; i >= 0; i--) {
+            auto win = ctx->windows[i];
+            if (win->marked_for_closing) {
+                removed = true;
+                wl_window_destroy(win); 
+                ctx->windows.erase(ctx->windows.begin() + i);
+                
+            }
+        }
+        if (removed)
+            wl_display_roundtrip(ctx->display);
     }
-
-
-
-    //while (wl_display_dispatch(d->display) != -1) {
-        // dispatch returns when events processed; loop continues until error
-    //}
-
-    // cleanup (not strictly necessary if process is exiting)
-    if (d->pointer) wl_pointer_destroy(d->pointer);
-    if (d->keyboard) wl_keyboard_destroy(d->keyboard);
-    if (d->seat) wl_seat_destroy(d->seat);
-    if (d->xdg_toplevel) xdg_toplevel_destroy(d->xdg_toplevel);
-    if (d->xdg_surface) xdg_surface_destroy(d->xdg_surface);
-    if (d->surface) wl_surface_destroy(d->surface);
-    if (d->shm) wl_shm_destroy(d->shm);
-    if (d->compositor) wl_compositor_destroy(d->compositor);
-    if (d->registry) wl_registry_destroy(d->registry);
-    if (d->display) wl_display_disconnect(d->display);
-
-    if (d->xkb_state) xkb_state_unref(d->xkb_state);
-    if (d->keymap) xkb_keymap_unref(d->keymap);
-    if (d->xkb_ctx) xkb_context_unref(d->xkb_ctx);
+   
+    // 4. Cleanup
+    wl_context_destroy(ctx); 
 
     return 0;
 }
@@ -542,3 +694,5 @@ int main() {
     start_dock();   
     return 0;
 }
+
+

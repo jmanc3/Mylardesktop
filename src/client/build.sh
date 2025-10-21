@@ -7,15 +7,16 @@ wayland-scanner private-code xdg-output-unstable-v1.xml xdg-output-unstable-v1-p
 #hyprwayland-scanner client ./protocols/wlr-layer-shell-unstable-v1.xml wlr-layer-shell-unstable-v1
 
 # Compile C files with gcc
-gcc -c xdg-shell-protocol.c wlr-layer-shell-unstable-v1-protocol.c
+gcc -c xdg-shell-protocol.c wlr-layer-shell-unstable-v1-protocol.c -g $(pkg-config --cflags --libs wayland-client xkbcommon cairo pangocairo)
 
 # Compile C++ file with g++
-g++ -c test.cpp
+g++ -c test.cpp -g $(pkg-config --cflags --libs wayland-client xkbcommon cairo pangocairo)
 
 # Link everything with g++
 g++ test.o xdg-shell-protocol.o wlr-layer-shell-unstable-v1-protocol.o \
     -o prog \
-    $(pkg-config --cflags --libs wayland-client xkbcommon)
+    -g \
+    $(pkg-config --cflags --libs wayland-client xkbcommon cairo pangocairo)
 
 
 #g++ test.cpp xdg-shell-protocol.c wlr-layer-shell-unstable-v1-protocol.c \
