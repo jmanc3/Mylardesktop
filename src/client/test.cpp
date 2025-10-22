@@ -1,4 +1,5 @@
 // wl_input.c
+#include <cairo-deprecated.h>
 #include <cstddef>
 #include <wayland-client-core.h>
 #define _POSIX_C_SOURCE 200809L
@@ -18,6 +19,15 @@
 #include <vector>
 #include <cairo.h>
 #include <pango/pangocairo.h>
+#include <wayland-client.h>
+#include <cairo/cairo.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+#include <climits>
 
 extern "C" {
 #define namespace namespace_
@@ -33,17 +43,19 @@ bool running = true;
 
 struct wl_window;
 
+bool wl_window_resize_buffer(struct wl_window *win, int new_width, int new_height);
+
 struct wl_context {
-    struct wl_display *display;
-    struct wl_registry *registry;
-    struct wl_compositor *compositor;
-    struct wl_shm *shm;
-    struct wl_seat *seat;
-    struct xdg_wm_base *wm_base;
-    struct zwlr_layer_shell_v1 *layer_shell;
-    struct wl_keyboard *keyboard;
-    struct wl_pointer *pointer;
-    struct xkb_context *xkb_ctx;
+    struct wl_display *display = nullptr;
+    struct wl_registry *registry = nullptr;
+    struct wl_compositor *compositor = nullptr;
+    struct wl_shm *shm = nullptr;
+    struct wl_seat *seat = nullptr;
+    struct xdg_wm_base *wm_base = nullptr;
+    struct zwlr_layer_shell_v1 *layer_shell = nullptr;
+    struct wl_keyboard *keyboard = nullptr;
+    struct wl_pointer *pointer = nullptr;
+    struct xkb_context *xkb_ctx = nullptr;
     //struct wl_output *output;
     uint32_t shm_format;
 
@@ -59,7 +71,18 @@ struct wl_window {
     struct wl_output *output = nullptr;
     struct xkb_keymap *keymap = nullptr;
     struct xkb_state *xkb_state = nullptr;
+    struct wl_shm_pool *pool = nullptr;
+    wl_buffer *buffer = nullptr;
+    
+    cairo_surface_t *cairo_surface = nullptr;
+    cairo_t *cr = nullptr;
+    
+    int pending_width, pending_height; // recieved from configured event
+    
     int width, height;
+    void *data;
+    size_t size;
+    int stride;
 
     std::string title;
     bool has_pointer_focus = false;
@@ -85,52 +108,225 @@ static void handle_toplevel_configure(
     struct wl_array *states) 
 {
     auto win = (wl_window *) data;
-    win->width = width;
-    win->height = height;
+
+    // Save for later (don’t resize yet)
+    if (width > 0) win->pending_width  = width;
+    if (height > 0) win->pending_height = height;
+    //wl_window_resize_buffer(win, width, height);
+    //wl_window_draw(win);
     
     // Usually you’d handle resize here
     printf("size reconfigured\n");
 }
+static void handle_surface_configure(void *data,
+			  struct xdg_surface *xdg_surface,
+			  uint32_t serial) {
+    struct wl_window *win = (struct wl_window *)data;
+    xdg_surface_ack_configure(xdg_surface, serial);
+    wl_surface_commit(win->surface);
+
+    if (win->pending_width > 0 && win->pending_height > 0 &&
+        (win->pending_width != win->width || win->pending_height != win->height)) {
+        wl_window_resize_buffer(win, win->pending_width, win->pending_height);
+    }
+    // Now it’s legal to resize + draw
+    //wl_window_resize_buffer(win, win->pending_width, win->pending_height);
+    //wl_window_draw(win);
+}
+
+static const struct xdg_surface_listener xdg_surface_listener = {
+    .configure = handle_surface_configure, 	 
+};
 
 static const struct xdg_toplevel_listener xdg_toplevel_listener = {
     .configure = handle_toplevel_configure,
     .close = handle_toplevel_close,
 };
 
-struct wl_window *wl_window_create(struct wl_context *ctx, int width, int height, const char *title) {
+/* ---- helper: create a simple shm buffer so surface is mapped ---- */
+static int create_shm_file(size_t size) {
+    char temp[] = "/tmp/wl-shm-XXXXXX";
+    int fd = mkstemp(temp);
+    if (fd >= 0) {
+        unlink(temp); // unlink so it is removed after close
+        if (ftruncate(fd, size) < 0) {
+            close(fd);
+            return -1;
+        }
+    }
+    return fd;
+}
+
+static int create_anonymous_file(off_t size) {
+    char path[] = "/dev/shm/wayland-shm-XXXXXX";
+    int fd = mkstemp(path);
+    if (fd < 0) {
+        fprintf(stderr, "mkstemp failed: %s\n", strerror(errno));
+        return -1;
+    }
+    unlink(path);
+    if (ftruncate(fd, size) < 0) {
+        fprintf(stderr, "ftruncate failed: %s\n", strerror(errno));
+        close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+static void destroy_shm_buffer(struct wl_window *win) {
+    if (win->cairo_surface) {
+        cairo_surface_destroy(win->cairo_surface);
+        win->cairo_surface = nullptr;
+    }
+
+    if (win->buffer) {
+        wl_buffer_destroy(win->buffer);
+        win->buffer = nullptr;
+    }
+
+    if (win->data) {
+        const int stride = win->width * 4;
+        const int size = stride * win->height;
+        munmap(win->data, size);
+        win->data = nullptr;
+    }
+}
+
+bool wl_window_resize_buffer(struct wl_window *win, int new_width, int new_height) {
+    destroy_shm_buffer(win);
+
+    win->width = new_width;
+    win->height = new_height;
+
+    const int stride = new_width * 4;
+    const int size = stride * new_height;
+
+    int fd = create_anonymous_file(size);
+    if (fd < 0) {
+        fprintf(stderr, "Failed to create shm file\n");
+        return false;
+    }
+
+    void *data = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (data == MAP_FAILED) {
+        fprintf(stderr, "mmap failed: %s\n", strerror(errno));
+        close(fd);
+        return false;
+    }
+
+    struct wl_shm_pool *pool = wl_shm_create_pool(win->ctx->shm, fd, size);
+    struct wl_buffer *buffer =
+        wl_shm_pool_create_buffer(pool, 0, new_width, new_height, stride, WL_SHM_FORMAT_ARGB8888);
+    wl_shm_pool_destroy(pool);
+    close(fd);
+
+    if (!buffer) {
+        fprintf(stderr, "Failed to create wl_buffer\n");
+        munmap(data, size);
+        return false;
+    }
+
+    win->buffer = buffer;
+    win->data = data;
+
+    win->cairo_surface = cairo_image_surface_create_for_data(
+        (unsigned char*)data,
+        CAIRO_FORMAT_ARGB32,
+        new_width,
+        new_height,
+        stride
+    );
+
+    if (cairo_surface_status(win->cairo_surface) != CAIRO_STATUS_SUCCESS) {
+        fprintf(stderr, "Failed to create cairo surface\n");
+        destroy_shm_buffer(win);
+        return false;
+    }
+
+    win->cr = cairo_create(win->cairo_surface);
+
+    auto cr = win->cr;
+    cairo_set_source_rgba(cr, 1, 1, 1, .2);
+    //cairo_rectangle(cr, 0, 0, win->width, win->height);
+    cairo_rectangle(cr, 10, 10, win->width - 20, win->height - 20);
+    cairo_fill(cr);
+    
+    cairo_set_source_rgba(cr, 0, 0, 0, 1);
+    cairo_rectangle(cr, 10, 10, 10, 10);
+    cairo_fill(cr);
+
+    // Attach new buffer immediately so compositor knows about new size
+    wl_surface_attach(win->surface, win->buffer, 0, 0);
+    wl_surface_damage_buffer(win->surface, 0, 20, INT32_MAX, INT32_MAX);
+    wl_surface_commit(win->surface);
+
+    return true;
+}
+
+struct wl_window *wl_window_create(struct wl_context *ctx,
+                                   int width, int height,
+                                   const char *title)
+{
     struct wl_window *win = new wl_window;
     win->ctx = ctx;
     win->width = width;
-    win->title = title;
     win->height = height;
+    win->title = title;
+    win->pending_width = width;
+    win->pending_height = height;
+    win->buffer = NULL;
+    win->pool = NULL;
+    win->data = NULL;
 
+    // 1️⃣ Create surface
     win->surface = wl_compositor_create_surface(ctx->compositor);
     if (!win->surface) {
         fprintf(stderr, "Failed to create wl_surface\n");
-        free(win);
+        delete win;
         return nullptr;
     }
 
+    // 2️⃣ Get xdg_surface
     win->xdg_surface = xdg_wm_base_get_xdg_surface(ctx->wm_base, win->surface);
-    win->xdg_toplevel = xdg_surface_get_toplevel(win->xdg_surface);
+    if (!win->xdg_surface) {
+        fprintf(stderr, "Failed to get xdg_surface\n");
+        wl_surface_destroy(win->surface);
+        delete win;
+        return nullptr;
+    }
 
-    xdg_toplevel_set_title(win->xdg_toplevel, title ? title : "Wayland Window");
-    wl_surface_commit(win->surface);
-    
+    // 3️⃣ Add surface listener BEFORE committing
+    xdg_surface_add_listener(win->xdg_surface, &xdg_surface_listener, win);
+
+    // 4️⃣ Create toplevel
+    win->xdg_toplevel = xdg_surface_get_toplevel(win->xdg_surface);
+    if (!win->xdg_toplevel) {
+        fprintf(stderr, "Failed to get xdg_toplevel\n");
+        xdg_surface_destroy(win->xdg_surface);
+        wl_surface_destroy(win->surface);
+        delete win;
+        return nullptr;
+    }
+
+    // 5️⃣ Add toplevel listener
     xdg_toplevel_add_listener(win->xdg_toplevel, &xdg_toplevel_listener, win);
 
-    // create and attach a tiny shm buffer so our surface becomes mapped
+    // 6️⃣ Set metadata
+    xdg_toplevel_set_title(win->xdg_toplevel, title ? title : "Wayland Window");
+
+    // 7️⃣ Single initial commit
+    wl_surface_commit(win->surface);
+
+    // 8️⃣ Wait for initial configure (some compositors require this)
     wl_display_roundtrip(ctx->display);
-    struct wl_buffer *buf = create_shm_buffer(ctx, width, height);
-    if (!buf) {
+
+    // create shm so that window will be mapped
+    if (!wl_window_resize_buffer(win, width, height)) {
         fprintf(stderr, "Failed to create shm buffer\n");
+        // cleanup code
         return nullptr;
     }
-    wl_surface_attach(win->surface, buf, 0, 0);
-    wl_surface_damage(win->surface, 0, 0, width, height);
-    wl_surface_commit(win->surface);
     wl_display_roundtrip(ctx->display);
-    
 
     ctx->windows.push_back(win);
     return win;
@@ -141,7 +337,10 @@ static void configure_layer_shell(void *data,
                         		  uint32_t serial,
                         		  uint32_t width,
                             	  uint32_t height) {
+    struct wl_window *win = (struct wl_window *)data;
     zwlr_layer_surface_v1_ack_configure(surf, serial); 
+
+    wl_window_resize_buffer(win, width, height);
 }
 
 static const struct zwlr_layer_surface_v1_listener layer_shell_listener = {
@@ -157,7 +356,6 @@ struct wl_window *wl_layer_window_create(struct wl_context *ctx, int width, int 
     win->width = width;
     win->height = height;
     win->title = title;
-
 
     win->surface = wl_compositor_create_surface(ctx->compositor);
     win->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
@@ -178,32 +376,18 @@ struct wl_window *wl_layer_window_create(struct wl_context *ctx, int width, int 
 
     // create and attach a tiny shm buffer so our surface becomes mapped
     wl_display_roundtrip(ctx->display);
-    struct wl_buffer *buf = create_shm_buffer(ctx, width, height);
-    if (!buf) {
+
+    // create shm so that window will be mapped
+    if (!wl_window_resize_buffer(win, width, height)) {
         fprintf(stderr, "Failed to create shm buffer\n");
+        // cleanup code
         return nullptr;
     }
-    wl_surface_attach(win->surface, buf, 0, 0);
-    wl_surface_damage(win->surface, 0, 0, width, height);
-    wl_surface_commit(win->surface);
     wl_display_roundtrip(ctx->display);
     
+
     ctx->windows.push_back(win);
     return win;
-}
-
-/* ---- helper: create a simple shm buffer so surface is mapped ---- */
-static int create_shm_file(size_t size) {
-    char temp[] = "/tmp/wl-shm-XXXXXX";
-    int fd = mkstemp(temp);
-    if (fd >= 0) {
-        unlink(temp); // unlink so it is removed after close
-        if (ftruncate(fd, size) < 0) {
-            close(fd);
-            return -1;
-        }
-    }
-    return fd;
 }
 
 static struct wl_buffer *create_shm_buffer(struct wl_context *ctx, int width, int height) {
@@ -236,6 +420,36 @@ static struct wl_buffer *create_shm_buffer(struct wl_context *ctx, int width, in
     wl_shm_pool_destroy(pool);
     munmap(data, size);
     close(fd);
+    return buffer;
+}
+
+struct wl_buffer *create_shm_buffer_with_cairo(struct wl_context *ctx,
+                                               int width, int height,
+                                               void (**out_unmap)(void*, size_t),
+                                               void **out_data,
+                                               size_t *out_size)
+{
+    int stride = width * 4;
+    size_t size = stride * height;
+    int fd = create_shm_file(size);
+    if (fd < 0) return NULL;
+
+    void *data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (data == MAP_FAILED) {
+        close(fd);
+        return NULL;
+    }
+
+    // Create shm pool + buffer
+    struct wl_shm_pool *pool = wl_shm_create_pool(ctx->shm, fd, size);
+    struct wl_buffer *buffer =
+        wl_shm_pool_create_buffer(pool, 0, width, height, stride, ctx->shm_format);
+    wl_shm_pool_destroy(pool);
+    close(fd);
+
+    //if (out_unmap) *out_unmap = munmap;
+    if (out_data) *out_data = data;
+    if (out_size) *out_size = size;
     return buffer;
 }
 
@@ -613,7 +827,7 @@ int open_dock() {
         return 1;
     }
 
-    wl_layer_window_create(ctx, 800, 600, ZWLR_LAYER_SHELL_V1_LAYER_TOP, "quickshell:dock");
+    wl_layer_window_create(ctx, 2560, 40, ZWLR_LAYER_SHELL_V1_LAYER_TOP, "quickshell:dock");
     wl_window_create(ctx, 800, 600, "Settings");
     wl_window_create(ctx, 800, 600, "Onboarding");
 
