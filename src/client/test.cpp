@@ -27,6 +27,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <climits>
 
 extern "C" {
@@ -73,7 +74,9 @@ struct wl_window {
     struct xkb_state *xkb_state = nullptr;
     struct wl_shm_pool *pool = nullptr;
     wl_buffer *buffer = nullptr;
-    
+
+    std::function<void(wl_window *)> on_render = nullptr;
+
     cairo_surface_t *cairo_surface = nullptr;
     cairo_t *cr = nullptr;
     
@@ -192,6 +195,32 @@ static void destroy_shm_buffer(struct wl_window *win) {
     }
 }
 
+void on_paint(struct wl_window *win) {
+    auto cr = win->cr;
+    cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
+    cairo_paint(cr);
+    
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+
+    cairo_set_source_rgba(cr, 1, 1, 1, .2);
+    //cairo_rectangle(cr, 0, 0, win->width, win->height);
+    cairo_rectangle(cr, 10, 10, win->width - 20, win->height - 20);
+    cairo_fill(cr);
+    
+    cairo_set_source_rgba(cr, 0, 0, 0, 1);
+    cairo_rectangle(cr, 10, 10, 10, 10);
+    cairo_fill(cr);
+
+    // Attach new buffer immediately so compositor knows about new size
+    wl_surface_attach(win->surface, win->buffer, 0, 0);
+    wl_surface_damage_buffer(win->surface, 0, 20, INT32_MAX, INT32_MAX);
+    wl_surface_commit(win->surface);
+}
+
+void on_window_render(wl_window *win) {
+    on_paint(win);
+}
+
 bool wl_window_resize_buffer(struct wl_window *win, int new_width, int new_height) {
     destroy_shm_buffer(win);
 
@@ -246,19 +275,9 @@ bool wl_window_resize_buffer(struct wl_window *win, int new_width, int new_heigh
     win->cr = cairo_create(win->cairo_surface);
 
     auto cr = win->cr;
-    cairo_set_source_rgba(cr, 1, 1, 1, .2);
-    //cairo_rectangle(cr, 0, 0, win->width, win->height);
-    cairo_rectangle(cr, 10, 10, win->width - 20, win->height - 20);
-    cairo_fill(cr);
-    
-    cairo_set_source_rgba(cr, 0, 0, 0, 1);
-    cairo_rectangle(cr, 10, 10, 10, 10);
-    cairo_fill(cr);
 
-    // Attach new buffer immediately so compositor knows about new size
-    wl_surface_attach(win->surface, win->buffer, 0, 0);
-    wl_surface_damage_buffer(win->surface, 0, 20, INT32_MAX, INT32_MAX);
-    wl_surface_commit(win->surface);
+    win->on_render = on_window_render;
+    win->on_render(win);
 
     return true;
 }
@@ -465,6 +484,8 @@ static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer,
         if (w->surface == surface) {
             printf("pointer: enter at %.2f, %.2f for %s\n", dx, dy, w->title.data());
             w->has_pointer_focus = true;
+            if (w->on_render)
+                w->on_render(w);
         }
     }
 }
@@ -477,6 +498,8 @@ static void pointer_handle_leave(void *data, struct wl_pointer *wl_pointer,
     for (auto w : ctx->windows) {
         if (w->surface == surface) {
             w->has_pointer_focus = false;
+            if (w->on_render)
+                w->on_render(w);
         }
     }
 }
@@ -488,8 +511,11 @@ static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer,
     double dy = wl_fixed_to_double(sy);
     auto ctx = (wl_context *) data;
     for (auto w : ctx->windows) {
-        if (w->has_pointer_focus)
+        if (w->has_pointer_focus) {
             printf("pointer: motion at %.2f, %.2f for %s\n", dx, dy, w->title.data());
+            if (w->on_render)
+                w->on_render(w);
+        }
     }
     //running = false;
 }
@@ -497,20 +523,36 @@ static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer,
 static void pointer_handle_button(void *data, struct wl_pointer *wl_pointer,
                                   uint32_t serial, uint32_t time,
                                   uint32_t button, uint32_t state) {
-    (void) data; (void) wl_pointer; (void) serial; (void) time;
+    (void) wl_pointer; (void) serial; (void) time;
     const char *st = (state == WL_POINTER_BUTTON_STATE_PRESSED) ? "pressed" : "released";
     printf("pointer: button %u %s\n", button, st);
     //win->marked_for_closing = true;
-    
+    auto ctx = (wl_context *) data;
+    for (auto w : ctx->windows) {
+        if (w->has_pointer_focus) {
+            printf("pointer: handle button\n");
+            if (w->on_render)
+                w->on_render(w);
+        }
+    }
+
     //running = false;
     //stop_dock();
 }
 
 static void pointer_handle_axis(void *data, struct wl_pointer *wl_pointer,
                                 uint32_t time, uint32_t axis, wl_fixed_t value) {
-    (void) data; (void) wl_pointer; (void) time; (void) axis;
+    (void) wl_pointer; (void) time; (void) axis;
     double v = wl_fixed_to_double(value);
     printf("pointer: axis %u value %.2f\n", axis, v);
+    auto ctx = (wl_context *) data;
+    for (auto w : ctx->windows) {
+        if (w->has_pointer_focus) {
+            printf("pointer: handle scroll\n");
+            if (w->on_render)
+                w->on_render(w);
+        }
+    }
 }
 
 static void pointer_handle_frame(void *data,
@@ -612,6 +654,8 @@ static void keyboard_handle_enter(void *data, struct wl_keyboard *wl_keyboard,
     for (auto w : ctx->windows) {
         if (w->surface == surface) {
             w->has_keyboard_focus = true;
+            if (w->on_render)
+                w->on_render(w);
         }
     }
 }
@@ -624,6 +668,8 @@ static void keyboard_handle_leave(void *data, struct wl_keyboard *wl_keyboard,
     for (auto w : ctx->windows) {
         if (w->surface == surface) {
             w->has_keyboard_focus = false;
+            if (w->on_render)
+                w->on_render(w);
         }
     }
 }
@@ -665,6 +711,9 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
         }
     }
     printf("\n");
+
+    if (win->on_render)
+        win->on_render(win);
 }
 
 static void keyboard_handle_modifiers(void *data, struct wl_keyboard *wl_keyboard,
