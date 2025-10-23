@@ -398,6 +398,14 @@ bool handle_mouse_button_release(Container* root, const Event& e) {
     return false;
 }
 
+void mouse_entered(Container* root, const Event& e) {
+    handle_mouse_motion(root, e.x, e.y);
+}
+
+void mouse_left(Container* root, const Event& e) {
+    handle_mouse_motion(root, -1000, -1000);
+}
+
 void move_event(Container* root, const Event& e) {
     handle_mouse_motion(root, e.x, e.y);
 }
@@ -414,7 +422,7 @@ void paint_outline(Container* root, Container* c) {
     if (!c->exists)
         return;
     
-    if (c->when_paint ) {
+    if (c->when_paint) {
         c->when_paint(root, c);
     }
     if (!c->automatically_paint_children) {

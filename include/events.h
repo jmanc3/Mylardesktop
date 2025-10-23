@@ -32,6 +32,8 @@ struct Event {
     }
 };
 
+void mouse_entered(Container*, const Event&);
+void mouse_left(Container*, const Event&);
 void move_event(Container*, const Event&);
 void mouse_event(Container*, const Event&);
 

@@ -789,7 +789,6 @@ Container* container_by_name(std::string name, Container* root) {
 
     if (root->name == name) {
         return root;
-        ;
     }
 
     if (root->type == layout_type::newscroll) {
@@ -818,6 +817,45 @@ Container* container_by_name(std::string name, Container* root) {
 
     return nullptr;
 }
+
+Container* container_by_name_up(std::string name, Container* root) {
+    auto parent = root->parent;
+    if (!parent)
+        return nullptr;
+    if (parent->name == name) {
+        return parent;
+    }
+
+        /*
+    if (parent->type == layout_type::newscroll) {
+        auto scroll   = (ScrollContainer*)parent;
+        auto possible = container_by_name(name, scroll->content);
+        if (possible)
+            return possible;
+        possible = container_by_name(name, scroll->right);
+        if (possible)
+            return possible;
+        possible = container_by_name(name, scroll->bottom);
+        if (possible)
+            return possible;
+        for (auto child : scroll->children) {
+            possible = container_by_name(name, child);
+            if (possible)
+                return possible;
+        }
+    } else {
+        for (auto child : parent->children) {
+            auto possible = container_by_name(name, child);
+            if (possible)
+                return possible;
+        }
+    }
+        */
+
+    return container_by_name_up(name, parent);
+}
+
+
 
 Container* container_by_container(Container* target, Container* root) {
     if (root == target) {

@@ -6,5 +6,5 @@ set -e
 #hyprctl plugin load $HOME/Mylardesktop/build/libMylardesktop.so
 #hyprctl plugin load $HOME/HyprWithMylar/plugin/Mylardesktop/mylar-desktop.so
 
-hyprctl plugin load $HOME/NewMylar/plugin/Mylardesktop/mylar-desktop.so
+hyprctl plugin load $HOME/NewMylar/plugin/Mylardesktop/mylar-release.so
 

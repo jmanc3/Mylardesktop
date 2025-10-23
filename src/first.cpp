@@ -3,6 +3,9 @@
 //#include "startup.h"
 #include "second.h"
 
+#include "client/test.h"
+#include <thread>
+
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
 Globals *globals = new Globals;
@@ -66,15 +69,21 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) { // When star
 
     //new_test();
                                                                   
-    second::begin();
+    //second::begin();
     //startup::begin();
+    std::thread th([]() {
+        start_dock();        
+    });
+    th.detach();
 
     return {"Mylardesktop", "Mylar is a smooth and beautiful wayland desktop, written on Hyprland", "jmanc3", "1.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
    //startup::end(); 
-   second::end(); 
+   //second::end(); 
+   stop_dock();
+   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
 
 void init_mylar(void* h) { // When started directly from hyprland

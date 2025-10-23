@@ -192,7 +192,7 @@ struct ScrollPaneSettings;
 struct Container {
     // The parent of this container which must be set by the user whenever a
     // relationship is added
-    Container* parent;
+    Container* parent = nullptr;
 
     // A user settable name that can be used for retrival
     std::string name;
@@ -447,6 +447,7 @@ Bounds     scroll_bounds(Container* container);
 void       layout(Container* root, Container* container, const Bounds& bounds);
 
 Container* container_by_name(std::string name, Container* root);
+Container* container_by_name_up(std::string name, Container* root);
 
 Container* container_by_container(Container* target, Container* root);
 
