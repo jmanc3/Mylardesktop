@@ -69,7 +69,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) { // When star
 
     //new_test();
                                                                   
-    //second::begin();
+    second::begin();
     //startup::begin();
     std::thread th([]() {
         start_dock();        
@@ -81,7 +81,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) { // When star
 
 APICALL EXPORT void PLUGIN_EXIT() {
    //startup::end(); 
-   //second::end(); 
+   second::end(); 
    stop_dock();
    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }

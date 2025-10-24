@@ -2526,7 +2526,7 @@ void on_window_open(int id) {
     // add a child to root which will rep the window titlebar
     auto tc = new ThinClient(id);
     hypriso->windows.push_back(tc);
-    hypriso->reserve_titlebar(tc, titlebar_h);
+    hypriso->reserve_titlebar(id, titlebar_h);
     set_window_corner_mask(id, 3);
 
     int monitor = monitor_overlapping(id);

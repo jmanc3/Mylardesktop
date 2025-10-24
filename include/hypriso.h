@@ -194,7 +194,8 @@ struct HyprIso {
     std::vector<ThinClient *> windows;
     std::vector<ThinMonitor *> monitors;
 
-    void reserve_titlebar(ThinClient *c, int size);
+    bool wants_titlebar(int id);
+    void reserve_titlebar(int id, int size);
 
     float get_rounding(int id);
     

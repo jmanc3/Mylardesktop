@@ -931,14 +931,39 @@ void HyprIso::create_callbacks() {
     });
 }
 
+inline CFunctionHook* g_pOnArrangeLayers = nullptr;
+typedef void (*origArrangeLayers)(CHyprRenderer *, const MONITORID& monitor);
+void hook_onArrangeLayers(void* thisptr, const MONITORID& monitor) {
+    auto spe = (CHyprRenderer *) thisptr;
+    (*(origArrangeLayers)g_pOnArrangeLayers->m_original)(spe, monitor);
+    notify("dock added");
+}
+
+void hook_dock_change() {
+    //g_pHyprRenderer->arrangeLayersForMonitor(m_id);
+    static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "arrangeLayersForMonitor");
+    // TODO: check if m.address is same as set_rounding even though signature is SurfacePassElement
+    for (auto m : METHODS) {
+        if (m.signature.find("CHyprRenderer") != std::string::npos) {
+            notify(m.demangled);
+            notify(m.demangled);
+            g_pOnArrangeLayers = HyprlandAPI::createFunctionHook(globals->api, m.address, (void*)&hook_onArrangeLayers);
+            g_pOnArrangeLayers->hook();
+            return;
+        }
+    }
+}
+
 void HyprIso::create_hooks() {
     fix_window_corner_rendering();
-    disable_default_alt_tab_behaviour();
+    notify("1 - remove me");
+    //disable_default_alt_tab_behaviour();
     detect_csd_request_change();
     detect_move_resize_requests();    
     overwrite_min();
     hook_render_functions();
     interleave_floating_and_tiled_windows();
+    hook_dock_change();
 }
 
 void HyprIso::end() {
@@ -1050,13 +1075,17 @@ struct MylarBar : public IHyprWindowDecoration {
     } 
     bool                       onInputOnDeco(const eInputType, const Vector2D&, std::any = {}) { return false; }
     eDecorationLayer           getDecorationLayer() { return eDecorationLayer::DECORATION_LAYER_BOTTOM; }
-    uint64_t                   getDecorationFlags() { return eDecorationFlags::DECORATION_ALLOWS_MOUSE_INPUT; }
+    uint64_t                   getDecorationFlags() { return eDecorationFlags::DECORATION_PART_OF_MAIN_WINDOW; }
     std::string                getDisplayName() { return "MylarBar"; }
 };
 
-void HyprIso::reserve_titlebar(ThinClient *c, int size) {
+bool HyprIso::wants_titlebar(int id) {
+    return true;
+}
+
+void HyprIso::reserve_titlebar(int id, int size) {
     for (auto hyprwindow : hyprwindows) {
-        if (hyprwindow->id == c->id) {
+        if (hyprwindow->id == id) {
             if (auto w = hyprwindow->w.get()) {
                 for (auto& wd : w->m_windowDecorations)
                     if (wd->getDisplayName() == "MylarBar")

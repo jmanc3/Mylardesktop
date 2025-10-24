@@ -1036,6 +1036,17 @@ int open_dock() {
     while (running) {
         // Dispatch any already-queued events before blocking
         wl_display_dispatch_pending(ctx->display);
+        
+        /*
+        // 2. REDRAW phase — right here
+        for (auto win : ctx->windows) {
+            if (win->needs_redraw) {
+                wl_window_draw(win);        // your Cairo/OpenGL draw
+                wl_surface_commit(win->surface);
+                win->needs_redraw = false;
+            }
+        }
+        */
 
         // Try to flush before waiting
         if (wl_display_flush(ctx->display) < 0 && errno == EAGAIN)

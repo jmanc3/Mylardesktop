@@ -8,6 +8,7 @@
 
 #include "container.h"
 #include "hypriso.h"
+#include "titlebar.h"
 
 static void any_container_closed(Container *) {
     
@@ -30,11 +31,23 @@ static bool on_key_press(int id, int key, int state, bool update_mods) {
 }
 
 static void on_window_open(int id) {
-
+    auto tc = new ThinClient(id);
+    hypriso->windows.push_back(tc);
+    
+    set_window_corner_mask(id, 3);
+    
+    titlebar::on_window_open(id);
 }
 
 static void on_window_closed(int id) {
+    titlebar::on_window_closed(id);
 
+    for (int i = hypriso->windows.size() - 1; i >= 0; i--) {
+        if (hypriso->windows[i]->id == id) {
+            delete hypriso->windows[i];
+            hypriso->windows.erase(hypriso->windows.begin() + i);
+        }
+    }
 }
 
 static void on_monitor_open(int id) {
@@ -49,8 +62,8 @@ static void on_activated(int id) {
 
 }
 
-static void on_draw_decos(std::string name, int monitor, int w, float a) {
-
+static void on_draw_decos(std::string name, int monitor, int id, float a) {
+    titlebar::on_draw_decos(name, monitor, id, a);
 }
 
 static void on_render(int id, int stage) {
@@ -90,7 +103,7 @@ void second::begin() {
     hypriso->on_activated = on_activated;
 
 	hypriso->create_callbacks();
-	//hypriso->create_hooks();
+	hypriso->create_hooks();
 	
     hypriso->add_float_rule();
 }
