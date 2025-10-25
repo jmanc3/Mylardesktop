@@ -310,8 +310,8 @@ void on_open_window(PHLWINDOW w) {
    }
     
     // Validate that we care about the window
-    if (w->m_X11DoesntWantBorders)
-        return;
+    //if (w->m_X11DoesntWantBorders)
+        //return;
 
     /*
     for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
@@ -335,11 +335,10 @@ void on_open_window(PHLWINDOW w) {
     // Or csd client side requested
     
     auto hw = new HyprWindow;
-    hw->id = unique_id;
+    hw->id = unique_id++;
     hw->w = w;
     hyprwindows.push_back(hw);
     hypriso->on_window_open(hw->id);
-    unique_id++;            
 }
 
 void on_close_window(PHLWINDOW w) {
@@ -364,11 +363,10 @@ void on_open_monitor(PHLMONITOR m) {
             return;
     }
     auto hm = new HyprMonitor;
-    hm->id = unique_id;
+    hm->id = unique_id++;
     hm->m = m;
     hyprmonitors.push_back(hm);
     hypriso->on_monitor_open(hm->id);
-    unique_id++;            
 }
 
 void on_close_monitor(PHLMONITOR m) {
@@ -720,9 +718,8 @@ void disable_default_alt_tab_behaviour() {
 }
 
 void set_window_corner_mask(int id, int cornermask) {
-    for (auto hw: hyprwindows)
-        if (hw->id == id)
-            hw->cornermask = cornermask;
+    notify("deprecated(set_window_corner_mask): use set_corner_rendering_mask_for_window");
+    hypriso->set_corner_rendering_mask_for_window(id, cornermask);
 }
 
 float HyprIso::get_rounding(int id) {
@@ -797,6 +794,27 @@ void HyprIso::create_callbacks() {
             on_close_window(w);
         }
     });
+
+    static auto openLayer  = HyprlandAPI::registerCallbackDynamic(globals->api, "openLayer", [](void* self, SCallbackInfo& info, std::any data) {
+        //if (hypriso->on_window_open) {
+            //auto w = std::any_cast<PHLLS>(data); // todo getorcreate ref on our side
+            //on_open_window(w);
+        //}
+        if (hypriso->on_layer_change) {
+            hypriso->on_layer_change();
+        }
+    });
+    static auto closeLayer = HyprlandAPI::registerCallbackDynamic(globals->api, "closeLayer", [](void* self, SCallbackInfo& info, std::any data) {
+        //if (hypriso->on_window_closed) {
+            //auto w = std::any_cast<PHLLS>(data); // todo getorcreate ref on our side
+            //w->m_realPosition
+            //on_close_window(w);
+        //}
+        if (hypriso->on_layer_change) {
+            hypriso->on_layer_change();
+        }
+    });
+    
     static auto render = HyprlandAPI::registerCallbackDynamic(globals->api, "render", [](void* self, SCallbackInfo& info, std::any data) {
         if (hypriso->on_render) {
             for (auto m : hyprmonitors) {
@@ -1080,6 +1098,14 @@ struct MylarBar : public IHyprWindowDecoration {
 };
 
 bool HyprIso::wants_titlebar(int id) {
+   for (auto hyprwindow : hyprwindows) {
+        if (hyprwindow->id == id) {
+            if (hyprwindow->w->m_X11DoesntWantBorders) {
+                return false;
+            }
+        }
+   }
+      
     return true;
 }
 
@@ -1112,41 +1138,18 @@ void request_refresh_only() {
 }
 
 Bounds bounds_full(ThinClient *w) {
-    for (auto hyprwindow : hyprwindows) {
-        if (hyprwindow->id == w->id) {
-            if (auto w = hyprwindow->w.get()) {
-                return tobounds(w->getFullWindowBoundingBox());
-            }
-        }
-    }    
-    return {0, 0, 0, 0};
+    notify("deprecated(bounds_full): use bounds_full_client");
+    return bounds_full_client(w->id);
 }
 
 Bounds bounds(ThinClient *w) {
-    for (auto hyprwindow : hyprwindows) {
-        if (hyprwindow->id == w->id) {
-            if (auto w = hyprwindow->w.get()) {
-                //return w->getFullWindowBoundingBox();
-                return tobounds(w->getWindowMainSurfaceBox());
-            }
-        }
-    }    
-    return {0, 0, 0, 0};
+    notify("deprecated(bounds): use bounds_client");
+    return bounds_client(w->id);
 }
 
 Bounds real_bounds(ThinClient *w) {
-    for (auto hyprwindow : hyprwindows) {
-        if (hyprwindow->id == w->id) {
-            if (auto w = hyprwindow->w.get()) {
-                //return w->getFullWindowBoundingBox();
-                return tobounds({
-                    w->m_realPosition->goal().x, w->m_realPosition->goal().y,
-                    w->m_realSize->goal().x, w->m_realSize->goal().y
-                });
-            }
-        }
-    }    
-    return {0, 0, 0, 0};
+    notify("deprecated(real_bounds): use real_bounds_client");
+    return real_bounds_client(w->id);
 }
 
 std::string class_name(ThinClient *w) {
@@ -1174,34 +1177,17 @@ std::string title_name(ThinClient *w) {
 }
 
 Bounds bounds(ThinMonitor *m) {
-    for (auto hyprmonitor : hyprmonitors) {
-        if (hyprmonitor->id == m->id) {
-            if (auto m = hyprmonitor->m.get()) {
-                return tobounds(m->logicalBox());
-            }
-        }
-    }    
-    return {0, 0, 0, 0};
+    notify("deprecated(bounds): use bounds_monitor");
+    return bounds_monitor(m->id);
 }
 
 Bounds bounds_reserved(ThinMonitor *m) {
-    for (auto hyprmonitor : hyprmonitors) {
-        if (hyprmonitor->id == m->id) {
-            if (auto m = hyprmonitor->m.get()) {
-                auto b = m->logicalBox();
-                b.x += m->m_reservedTopLeft.x;
-                b.y += m->m_reservedTopLeft.y;
-                b.w -= (m->m_reservedTopLeft.x + m->m_reservedBottomRight.x);
-                b.h -= (m->m_reservedTopLeft.y + m->m_reservedBottomRight.y);
-                return tobounds(b);
-            }
-        }
-    }    
-    return {0, 0, 0, 0};
+    notify("deprecated(bounds_reserved): use bounds_reserved_monitor");
+    return bounds_reserved_monitor(m->id);
 }
 
 void notify(std::string text) {
-    HyprlandAPI::addNotification(globals->api, text, {1, 1, 1, 1}, 4000);
+    HyprlandAPI::addNotification(globals->api, text, {1, 1, 1, 1}, 1000);
 }
 
 int current_rendering_monitor() {
@@ -3641,4 +3627,80 @@ void HyprIso::all_gain_focus() {
         g_pCompositor->focusWindow(p);        
     }
 }
-     
+
+void HyprIso::set_corner_rendering_mask_for_window(int id, int mask) {
+    for (auto hw: hyprwindows)
+        if (hw->id == id)
+            hw->cornermask = mask;
+}
+
+Bounds bounds_monitor(int id);
+Bounds bounds_reserved_monitor(int id);
+
+
+Bounds bounds_full_client(int wid) {
+    for (auto hyprwindow : hyprwindows) {
+        if (hyprwindow->id == wid) {
+            if (auto w = hyprwindow->w.get()) {
+                return tobounds(w->getFullWindowBoundingBox());
+            }
+        }
+    }    
+    return {0, 0, 0, 0};
+}
+
+Bounds bounds_client(int wid) {
+    for (auto hyprwindow : hyprwindows) {
+        if (hyprwindow->id == wid) {
+            if (auto w = hyprwindow->w.get()) {
+                //return w->getFullWindowBoundingBox();
+                return tobounds(w->getWindowMainSurfaceBox());
+            }
+        }
+    }    
+    return {0, 0, 0, 0};
+}
+
+Bounds real_bounds_client(int wid) {
+    for (auto hyprwindow : hyprwindows) {
+        if (hyprwindow->id == wid) {
+            if (auto w = hyprwindow->w.get()) {
+                //return w->getFullWindowBoundingBox();
+                return tobounds({
+                    w->m_realPosition->goal().x, w->m_realPosition->goal().y,
+                    w->m_realSize->goal().x, w->m_realSize->goal().y
+                });
+            }
+        }
+    }    
+    return {0, 0, 0, 0};
+}
+
+Bounds bounds_monitor(int id) {
+    for (auto hyprmonitor : hyprmonitors) {
+        if (hyprmonitor->id == id) {
+            if (auto m = hyprmonitor->m.get()) {
+                return tobounds(m->logicalBox());
+            }
+        }
+    }    
+    return {0, 0, 0, 0};
+}
+
+Bounds bounds_reserved_monitor(int id) {
+    for (auto hyprmonitor : hyprmonitors) {
+        if (hyprmonitor->id == id) {
+            if (auto m = hyprmonitor->m.get()) {
+                auto b = m->logicalBox();
+                b.x += m->m_reservedTopLeft.x;
+                b.y += m->m_reservedTopLeft.y;
+                b.w -= (m->m_reservedTopLeft.x + m->m_reservedBottomRight.x);
+                b.h -= (m->m_reservedTopLeft.y + m->m_reservedBottomRight.y);
+                return tobounds(b);
+            }
+        }
+    }    
+    return {0, 0, 0, 0};
+}
+
+

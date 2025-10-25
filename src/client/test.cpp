@@ -428,7 +428,7 @@ struct wl_window *wl_layer_window_create(struct wl_context *ctx, int width, int 
         ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
     zwlr_layer_surface_v1_set_size(win->layer_surface, width, height);
     zwlr_layer_surface_v1_set_keyboard_interactivity(win->layer_surface,
-        ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_ON_DEMAND);
+        ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
 
     if (exclusive_zone)
         zwlr_layer_surface_v1_set_exclusive_zone(win->layer_surface, height);
@@ -1167,9 +1167,9 @@ void stop_dock() {
     wake_display_loop();    
 }
 
-int main() {
+/*int main() {
     start_dock();   
     return 0;
-}
+}*/
 
 

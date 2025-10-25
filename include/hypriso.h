@@ -174,7 +174,9 @@ struct HyprIso {
     std::function<void(int id)> on_window_open = nullptr;
     
     std::function<void(int id)> on_window_closed = nullptr;
-    
+
+    std::function<void()> on_layer_change = nullptr;
+
     std::function<void(int id)> on_monitor_open = nullptr;
     
     std::function<void(int id)> on_monitor_closed = nullptr;
@@ -191,13 +193,15 @@ struct HyprIso {
     std::function<void()> on_config_reload = nullptr;
     void reload();
 
-    std::vector<ThinClient *> windows;
-    std::vector<ThinMonitor *> monitors;
+    //std::vector<ThinClient *> windows;
+    //std::vector<ThinMonitor *> monitors;
 
     bool wants_titlebar(int id);
     void reserve_titlebar(int id, int size);
 
     float get_rounding(int id);
+    
+    void set_corner_rendering_mask_for_window(int id, int mask);
     
     void move(int id, int x, int y);
     void move_resize(int id, int x, int y, int w, int h, bool instant = true);
@@ -284,6 +288,13 @@ std::string title_name(ThinClient *w);
 // ThinMonitor props
 Bounds bounds(ThinMonitor *m);
 Bounds bounds_reserved(ThinMonitor *m);
+
+Bounds bounds_monitor(int id);
+Bounds bounds_reserved_monitor(int id);
+
+Bounds bounds_client(int id);
+Bounds real_bounds_client(int id);
+Bounds bounds_full_client(int id);
 
 int current_rendering_monitor();
 int current_rendering_window();

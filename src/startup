@@ -38,7 +38,6 @@ struct Datas {
 };
 std::unordered_map<std::string, Datas> datas;
 
-
 template<typename T>
 T *get_data(const std::string& uuid, const std::string& name) {
     // Locate uuid
@@ -73,7 +72,7 @@ T *get_or_create(const std::string& uuid, const std::string& name) {
     return data;
 }
 
-void remove_data(const std::string& uuid) {
+static void remove_data(const std::string& uuid) {
     datas.erase(uuid);
 }
 
