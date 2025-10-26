@@ -1071,7 +1071,10 @@ struct MylarBar : public IHyprWindowDecoration {
         info.desiredExtents = {{0, m_size}, {0, 0}};
         return info;
     }
-    void onPositioningReply(const SDecorationPositioningReply& reply) { }
+    void onPositioningReply(const SDecorationPositioningReply& reply) {
+        //g_pHyprRenderer->damageMonitor(m_window->m_monitor.lock());
+        //draw(m_window->m_monitor.lock(), 1.0);
+    }
     void draw(PHLMONITOR monitor, float const& a) { 
         if (!hypriso->on_draw_decos)
            return; 
@@ -1086,15 +1089,20 @@ struct MylarBar : public IHyprWindowDecoration {
             }
         }
     }
-    eDecorationType            getDecorationType() { return eDecorationType::DECORATION_GROUPBAR; }
-    void                       updateWindow(PHLWINDOW) { }
+    eDecorationType getDecorationType() { return eDecorationType::DECORATION_GROUPBAR; }
+    void updateWindow(PHLWINDOW) { 
+        //g_pHyprRenderer->damageMonitor(m_window->m_monitor.lock());
+        //draw(m_window->m_monitor.lock(), 1.0);
+    }
     void damageEntire() { 
+        //g_pHyprRenderer->damageMonitor(m_window->m_monitor.lock());
+        //hypriso->damage_entire(m_window->m_monitorMovedFrom);
         //draw(m_window->m_monitor.lock(), 1.0);
     } 
-    bool                       onInputOnDeco(const eInputType, const Vector2D&, std::any = {}) { return false; }
-    eDecorationLayer           getDecorationLayer() { return eDecorationLayer::DECORATION_LAYER_BOTTOM; }
-    uint64_t                   getDecorationFlags() { return eDecorationFlags::DECORATION_PART_OF_MAIN_WINDOW; }
-    std::string                getDisplayName() { return "MylarBar"; }
+    bool onInputOnDeco(const eInputType, const Vector2D&, std::any = {}) { return false; }
+    eDecorationLayer getDecorationLayer() { return eDecorationLayer::DECORATION_LAYER_BOTTOM; }
+    uint64_t getDecorationFlags() { return eDecorationFlags::DECORATION_PART_OF_MAIN_WINDOW; }
+    std::string getDisplayName() { return "MylarBar"; }
 };
 
 bool HyprIso::wants_titlebar(int id) {

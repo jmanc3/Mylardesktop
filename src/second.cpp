@@ -22,15 +22,66 @@ static void any_container_closed(Container *c) {
 }
 
 static bool on_mouse_move(int id, float x, float y) {
-    return false;
+    Event event(x, y);
+    second::layout_containers();
+    for (auto m : monitors) {
+        move_event(m, event);
+    }
+
+    bool consumed = false;
+    for (auto root : monitors) {
+       if (root->consumed_event) {
+           consumed = true;
+           root->consumed_event = false;
+       } 
+    }
+
+    return consumed;
 }
 
 static bool on_mouse_press(int id, int button, int state, float x, float y) {
-    return false;
+    Event event(x, y, button, state);
+    second::layout_containers();
+    for (auto root : monitors)
+        mouse_event(root, event);
+    
+    bool consumed = false;
+    for (auto root : monitors) {
+       if (root->consumed_event) {
+           consumed = true;
+           root->consumed_event = false;
+       } 
+    }
+
+    return consumed;
 }
 
-static bool on_scrolled(int id, int source, int axis, int direction, double delta, int discrete, bool mouse) {
-    return false;
+static bool on_scrolled(int id, int source, int axis, int direction, double delta, int discrete, bool from_mouse) {
+    auto m = mouse();
+    auto mid = hypriso->monitor_from_cursor();
+    auto s = scale(mid);
+    Event event;
+    event.x = m.x * s;
+    event.y = m.y * s;
+    event.scroll = true;
+    event.axis = axis;
+    event.direction = direction;
+    event.delta = delta;
+    event.descrete = discrete;
+    event.from_mouse = from_mouse;
+    second::layout_containers();
+    for (auto root : monitors)
+        mouse_event(root, event);
+
+    bool consumed = false;
+    for (auto root : monitors) {
+       if (root->consumed_event) {
+           consumed = true;
+           root->consumed_event = false;
+       } 
+    }
+
+    return consumed;
 }
 
 static bool on_key_press(int id, int key, int state, bool update_mods) {
@@ -42,7 +93,6 @@ static void on_window_open(int id) {
     for (auto m : monitors) {
         auto c = m->child(FILL_SPACE, FILL_SPACE);
         c->custom_type = (int) TYPE::CLIENT;
-        c->interactable = false; // children can still be interactable
         c->when_paint = paint {
             auto [rid, s, stage, active_id] = from_root(root);
             auto cid = *datum<int>(c, "cid");
