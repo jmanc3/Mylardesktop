@@ -10,6 +10,8 @@
 #define fz std::format
 #define nz notify
 
+static float ratio_titlebar_button = 1.4375f;
+
 void request_damage(Container *root, Container *c) {
     auto [rid, s, stage, active_id] = from_root(root);
     auto b = c->real_bounds;
@@ -22,6 +24,13 @@ void titlebar_pre_layout(Container* root, Container* self, const Bounds& bounds)
     auto cid = *datum<int>(self, "cid");
     auto s = scale(rid);
     self->wanted_bounds.h = titlebar_h * s; 
+    self->children[0]->wanted_bounds.w = titlebar_h * s * ratio_titlebar_button;
+    self->children[1]->wanted_bounds.w = titlebar_h * s * ratio_titlebar_button;
+    self->children[2]->wanted_bounds.w = titlebar_h * s * ratio_titlebar_button;
+}
+
+void titlebar_button(Container *root, Container *c) {
+    
 }
 
 void create_titlebar(Container *root, Container *parent) {
@@ -36,21 +45,37 @@ void create_titlebar(Container *root, Container *parent) {
         auto b = c->real_bounds;
         if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
             rect(b, {.8, .8, .8, 1}, 12, hypriso->get_rounding(cid), 2.0f);
-
-            /*if (c->state.mouse_hovering) {
-                auto curs = mouse();
-                curs.x -= 20;
-                curs.y -= 20;
-                curs.scale(s);
-                curs.w = 10;
-                curs.h = 10;
-                rect(curs, {.1, .1, .1, 1});
-            }*/
         }
     };
+    titlebar->receive_events_even_if_obstructed_by_one = true;
     titlebar->when_mouse_motion = request_damage;
     titlebar->when_mouse_enters_container = titlebar->when_mouse_motion;
     titlebar->when_mouse_leaves_container = titlebar->when_mouse_motion;
+
+    titlebar->alignment = ALIGN_RIGHT;
+    auto min = titlebar->child(FILL_SPACE, FILL_SPACE);
+    min->when_paint = paint {
+        auto [rid, s, stage, active_id] = from_root(root);
+        auto client = first_above_of(c, TYPE::CLIENT);
+        auto cid = *datum<int>(client, "cid");
+
+        auto b = c->real_bounds;
+        if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
+            //TextureInfo main = gen_text_texture("Segoe Fluent Icons", "\ue921",
+                //titlebar_icon_button_h * s, color_titlebar_icon);
+
+            
+            if (c->state.mouse_pressing) {
+                rect(b, {0, 0, 0, 1}, 12, hypriso->get_rounding(cid), 2.0f);
+            } else if (c->state.mouse_hovering) {
+                rect(b, {1, 0, 0, 1}, 12, hypriso->get_rounding(cid), 2.0f);
+            }
+        }
+    };
+    auto max = titlebar->child(FILL_SPACE, FILL_SPACE);
+    max->when_paint = min->when_paint;
+    auto close = titlebar->child(FILL_SPACE, FILL_SPACE);
+    close->when_paint = min->when_paint;
 }
 
 void titlebar::on_window_open(int id) {
