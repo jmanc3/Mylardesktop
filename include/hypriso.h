@@ -112,6 +112,13 @@ struct TextureInfo {
     int id = -1;
     int w = 0;
     int h = 0;
+
+    std::string cached_text;
+    RGBA cached_color;
+    
+    long last_reattempt_time = 0;
+    int reattempts_count = 0;
+    int cached_h = 0;
 };
 
 struct ThinClient {
