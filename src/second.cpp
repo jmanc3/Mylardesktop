@@ -98,7 +98,7 @@ static void on_window_open(int id) {
             auto cid = *datum<int>(c, "cid");
             //nz(fz("{} {} {} {} {}", rid, s, stage, active_id, cid));
             if (cid == active_id && stage == (int) STAGE::RENDER_PRE_WINDOW) {
-                border(c->real_bounds, {1, 0, 1, 1}, 5);
+                //border(c->real_bounds, {1, 0, 1, 1}, 5);
             }
         };
         

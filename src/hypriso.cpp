@@ -722,6 +722,18 @@ void set_window_corner_mask(int id, int cornermask) {
     hypriso->set_corner_rendering_mask_for_window(id, cornermask);
 }
 
+std::string HyprIso::class_name(int id) {
+    for (auto hyprwindow : hyprwindows) {
+        if (hyprwindow->id == id) {
+            if (auto w = hyprwindow->w.get()) {
+                return w->m_class;
+            }
+        }
+    }
+ 
+    return "";
+}
+
 float HyprIso::get_rounding(int id) {
     for (auto hw: hyprwindows)
         if (hw->id == id)
@@ -1170,6 +1182,18 @@ std::string class_name(ThinClient *w) {
     }
  
    return ""; 
+}
+
+std::string HyprIso::title_name(int id) {
+    for (auto hyprwindow : hyprwindows) {
+        if (hyprwindow->id == id) {
+            if (auto w = hyprwindow->w.get()) {
+                return w->m_title;
+            }
+        }
+    }
+ 
+    return "";
 }
 
 std::string title_name(ThinClient *w) {

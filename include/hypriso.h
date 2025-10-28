@@ -207,6 +207,9 @@ struct HyprIso {
     void reserve_titlebar(int id, int size);
 
     float get_rounding(int id);
+
+    std::string class_name(int id);
+    std::string title_name(int id);
     
     void set_corner_rendering_mask_for_window(int id, int mask);
     
