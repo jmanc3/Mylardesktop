@@ -25,8 +25,6 @@ RGBA titlebar_closed_button_bg_hovered_color() { return hypriso->get_varcolor("p
 RGBA titlebar_closed_button_bg_pressed_color() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_closed_button_bg_pressed_color", RGBA("rgba(0000ffff)")); }
 RGBA titlebar_closed_button_icon_color_hovered_pressed() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_closed_button_icon_color_hovered_pressed", RGBA("rgba(999999ff)")); }
 
-
-
 void request_damage(Container *root, Container *c) {
     auto [rid, s, stage, active_id] = from_root(root);
     auto b = c->real_bounds;
@@ -79,7 +77,7 @@ TextureInfo *get_cached_texture(Container *root, Container *target, std::string 
     return info; 
 }
 
-void simple_button(Container *root, Container *c, std::string name, std::string icon, bool is_close = false) {
+void paint_button(Container *root, Container *c, std::string name, std::string icon, bool is_close = false) {
     auto [rid, s, stage, active_id] = from_root(root);
     auto client = first_above_of(c, TYPE::CLIENT);
     assert(client);
@@ -174,6 +172,11 @@ void paint_titlebar(Container *root, Container *c) {
     }
 }
 
+void consume_event(Container *root, Container *c) {
+    root->consumed_event = true;
+    request_damage(root, c);
+}
+
 void create_titlebar(Container *root, Container *parent) {
     auto titlebar_parent = parent->child(::hbox, FILL_SPACE, FILL_SPACE); // actual wanted bounds set in pre_layout
     titlebar_parent->pre_layout = titlebar_pre_layout;
@@ -199,40 +202,59 @@ void create_titlebar(Container *root, Container *parent) {
     titlebar->when_paint = paint {
         paint_titlebar(root, c);
     };
+    titlebar->when_mouse_down = consume_event;
+    titlebar->when_mouse_up = consume_event;
     titlebar->when_drag_start = paint {
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");
         drag::begin(cid);
+        root->consumed_event = true;
+        hypriso->bring_to_front(cid);
     };
     titlebar->when_drag = paint {
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");
         drag::motion(cid);
+        root->consumed_event = true;
     };
     titlebar->when_drag_end = paint {
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");
         drag::end(cid);
+        root->consumed_event = true;
     };
-
  
     titlebar_parent->alignment = ALIGN_RIGHT;
     auto min = titlebar_parent->child(FILL_SPACE, FILL_SPACE);
     min->when_paint = paint {
-        simple_button(root, c, "min", "\ue921");
+        paint_button(root, c, "min", "\ue921");
     };
+    min->when_mouse_down = consume_event;
+    min->when_mouse_up = consume_event;
     auto max = titlebar_parent->child(FILL_SPACE, FILL_SPACE);
     max->when_paint = paint {
-        bool snapped = false;
+        auto client = first_above_of(c, TYPE::CLIENT);
+        assert(client);
+        bool snapped = *datum<bool>(client, "snapped");
         if (snapped) {
-            simple_button(root, c, "max", "\ue923");
+            paint_button(root, c, "max", "\ue923");
         } else {
-            simple_button(root, c, "max", "\ue922");
+            paint_button(root, c, "max", "\ue922");
         }
+    };
+    max->when_mouse_down = consume_event;
+    max->when_mouse_up = consume_event;
+    max->when_clicked = paint {
+        auto client = first_above_of(c, TYPE::CLIENT);
+        assert(client);
+        auto snapped = datum<bool>(client, "snapped");
+        *snapped = !*snapped;
+        int cid = *datum<int>(client, "cid");
+        hypriso->bring_to_front(cid);
     };
     auto close = titlebar_parent->child(FILL_SPACE, FILL_SPACE);
     close->when_paint = paint {
-        simple_button(root, c, "close", "\ue8bb", true);
+        paint_button(root, c, "close", "\ue8bb", true);
     };
     close->when_clicked = paint {
         auto client = first_above_of(c, TYPE::CLIENT);
@@ -240,6 +262,8 @@ void create_titlebar(Container *root, Container *parent) {
         auto cid = *datum<int>(client, "cid");
         later_immediate([cid](Timer *t) { close_window(cid); });
     };
+    close->when_mouse_down = consume_event;
+    close->when_mouse_up = consume_event;
 }
 
 void titlebar::on_window_open(int id) {

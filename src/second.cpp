@@ -104,8 +104,9 @@ static void on_window_open(int id) {
             }
         };
         
-        auto cid = datum<int>(c, "cid"); 
-        *cid = id;
+        *datum<int>(c, "cid") = id; 
+        *datum<bool>(c, "snapped") = false; 
+
         break;
     }
     
