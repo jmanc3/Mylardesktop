@@ -6,7 +6,8 @@ SOURCE_FILES := $(wildcard ./src/*.cpp ./src/*/*.cpp)
 OBJECT_FILES := $(patsubst ./src/%.cpp, out/%.o, $(SOURCE_FILES))
 
 # Common include and pkg-config flags
-PKG_FLAGS := $(shell pkg-config --cflags librsvg-2.0 pixman-1 libdrm hyprland pangocairo libinput libudev wayland-server xkbcommon pangocairo cairo)
+#PKG_FLAGS := $(shell pkg-config --cflags librsvg-2.0 pixman-1 libdrm hyprland pangocairo libinput libudev wayland-server xkbcommon pangocairo cairo)
+PKG_FLAGS := $(shell pkg-config --cflags librsvg-2.0 libdrm hyprland pangocairo wayland-server xkbcommon pangocairo cairo)
 INCLUDE_FLAGS := -I./include
 
 # Compiler flags

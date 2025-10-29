@@ -215,6 +215,7 @@ struct HyprIso {
     
     void move(int id, int x, int y);
     void move_resize(int id, int x, int y, int w, int h, bool instant = true);
+    void move_resize(int id, Bounds b, bool instant = true);
     int monitor_from_cursor();
     
     void send_key(uint32_t key);

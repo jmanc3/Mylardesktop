@@ -1331,6 +1331,10 @@ void HyprIso::move_resize(int id, int x, int y, int w, int h, bool instant) {
         }
     }
 }
+void HyprIso::move_resize(int id, Bounds b, bool instant) {
+    move_resize(id, b.x, b.y, b.w, b.h, instant);
+}
+
 
 bool paint_svg_to_surface(cairo_surface_t* surface, std::string path, int target_size) {
 #ifdef TRACY_ENABLE
