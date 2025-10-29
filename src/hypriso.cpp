@@ -768,21 +768,24 @@ RGBA HyprIso::get_varcolor(std::string target, RGBA default_color) {
 }
 
 void HyprIso::create_config_variables() {
-    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_focused_color", Hyprlang::INT{*configStringToInt("rgba(ffffffff)")});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_button_bg_hovered_color", Hyprlang::INT{*configStringToInt("rgba(202020ff)")});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_button_bg_pressed_color", Hyprlang::INT{*configStringToInt("rgba(111111ff)")});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_closed_button_bg_hovered_color", Hyprlang::INT{*configStringToInt("rgba(dd1111ff)")});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_closed_button_bg_pressed_color", Hyprlang::INT{*configStringToInt("rgba(880000ff)")});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_closed_button_icon_color_hovered_pressed", Hyprlang::INT{*configStringToInt("rgba(ffffffff)")});
+
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_focused_color", Hyprlang::INT{*configStringToInt("rgba(000000ff)")});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_unfocused_color", Hyprlang::INT{*configStringToInt("rgba(222222ff)")});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_focused_text_color", Hyprlang::INT{*configStringToInt("rgba(ffffffff)")});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_unfocused_text_color", Hyprlang::INT{*configStringToInt("rgba(999999ff)")});
     
-    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_unfocused_color", Hyprlang::INT{*configStringToInt("rgba(f0f0f0ff)")});
-    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_focused_text_color", Hyprlang::INT{*configStringToInt("rgba(000000ff)")});
-    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_unfocused_text_color", Hyprlang::INT{*configStringToInt("rgba(505050ff)")});
-    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:thumb_to_position_time", Hyprlang::FLOAT{330});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:thumb_to_position_time", Hyprlang::FLOAT{355});
     HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:snap_helper_fade_in", Hyprlang::FLOAT{400});
-    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_height", Hyprlang::INT{15});
-    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:col.text", Hyprlang::INT{*configStringToInt("rgba(ffffffff)")});
-    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_text_size", Hyprlang::INT{10});
-    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_title_enabled", Hyprlang::INT{1});
-    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_blur", Hyprlang::INT{0});
-    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_text_font", Hyprlang::STRING{"Sans"});
-    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_text_align", Hyprlang::STRING{"center"});
-    //HyprlandAPI::addConfigValue(globals->api, "plugin:hyprbars:bar_part_of_window", Hyprlang::INT{1});
+
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_button_ratio", Hyprlang::FLOAT{1.4375});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_text_h", Hyprlang::FLOAT{15});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_icon_h", Hyprlang::FLOAT{21});
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_button_icon_h", Hyprlang::FLOAT{13});
 }
 
 void HyprIso::create_callbacks() {
@@ -1017,6 +1020,8 @@ void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPow
         return;
     bool clip = hypriso->clip;
     Bounds clipbox = hypriso->clipbox;
+    if (cornermask == 16)
+        round = 0;
     AnyPass::AnyData anydata([box, color, cornermask, round, roundingPower, blur, blurA, clip, clipbox](AnyPass* pass) {
         CHyprOpenGLImpl::SRectRenderData rectdata;
         rectdata.blur          = blur;

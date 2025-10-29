@@ -10,20 +10,28 @@
 #include <unistd.h>
 #include <math.h>
 
-static float ratio_titlebar_button = 1.4375f;
-static int titlebar_text_h = 15;
-static int titlebar_icon_h = 22;
-static int titlebar_button_icons_h = 13;
+float titlebar_button_ratio() { return hypriso->get_varfloat("plugin:mylardesktop:titlebar_button_ratio", 1.4375f); };
+float titlebar_text_h() { return hypriso->get_varfloat("plugin:mylardesktop:titlebar_text_h", 15); }
+float titlebar_icon_h() { return hypriso->get_varfloat("plugin:mylardesktop:titlebar_icon_h", 21); }
+float titlebar_button_icon_h() { return hypriso->get_varfloat("plugin:mylardesktop:titlebar_button_icon_h", 13); }
 
-RGBA color_titlebar_focused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_color", RGBA("ffffffff")); };
-RGBA color_titlebar_unfocused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_color", RGBA("f0f0f0ff")); };
-RGBA color_titlebar_text_focused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_text_color", RGBA("000000ff")); };
-RGBA color_titlebar_text_unfocused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_text_color", RGBA("303030ff")); };
+RGBA color_titlebar_focused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_color", RGBA("ffffffff")); }
+RGBA color_titlebar_unfocused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_color", RGBA("f0f0f0ff")); }
+RGBA color_titlebar_text_focused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_text_color", RGBA("000000ff")); }
+RGBA color_titlebar_text_unfocused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_text_color", RGBA("303030ff")); }
+RGBA titlebar_button_bg_hovered_color() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_button_bg_hovered_color", RGBA("rgba(ff0000ff)")); }
+RGBA titlebar_button_bg_pressed_color() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_button_bg_pressed_color", RGBA("rgba(0000ffff)")); }
+RGBA titlebar_closed_button_bg_hovered_color() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_closed_button_bg_hovered_color", RGBA("rgba(ff0000ff)")); }
+RGBA titlebar_closed_button_bg_pressed_color() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_closed_button_bg_pressed_color", RGBA("rgba(0000ffff)")); }
+RGBA titlebar_closed_button_icon_color_hovered_pressed() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_closed_button_icon_color_hovered_pressed", RGBA("rgba(999999ff)")); }
+
+
 
 void request_damage(Container *root, Container *c) {
     auto [rid, s, stage, active_id] = from_root(root);
     auto b = c->real_bounds;
     b.scale(1.0 / s);
+    b.grow(2.0 * s);
     hypriso->damage_box(b);
 }
 
@@ -32,13 +40,9 @@ void titlebar_pre_layout(Container* root, Container* self, const Bounds& bounds)
     auto cid = *datum<int>(self, "cid");
     auto s = scale(rid);
     self->wanted_bounds.h = titlebar_h * s; 
-    self->children[1]->wanted_bounds.w = titlebar_h * s * ratio_titlebar_button;
-    self->children[2]->wanted_bounds.w = titlebar_h * s * ratio_titlebar_button;
-    self->children[3]->wanted_bounds.w = titlebar_h * s * ratio_titlebar_button;
-}
-
-void titlebar_button(Container *root, Container *c) {
-    
+    self->children[1]->wanted_bounds.w = titlebar_h * s * titlebar_button_ratio();
+    self->children[2]->wanted_bounds.w = titlebar_h * s * titlebar_button_ratio();
+    self->children[3]->wanted_bounds.w = titlebar_h * s * titlebar_button_ratio();
 }
 
 TextureInfo *get_cached_texture(Container *root, Container *target, std::string needle, std::string font, std::string text, RGBA color, int wanted_h) {
@@ -75,7 +79,7 @@ TextureInfo *get_cached_texture(Container *root, Container *target, std::string 
     return info; 
 }
 
-void simple_button(Container *root, Container *c, std::string name, std::string icon) {
+void simple_button(Container *root, Container *c, std::string name, std::string icon, bool is_close = false) {
     auto [rid, s, stage, active_id] = from_root(root);
     auto client = first_above_of(c, TYPE::CLIENT);
     assert(client);
@@ -84,18 +88,28 @@ void simple_button(Container *root, Container *c, std::string name, std::string 
     auto b = c->real_bounds;
     if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
         auto focused = get_cached_texture(root, root, name + "_focused", "Segoe Fluent Icons",
-            icon, color_titlebar_text_focused(), titlebar_button_icons_h);
+            icon, color_titlebar_text_focused(), titlebar_button_icon_h());
         auto unfocused = get_cached_texture(root, root, name + "_unfocused", "Segoe Fluent Icons", 
-            icon, color_titlebar_text_unfocused(), titlebar_button_icons_h);
+            icon, color_titlebar_text_unfocused(), titlebar_button_icon_h());
+        auto closed = get_cached_texture(root, root, name + "_close_invariant", "Segoe Fluent Icons", 
+            icon, titlebar_closed_button_icon_color_hovered_pressed(), titlebar_button_icon_h());
+
+        int mask = 16;
+        if (is_close)
+            mask = 13;
         if (c->state.mouse_pressing) {
-            rect(b, {0, 0, 0, 1}, 12, hypriso->get_rounding(cid), 2.0f);
+            auto pressed_color = is_close ? titlebar_closed_button_bg_pressed_color() : titlebar_button_bg_pressed_color();
+            rect(b, pressed_color, mask, hypriso->get_rounding(cid), 2.0f);
         } else if (c->state.mouse_hovering) {
-            rect(b, {1, 0, 0, 1}, 12, hypriso->get_rounding(cid), 2.0f);
+            auto hover_color = is_close ? titlebar_closed_button_bg_hovered_color() : titlebar_button_bg_hovered_color();
+            rect(b, hover_color, mask, hypriso->get_rounding(cid), 2.0f);
         }
 
         auto texture_info = focused;
         if (!hypriso->has_focus(cid))
             texture_info = unfocused;
+        if (is_close && c->state.mouse_pressing || c->state.mouse_hovering)
+            texture_info = closed;
         if (texture_info->id != -1) {
             draw_texture(*texture_info, center_x(c, texture_info->w), center_y(c, texture_info->h), 1.0);
         }
@@ -110,15 +124,26 @@ void paint_titlebar(Container *root, Container *c) {
         int icon_width = 0; 
         { // load icon
             TextureInfo *info = datum<TextureInfo>(client, "icon");
+            if (info->id != -1) {
+                if (info->cached_h != std::round(titlebar_icon_h() * s)) {
+                    free_text_texture(info->id);
+                    info->id = -1;
+                    info->reattempts_count = 0;
+                    info->last_reattempt_time = 0;
+                }
+            }
             if (info->id == -1 && info->reattempts_count < 30) {
                 if (icons_loaded && enough_time_since_last_check(1000, info->last_reattempt_time)) {
                     info->last_reattempt_time = get_current_time_in_ms();
                     auto name = hypriso->class_name(cid);
-                    auto path = one_shot_icon(titlebar_icon_h * s, {
+                    auto real_icon_h = std::round(titlebar_icon_h() * s);
+                    auto path = one_shot_icon(real_icon_h, {
                         name, c3ic_fix_wm_class(name), to_lower(name), to_lower(c3ic_fix_wm_class(name))
                     });
-                    if (!path.empty())
-                        *info = gen_texture(path, titlebar_icon_h * s);
+                    if (!path.empty()) {
+                        *info = gen_texture(path, titlebar_icon_h() * s);
+                        info->cached_h = real_icon_h;
+                    }
                 }
             }
             if (info->id != -1)
@@ -130,9 +155,9 @@ void paint_titlebar(Container *root, Container *c) {
         std::string title_text = hypriso->title_name(cid);
         if (!title_text.empty()) {
             auto focused = get_cached_texture(root, client, "title_focused", "Segoe UI Variable", 
-                title_text, color_titlebar_text_focused(), titlebar_text_h);
+                title_text, color_titlebar_text_focused(), titlebar_text_h());
             auto unfocused = get_cached_texture(root, client, "title_unfocused", "Segoe UI Variable", 
-                title_text, color_titlebar_text_unfocused(), titlebar_text_h);
+                title_text, color_titlebar_text_unfocused(), titlebar_text_h());
 
             auto texture_info = focused;
             if (!hypriso->has_focus(cid))
@@ -207,7 +232,7 @@ void create_titlebar(Container *root, Container *parent) {
     };
     auto close = titlebar_parent->child(FILL_SPACE, FILL_SPACE);
     close->when_paint = paint {
-        simple_button(root, c, "close", "\ue8bb");
+        simple_button(root, c, "close", "\ue8bb", true);
     };
     close->when_clicked = paint {
         auto client = first_above_of(c, TYPE::CLIENT);
