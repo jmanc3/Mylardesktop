@@ -82,6 +82,7 @@ void paint_button(Container *root, Container *c, std::string name, std::string i
     auto client = first_above_of(c, TYPE::CLIENT);
     assert(client);
     auto cid = *datum<int>(client, "cid");
+    auto a = *datum<float>(client, "titlebar_alpha"); 
 
     auto b = c->real_bounds;
     if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
@@ -96,11 +97,13 @@ void paint_button(Container *root, Container *c, std::string name, std::string i
         if (is_close)
             mask = 13;
         if (c->state.mouse_pressing) {
-            auto pressed_color = is_close ? titlebar_closed_button_bg_pressed_color() : titlebar_button_bg_pressed_color();
-            rect(b, pressed_color, mask, hypriso->get_rounding(cid), 2.0f);
+            auto color = is_close ? titlebar_closed_button_bg_pressed_color() : titlebar_button_bg_pressed_color();
+            color.a = a;
+            rect(b, color, mask, hypriso->get_rounding(cid), 2.0f);
         } else if (c->state.mouse_hovering) {
-            auto hover_color = is_close ? titlebar_closed_button_bg_hovered_color() : titlebar_button_bg_hovered_color();
-            rect(b, hover_color, mask, hypriso->get_rounding(cid), 2.0f);
+            auto color = is_close ? titlebar_closed_button_bg_hovered_color() : titlebar_button_bg_hovered_color();
+            color.a = a;
+            rect(b, color, mask, hypriso->get_rounding(cid), 2.0f);
         }
 
         auto texture_info = focused;
@@ -109,7 +112,7 @@ void paint_button(Container *root, Container *c, std::string name, std::string i
         if (is_close && c->state.mouse_pressing || c->state.mouse_hovering)
             texture_info = closed;
         if (texture_info->id != -1) {
-            draw_texture(*texture_info, center_x(c, texture_info->w), center_y(c, texture_info->h), 1.0);
+            draw_texture(*texture_info, center_x(c, texture_info->w), center_y(c, texture_info->h), a);
         }
     }
 }
@@ -118,6 +121,7 @@ void paint_titlebar(Container *root, Container *c) {
     auto [rid, s, stage, active_id] = from_root(root);
     auto client = first_above_of(c, TYPE::CLIENT);
     auto cid = *datum<int>(client, "cid");
+    auto a = *datum<float>(client, "titlebar_alpha");
     if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
         int icon_width = 0; 
         { // load icon
@@ -147,7 +151,7 @@ void paint_titlebar(Container *root, Container *c) {
             if (info->id != -1)
                 icon_width = info->w;
 
-            draw_texture(*info, c->real_bounds.x + 8 * s, center_y(c, info->h), 1.0);
+            draw_texture(*info, c->real_bounds.x + 8 * s, center_y(c, info->h), a);
         }
         
         std::string title_text = hypriso->title_name(cid);
@@ -166,7 +170,7 @@ void paint_titlebar(Container *root, Container *c) {
                 if (icon_width != 0)
                     overflow = icon_width + 16 * s;
                 draw_texture(*texture_info, 
-                    c->real_bounds.x + overflow, center_y(c, texture_info->h), 1.0, c->real_bounds.w - overflow);
+                    c->real_bounds.x + overflow, center_y(c, texture_info->h), a, c->real_bounds.w - overflow);
             }
         }
     }
@@ -184,12 +188,14 @@ void create_titlebar(Container *root, Container *parent) {
         auto [rid, s, stage, active_id] = from_root(root);
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");
+        auto a = *datum<float>(client, "titlebar_alpha");
 
         auto b = c->real_bounds;
         if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
             auto titlebar_color = color_titlebar_focused();
             if (!hypriso->has_focus(cid))
                 titlebar_color = color_titlebar_unfocused();
+            titlebar_color.a *= a;
             rect(b, titlebar_color, 12, hypriso->get_rounding(cid), 2.0f);
         }
     };
@@ -272,10 +278,13 @@ void titlebar::on_window_open(int id) {
 
         for (auto m : monitors) {
             for (auto c : m->children) {
-                auto cid = *datum<int>(c, "cid");
-                if (cid == id) {
-                    create_titlebar(m, c);
-                    break;
+                if (c->custom_type == (int) TYPE::CLIENT) {
+                    auto cid = *datum<int>(c, "cid");
+                    if (cid == id) {
+                        create_titlebar(m, c);
+                        *datum<float>(c, "titlebar_alpha") = 1.0;
+                        break;
+                    }
                 }
             }
         }
@@ -291,14 +300,20 @@ void titlebar::on_draw_decos(std::string name, int monitor, int id, float a) {
        for (auto c : m->children) {
            if (c->custom_type == (int) TYPE::CLIENT) {
                auto cid = *datum<int>(c, "cid");
+               *datum<float>(c, "titlebar_alpha") = a;
                if (cid == id) {
+                   auto stage = datum<int>(m, "stage"); 
+                   auto active_id = datum<int>(m, "active_id"); 
+                   int before_stage = *stage;
+                   int before_active_id = *active_id;
+                   *stage = (int) STAGE::RENDER_POST_WINDOW;
+                   *active_id = cid;
                    paint_outline(m, c);
+                   *stage = before_stage;
+                   *active_id = before_active_id;
                }
            } 
        } 
     }
 }
-    
-void titlebar::layout_pass() {
-    
-}
+
