@@ -1920,6 +1920,10 @@ Timer* later(float time_ms, const std::function<void(Timer*)>& fn) {
     return timer;
 }
 
+Timer* later_immediate(const std::function<void(Timer*)>& fn) {
+    return later(1, fn);
+}
+
 void screenshot_monitor(CFramebuffer* buffer, PHLMONITOR m) {
     if (!buffer || !pRenderMonitor)
         return;

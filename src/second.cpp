@@ -10,8 +10,10 @@
 #include "hypriso.h"
 #include "titlebar.h"
 #include "events.h"
+#include "icons.h"
 
 #include <algorithm>
+#include <thread>
 
 std::unordered_map<std::string, Datas> datas;
 
@@ -218,18 +220,20 @@ void second::begin() {
 	hypriso->create_hooks();
 	
     hypriso->add_float_rule();
+
+    if (icon_cache_needs_update()) {
+        std::thread th([] {
+            icon_cache_generate();
+            icon_cache_load();
+        });
+        th.detach();
+    } else {
+        icon_cache_load();
+    }
 }
 
 void second::end() {
     hypriso->end();    
-}
-
-static std::string to_lower(const std::string& str) {
-    std::string result;
-    result.reserve(str.size()); // avoid reallocations
-
-    std::transform(str.begin(), str.end(), std::back_inserter(result), [](unsigned char c) { return std::tolower(c); });
-    return result;
 }
 
 /*

@@ -336,6 +336,8 @@ Timer* later(void* data, float time_ms, const std::function<void(Timer*)>& fn);
 
 Timer* later(float time_ms, const std::function<void(Timer*)>& fn);
 
+Timer* later_immediate(const std::function<void(Timer*)>& fn);
+
 void request_refresh();
 void request_refresh_only();
 

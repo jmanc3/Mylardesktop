@@ -11,6 +11,21 @@
 #define fz std::format
 #define nz notify
 
+#define center_y(c, in_h) c->real_bounds.y + c->real_bounds.h * .5 - in_h * .5
+#define center_x(c, in_w) c->real_bounds.x + c->real_bounds.w * .5 - in_w * .5
+
+static std::string to_lower(const std::string& str) {
+    std::string result;
+    result.reserve(str.size()); // avoid reallocations
+
+    std::transform(str.begin(), str.end(), std::back_inserter(result), [](unsigned char c) { return std::tolower(c); });
+    return result;
+}
+
+static bool enough_time_since_last_check(long reattempt_timeout, long last_time_checked) {
+    return (get_current_time_in_ms() - last_time_checked) > reattempt_timeout;
+}
+
 enum struct TYPE : uint8_t {
     NONE = 0,
     RESIZE_HANDLE, // The handle that exists between two snapped winodws
@@ -70,6 +85,7 @@ static void remove_data(const std::string& uuid) {
 
 template<typename T, typename C, typename N>
 auto datum(C&& container, N&& needle) {
+    assert(container && "passed nullptr container to datum");
     return get_or_create<T>(std::forward<C>(container)->uuid, std::forward<N>(needle));
 }
 

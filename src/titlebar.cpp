@@ -3,18 +3,17 @@
 #include "second.h"
 #include "hypriso.h"
 #include "events.h"
+#include "drag.h"
+#include "icons.h"
 
 #include <assert.h>
 #include <unistd.h>
 #include <math.h>
 
-#define paint [](Container *root, Container *c)
-#define fz std::format
-#define nz notify
-
 static float ratio_titlebar_button = 1.4375f;
 static int titlebar_text_h = 15;
-static int titlebar_icon_h = 13;
+static int titlebar_icon_h = 22;
+static int titlebar_button_icons_h = 13;
 
 RGBA color_titlebar_focused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_color", RGBA("ffffffff")); };
 RGBA color_titlebar_unfocused() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_color", RGBA("f0f0f0ff")); };
@@ -47,29 +46,28 @@ TextureInfo *get_cached_texture(Container *root, Container *target, std::string 
     TextureInfo *info = datum<TextureInfo>(target, needle);
     
     int h = std::round(wanted_h * s);
-    if (info->id != -1) {
+    if (info->id != -1) { // regenerate if any of the following changes
         if (info->cached_color != color || info->cached_h != h || info->cached_text != text) {
             free_text_texture(info->id);
             info->id = -1;
+            info->reattempts_count = 0;
         }
     }
     
     if (info->id == -1) {
         if (info->reattempts_count < 10) {
-            auto current = get_current_time_in_ms();
-            if (current - info->last_reattempt_time > 1000) {
-                info->last_reattempt_time = current;
-                info->reattempts_count++;
+            info->last_reattempt_time = get_current_time_in_ms();
+            info->reattempts_count++;
 
-                auto texture = gen_text_texture(font, text, h, color);
-                if (texture.id != -1) {
-                    info->id = texture.id;
-                    info->w = texture.w;
-                    info->h = texture.h;
-                    info->cached_color = color;
-                    info->cached_h = h;
-                    info->cached_text = text;
-                }
+            auto texture = gen_text_texture(font, text, h, color);
+            if (texture.id != -1) {
+                info->id = texture.id;
+                info->w = texture.w;
+                info->h = texture.h;
+                info->cached_color = color;
+                info->cached_h = h;
+                info->cached_text = text;
+                info->reattempts_count = 0;
             }
         }
     }
@@ -80,14 +78,15 @@ TextureInfo *get_cached_texture(Container *root, Container *target, std::string 
 void simple_button(Container *root, Container *c, std::string name, std::string icon) {
     auto [rid, s, stage, active_id] = from_root(root);
     auto client = first_above_of(c, TYPE::CLIENT);
+    assert(client);
     auto cid = *datum<int>(client, "cid");
 
     auto b = c->real_bounds;
     if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
         auto focused = get_cached_texture(root, root, name + "_focused", "Segoe Fluent Icons",
-            icon, color_titlebar_text_focused(), titlebar_icon_h);
-        auto unfocused = get_cached_texture(root, root, name + "min_unfocused", "Segoe Fluent Icons", 
-            icon, color_titlebar_text_unfocused(), titlebar_icon_h);
+            icon, color_titlebar_text_focused(), titlebar_button_icons_h);
+        auto unfocused = get_cached_texture(root, root, name + "_unfocused", "Segoe Fluent Icons", 
+            icon, color_titlebar_text_unfocused(), titlebar_button_icons_h);
         if (c->state.mouse_pressing) {
             rect(b, {0, 0, 0, 1}, 12, hypriso->get_rounding(cid), 2.0f);
         } else if (c->state.mouse_hovering) {
@@ -98,9 +97,7 @@ void simple_button(Container *root, Container *c, std::string name, std::string 
         if (!hypriso->has_focus(cid))
             texture_info = unfocused;
         if (texture_info->id != -1) {
-            draw_texture(*texture_info,
-                c->real_bounds.x + c->real_bounds.w * .5 - texture_info->w * .5,
-                c->real_bounds.y + c->real_bounds.h * .5 - texture_info->h * .5, 1.0);
+            draw_texture(*texture_info, center_x(c, texture_info->w), center_y(c, texture_info->h), 1.0);
         }
     }
 }
@@ -110,6 +107,26 @@ void paint_titlebar(Container *root, Container *c) {
     auto client = first_above_of(c, TYPE::CLIENT);
     auto cid = *datum<int>(client, "cid");
     if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
+        int icon_width = 0; 
+        { // load icon
+            TextureInfo *info = datum<TextureInfo>(client, "icon");
+            if (info->id == -1 && info->reattempts_count < 30) {
+                if (icons_loaded && enough_time_since_last_check(1000, info->last_reattempt_time)) {
+                    info->last_reattempt_time = get_current_time_in_ms();
+                    auto name = hypriso->class_name(cid);
+                    auto path = one_shot_icon(titlebar_icon_h * s, {
+                        name, c3ic_fix_wm_class(name), to_lower(name), to_lower(c3ic_fix_wm_class(name))
+                    });
+                    if (!path.empty())
+                        *info = gen_texture(path, titlebar_icon_h * s);
+                }
+            }
+            if (info->id != -1)
+                icon_width = info->w;
+
+            draw_texture(*info, c->real_bounds.x + 8 * s, center_y(c, info->h), 1.0);
+        }
+        
         std::string title_text = hypriso->title_name(cid);
         if (!title_text.empty()) {
             auto focused = get_cached_texture(root, client, "title_focused", "Segoe UI Variable", 
@@ -123,7 +140,10 @@ void paint_titlebar(Container *root, Container *c) {
             
             if (texture_info->id != -1) {
                 auto overflow = std::max((c->real_bounds.h - texture_info->h), 0.0);
-                draw_texture(*texture_info, c->real_bounds.x + overflow, c->real_bounds.y + overflow * .5, 1.0);
+                if (icon_width != 0)
+                    overflow = icon_width + 16 * s;
+                draw_texture(*texture_info, 
+                    c->real_bounds.x + overflow, center_y(c, texture_info->h), 1.0, c->real_bounds.w - overflow);
             }
         }
     }
@@ -136,7 +156,6 @@ void create_titlebar(Container *root, Container *parent) {
         auto [rid, s, stage, active_id] = from_root(root);
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");
-        //notify("repaint");
 
         auto b = c->real_bounds;
         if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
@@ -155,7 +174,23 @@ void create_titlebar(Container *root, Container *parent) {
     titlebar->when_paint = paint {
         paint_titlebar(root, c);
     };
+    titlebar->when_drag_start = paint {
+        auto client = first_above_of(c, TYPE::CLIENT);
+        auto cid = *datum<int>(client, "cid");
+        drag::begin(cid);
+    };
+    titlebar->when_drag = paint {
+        auto client = first_above_of(c, TYPE::CLIENT);
+        auto cid = *datum<int>(client, "cid");
+        drag::motion(cid);
+    };
+    titlebar->when_drag_end = paint {
+        auto client = first_above_of(c, TYPE::CLIENT);
+        auto cid = *datum<int>(client, "cid");
+        drag::end(cid);
+    };
 
+ 
     titlebar_parent->alignment = ALIGN_RIGHT;
     auto min = titlebar_parent->child(FILL_SPACE, FILL_SPACE);
     min->when_paint = paint {
@@ -173,6 +208,12 @@ void create_titlebar(Container *root, Container *parent) {
     auto close = titlebar_parent->child(FILL_SPACE, FILL_SPACE);
     close->when_paint = paint {
         simple_button(root, c, "close", "\ue8bb");
+    };
+    close->when_clicked = paint {
+        auto client = first_above_of(c, TYPE::CLIENT);
+        assert(client);
+        auto cid = *datum<int>(client, "cid");
+        later_immediate([cid](Timer *t) { close_window(cid); });
     };
 }
 
