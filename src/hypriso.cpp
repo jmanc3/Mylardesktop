@@ -131,8 +131,9 @@ class AnyPass : public IPassElement {
 public:
     struct AnyData {
         std::function<void(AnyPass*)> draw = nullptr;
-        //void (*draw)(AnyPass *pass) = nullptr;
+        CBox box = {};
     };
+    AnyData* m_data = nullptr;
 
     AnyPass(const AnyData& data) {
         m_data       = new AnyData;
@@ -157,14 +158,10 @@ public:
     virtual std::optional<CBox> boundingBox() {
         return {};
     }
-    virtual CRegion opaqueRegion() {
-        return {};
-    }
+    
     virtual const char* passName() {
         return "CAnyPassElement";
     }
-
-    AnyData* m_data = nullptr;
 };
 
 void set_rounding(int mask) {
@@ -1020,10 +1017,15 @@ void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPow
         return;
     bool clip = hypriso->clip;
     Bounds clipbox = hypriso->clipbox;
+    if (clip && !tocbox(clipbox).overlaps(tocbox(box))) {
+        return; 
+    }
     if (cornermask == 16)
         round = 0;
     AnyPass::AnyData anydata([box, color, cornermask, round, roundingPower, blur, blurA, clip, clipbox](AnyPass* pass) {
         CHyprOpenGLImpl::SRectRenderData rectdata;
+        //auto region = new CRegion(tocbox(box));
+        //rectdata.damage        = region;
         rectdata.blur          = blur;
         rectdata.blurA         = blurA;
         rectdata.round         = std::round(round);
@@ -1040,6 +1042,7 @@ void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPow
         if (clip)
             g_pHyprOpenGL->m_renderData.clipBox = CBox();
     });
+    anydata.box = tocbox(box);
     g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
 }
 

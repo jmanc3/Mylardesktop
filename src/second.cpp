@@ -11,6 +11,7 @@
 #include "titlebar.h"
 #include "events.h"
 #include "icons.h"
+#include "hotcorners.h"
 
 #include <algorithm>
 #include <thread>
@@ -36,6 +37,10 @@ static bool on_mouse_move(int id, float x, float y) {
            consumed = true;
            root->consumed_event = false;
        } 
+    }
+
+    if (!consumed) {
+        hotcorners::motion(id, x, y);
     }
 
     return consumed;
