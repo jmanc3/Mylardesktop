@@ -1000,7 +1000,7 @@ int open_dock() {
     dock->root->when_paint = [](Container *root, Container *c) {
         auto dock = (wl_window *) root->user_data;
         auto cr = dock->cr;
-        cairo_set_source_rgba(cr, 1, 1, 1, 1); 
+        cairo_set_source_rgba(cr, 1, 1, 1, .4); 
         //notify(std::to_string(c->real_bounds.w));
         cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
         cairo_fill(cr);

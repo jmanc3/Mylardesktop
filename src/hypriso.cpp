@@ -8,6 +8,12 @@
 
 #include "hypriso.h"
 
+#include <cstring>
+
+#ifdef TRACY_ENABLE
+#include "/home/jmanc3/NewMylar/subprojects/tracy/public/tracy/Tracy.hpp"
+#endif
+
 #include "container.h"
 #include "first.h"
 #include <cassert>
@@ -155,9 +161,9 @@ public:
     virtual bool needsPrecomputeBlur() {
         return false;
     }
-    virtual std::optional<CBox> boundingBox() {
-        return {};
-    }
+    //virtual std::optional<CBox> boundingBox() {
+        //return {};
+    //}
     
     virtual const char* passName() {
         return "CAnyPassElement";
@@ -165,6 +171,7 @@ public:
 };
 
 void set_rounding(int mask) {
+    //return; //possibly the slow bomb
     if (!g_pHyprOpenGL || !g_pHyprOpenGL->m_shaders) {
         return;
     }
@@ -828,6 +835,10 @@ void HyprIso::create_callbacks() {
     });
     
     static auto render = HyprlandAPI::registerCallbackDynamic(globals->api, "render", [](void* self, SCallbackInfo& info, std::any data) {
+        #ifdef TRACY_ENABLE
+            ZoneScopedN("Mylar render");
+        #endif
+        //return;
         if (hypriso->on_render) {
             for (auto m : hyprmonitors) {
                 if (m->m == g_pHyprOpenGL->m_renderData.pMonitor) {
@@ -837,7 +848,9 @@ void HyprIso::create_callbacks() {
             }
         }
     });
+    
     static auto mouseMove = HyprlandAPI::registerCallbackDynamic(globals->api, "mouseMove", [](void* self, SCallbackInfo& info, std::any data) {
+        //return;
         auto consume = false;
         if (hypriso->on_mouse_move) {
             auto mouse = g_pInputManager->getMouseCoordsInternal();
@@ -985,6 +998,7 @@ void hook_dock_change() {
 }
 
 void HyprIso::create_hooks() {
+    //return;
     fix_window_corner_rendering();
     notify("1 - remove me");
     //disable_default_alt_tab_behaviour();
@@ -1013,6 +1027,7 @@ Bounds tobounds(CBox box) {
 }
 
 void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPower, bool blur, float blurA) {
+    //return;
     if (box.h <= 0 || box.w <= 0)
         return;
     bool clip = hypriso->clip;
@@ -1024,8 +1039,8 @@ void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPow
         round = 0;
     AnyPass::AnyData anydata([box, color, cornermask, round, roundingPower, blur, blurA, clip, clipbox](AnyPass* pass) {
         CHyprOpenGLImpl::SRectRenderData rectdata;
-        //auto region = new CRegion(tocbox(box));
-        //rectdata.damage        = region;
+        auto region = new CRegion(tocbox(box));
+        rectdata.damage        = region;
         rectdata.blur          = blur;
         rectdata.blurA         = blurA;
         rectdata.round         = std::round(round);
@@ -1657,6 +1672,7 @@ void free_text_texture(int id) {
 }
 
 TextureInfo gen_texture(std::string path, float h) {
+    //notify("gen texture");
     auto tex = loadAsset(path, h);
     if (tex.get()) {
         auto t = new Texture;
@@ -1674,6 +1690,7 @@ TextureInfo gen_texture(std::string path, float h) {
 }
 
 TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA color) {
+    //notify("gen text");
     auto tex = g_pHyprOpenGL->renderText(text, CHyprColor(color.r, color.g, color.b, color.a), h, false, font, 0);
     if (tex.get()) {
         auto t = new Texture;
@@ -1691,6 +1708,7 @@ TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA c
 }
 
 void draw_texture(TextureInfo info, int x, int y, float a, float clip_w) {
+    //return;
     for (auto t : hyprtextures) {
         
        if (t->info.id == info.id) {

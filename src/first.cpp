@@ -72,7 +72,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) { // When star
     second::begin();
     //startup::begin();
     std::thread th([]() {
-        start_dock();        
+        //start_dock();        
     });
     th.detach();
 

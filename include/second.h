@@ -6,6 +6,7 @@
 
 #include <any>
 #include <assert.h>
+#include <vector>
 
 #define paint [](Container *root, Container *c)
 #define fz std::format
@@ -83,10 +84,51 @@ static void remove_data(const std::string& uuid) {
     datas.erase(uuid);
 }
 
+class FunctionTimer {
+public:
+    FunctionTimer(const std::string& name) : name_(name), start_time_(std::chrono::high_resolution_clock::now()) {}
+
+    ~FunctionTimer() {
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time_);
+        notify(std::to_string(duration.count()));
+        //std::cout << name_ << ": " << duration.count() << " ms" << std::endl;
+    }
+
+private:
+    std::string name_;
+    std::chrono::high_resolution_clock::time_point start_time_;
+};
+
+/*
 template<typename T, typename C, typename N>
 auto datum(C&& container, N&& needle) {
-    assert(container && "passed nullptr container to datum");
-    return get_or_create<T>(std::forward<C>(container)->uuid, std::forward<N>(needle));
+    //FunctionTimer timer("datum"); // Timer starts here
+    //assert(container && "passed nullptr container to datum");
+    auto a = get_or_create<T>(std::forward<C>(container)->uuid, std::forward<N>(needle));
+    return a;
+}
+*/
+
+struct SD {
+    std::string needle;
+    void *data; 
+};
+
+struct DD {
+    std::string name;
+    std::vector<SD *> sds;
+};
+
+static std::vector<DD *> dds;
+
+template<typename T, typename C, typename N>
+auto datum(C&& container, N&& needle) {
+    //FunctionTimer timer("datum"); // Timer starts here
+    //assert(container && "passed nullptr container to datum");
+    auto a = get_or_create<T>(std::forward<C>(container)->uuid, std::forward<N>(needle));
+    //dds->push_back();
+    return a;
 }
 
 static std::tuple<int, float, int, int> from_root(Container *r) {
@@ -106,8 +148,25 @@ static Container *first_above_of(Container *c, TYPE type) {
         }
         current = current->parent;
     }
-    assert(client_above && fz("Did not find container of type {} above, probably logic bug introduced", (int) type).c_str());
+    //assert(client_above && fz("Did not find container of type {} above, probably logic bug introduced", (int) type).c_str());
     return nullptr; 
+}
+
+static void paint_debug(Container *root, Container *c) {
+    border(c->real_bounds, {1, 0, 1, 1}, 4);
+}
+
+static void request_damage(Container *root, Container *c) {
+    auto [rid, s, stage, active_id] = from_root(root);
+    auto b = c->real_bounds;
+    b.scale(1.0 / s);
+    b.grow(2.0 * s);
+    hypriso->damage_box(b);
+}
+
+static void consume_event(Container *root, Container *c) {
+    root->consumed_event = true;
+    request_damage(root, c);
 }
 
 namespace second {    

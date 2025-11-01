@@ -12,8 +12,10 @@
 #include "events.h"
 #include "icons.h"
 #include "hotcorners.h"
+#include "alt_tab.h"
 
 #include <algorithm>
+#include <linux/input-event-codes.h>
 #include <thread>
 
 std::unordered_map<std::string, Datas> datas;
@@ -92,6 +94,14 @@ static bool on_scrolled(int id, int source, int axis, int direction, double delt
 }
 
 static bool on_key_press(int id, int key, int state, bool update_mods) {
+    if (key == KEY_TAB) {
+        notify("tab");
+       if (state)  {
+           alt_tab::show();
+       } else {
+           alt_tab::close();
+       }
+    }
     return false;
 }
 
@@ -118,10 +128,12 @@ static void on_window_open(int id) {
     hypriso->set_corner_rendering_mask_for_window(id, 3);
     
     titlebar::on_window_open(id);
+    alt_tab::on_window_open(id);
 }
 
 static void on_window_closed(int id) {
     titlebar::on_window_closed(id);
+    alt_tab::on_window_closed(id);
     //notify("close: " + std::to_string(id));
     //notify("monitors: " + std::to_string(monitors.size()));
 
@@ -162,7 +174,8 @@ static void on_monitor_closed(int id) {
 }
 
 static void on_activated(int id) {
-
+    titlebar::on_activated(id);
+    alt_tab::on_activated(id);
 }
 
 static void on_draw_decos(std::string name, int monitor, int id, float a) {
@@ -181,11 +194,7 @@ static void on_render(int id, int stage) {
     for (auto r : monitors) {
         *datum<int>(r, "stage") = stage;
         *datum<int>(r, "active_id") = active_id;
-        //auto pulls = *datum<int>(r, "stage");
-        //auto pullid = *datum<int>(r, "active_id");
-        //system(fz("echo {} {} >> /tmp/mylarlog", stage, active_id).c_str());
-        
-        paint_root(r);
+        paint_outline(r, r);
     }
 }
 
@@ -242,31 +251,6 @@ void second::end() {
     hypriso->end();    
 }
 
-/*
-struct RootData : UserData {
-    int id = 0;
-    int stage = 0;
-    int active_id = 0;
-    
-    RootData(int id) : id(id) {
-       ; 
-    }
-};
-
-struct ClientData : UserData {
-    int id = 0;
-    int index = 0; // for reordering based on the stacking order
-    float alpha = 1.0;
-    std::vector<int> grouped_with;
-    bool was_hidden = false;
-
-    ClientData(int id) : id(id) {
-       ; 
-    }
-};
-*/
-
-
 void second::layout_containers() {
     if (monitors.empty())
         return;
@@ -285,7 +269,7 @@ void second::layout_containers() {
     std::vector<Container *> clients;
     for (auto r : monitors) {
         for (auto c: clients)
-                clients.push_back(c);
+            clients.push_back(c);
     }
     for (auto c : clients) {
         auto cid = *datum<int>(c, "cid");
@@ -296,7 +280,7 @@ void second::layout_containers() {
                 monitor = rid;
             if (rid == monitor) {
                 r->children.push_back(c);
-                break;
+               break;
             }
         }
     }
@@ -309,7 +293,7 @@ void second::layout_containers() {
             auto sort_index = datum<int>(c, "sort_index");
             auto cid = *datum<int>(c, "cid");
             for (int i = 0; i < order.size(); i++)
-                if (order[i] == cid)
+               if (order[i] == cid)
                     *sort_index = i;
         }
         // sort the children based on index
@@ -335,7 +319,7 @@ void second::layout_containers() {
                 auto b = bounds_client(cid);            
                 b.scale(s);
                 auto fo = hypriso->floating_offset(cid);
-                fo.scale(s);
+               fo.scale(s);
                 auto so = hypriso->workspace_offset(cid);
                 so.scale(s);
                 if (hypriso->has_decorations(cid))  {
@@ -357,75 +341,26 @@ void second::layout_containers() {
             }
         } 
     }
-    
-    /*
-    for (auto b: backup) {
-        if (b->custom_type == (int) TYPE::CLIENT_RESIZE) {
-            auto bdata = (ClientData *) b->user_data;
-            for (auto r: monitors) {
-                auto rdata = (RootData *) r->user_data;
-                auto s = scale(rdata->id);
-                for (int i = 0; i < r->children.size(); i++) {
-                    auto c = r->children[i];
-                    if (c->custom_type == (int) TYPE::CLIENT) {
-                        auto cdata = (ClientData *) c->user_data;
-                        if (cdata->id == bdata->id) {                            
-                            b->real_bounds = c->real_bounds;
-                            b->real_bounds.grow(resize_size * s);
-                            r->children.insert(r->children.begin() + i, b);
-                            break;
-                        }
-                    }
-                }
-            }
-        } else if (b->custom_type == (int) TYPE::RESIZE_HANDLE) {            
-        } else if (b->custom_type == (int) TYPE::WORKSPACE_SWITCHER) {
-            for (auto r: roots) {
-                auto rdata = (RootData *) r->user_data;
-                auto s = scale(rdata->id);
-                b->exists = showing_switcher;
-                if (b->pre_layout)
-                    b->pre_layout(r, b, r->real_bounds);
-                r->children.insert(r->children.begin() + 0, b);
-                break;
-            } 
-        } else if (b->custom_type == (int) TYPE::SNAP_HELPER) {
-            for (auto r: roots) {
-                auto rdata = (RootData *) r->user_data;
-                auto s = scale(rdata->id);
 
-                b->pre_layout(r, b, r->real_bounds);
-                
-                r->children.insert(r->children.begin() + 0, b);
-                break;
-            }
-        } else if (b->custom_type == (int) TYPE::ALT_TAB) {
-            alt_tab_menu->fix_index();
-            //scroll->content = alt_tab_menu.root;
-            b->exists = alt_tab_menu->is_showing();
+    for (auto c : backup) {
+        *datum<bool>(c, "touched") = false;
+    }
 
-            for (auto r: roots) {
-                auto rdata = (RootData *) r->user_data;
-                auto s = scale(rdata->id);
-
-                alt_tab_menu->root->pre_layout(r, alt_tab_menu->root, r->real_bounds);
-                //rect(r->real_bounds, {0, 0, 0, .3});
-                //float interthumb_spacing = 20 * s;
-
-                b->children.clear();
-                b->children.push_back(alt_tab_menu->root);
-
-                b->real_bounds = r->real_bounds;
-
-                // b->real_bounds.w = alt_tab_menu.root->wanted_bounds.w;
-                // b->real_bounds.h = alt_tab_menu.root->wanted_bounds.h;
-                // b->real_bounds.x = r->real_bounds.x + r->real_bounds.w * .5 - b->real_bounds.w * .5;
-                // b->real_bounds.y = r->real_bounds.y + r->real_bounds.h * .5 - b->real_bounds.h * .5;
-
-                r->children.insert(r->children.begin() + 0, b);
-                break;
+    for (auto c : backup) {
+        if (c->custom_type == (int) TYPE::ALT_TAB) {
+            c->parent->children.push_back(c);
+            if (c->pre_layout) {
+                c->pre_layout(c->parent, c, c->parent->real_bounds);
+                *datum<bool>(c, "touched") = true;
             }
         }
     }
-    */
+    for (auto c : backup) {
+        if (!(*datum<bool>(c, "touched"))) {
+            notify("hey you forgot to layout one of the containers in layout_containers probably leading to it not getting drawn");
+        }
+    }
+
+    
 }
+

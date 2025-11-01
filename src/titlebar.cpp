@@ -25,14 +25,6 @@ RGBA titlebar_closed_button_bg_hovered_color() { return hypriso->get_varcolor("p
 RGBA titlebar_closed_button_bg_pressed_color() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_closed_button_bg_pressed_color", RGBA("rgba(0000ffff)")); }
 RGBA titlebar_closed_button_icon_color_hovered_pressed() { return hypriso->get_varcolor("plugin:mylardesktop:titlebar_closed_button_icon_color_hovered_pressed", RGBA("rgba(999999ff)")); }
 
-void request_damage(Container *root, Container *c) {
-    auto [rid, s, stage, active_id] = from_root(root);
-    auto b = c->real_bounds;
-    b.scale(1.0 / s);
-    b.grow(2.0 * s);
-    hypriso->damage_box(b);
-}
-
 void titlebar_pre_layout(Container* root, Container* self, const Bounds& bounds) {
     auto rid = *datum<int>(root, "cid");
     auto cid = *datum<int>(self, "cid");
@@ -85,7 +77,7 @@ void paint_button(Container *root, Container *c, std::string name, std::string i
     auto a = *datum<float>(client, "titlebar_alpha"); 
 
     auto b = c->real_bounds;
-    if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
+    if (active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW) {
         auto focused = get_cached_texture(root, root, name + "_focused", "Segoe Fluent Icons",
             icon, color_titlebar_text_focused(), titlebar_button_icon_h());
         auto unfocused = get_cached_texture(root, root, name + "_unfocused", "Segoe Fluent Icons", 
@@ -122,7 +114,7 @@ void paint_titlebar(Container *root, Container *c) {
     auto client = first_above_of(c, TYPE::CLIENT);
     auto cid = *datum<int>(client, "cid");
     auto a = *datum<float>(client, "titlebar_alpha");
-    if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
+    if (active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW) {
         int icon_width = 0; 
         { // load icon
             TextureInfo *info = datum<TextureInfo>(client, "icon");
@@ -150,8 +142,13 @@ void paint_titlebar(Container *root, Container *c) {
             }
             if (info->id != -1)
                 icon_width = info->w;
-
-            draw_texture(*info, c->real_bounds.x + 8 * s, center_y(c, info->h), a);
+            float focus_alpha = 1.0;
+            if (hypriso->has_focus(cid)) {
+                focus_alpha = color_titlebar_text_focused().a;
+            } else {
+                focus_alpha = color_titlebar_text_unfocused().a;
+            }
+            draw_texture(*info, c->real_bounds.x + 8 * s, center_y(c, info->h), a * focus_alpha);
         }
         
         std::string title_text = hypriso->title_name(cid);
@@ -176,11 +173,6 @@ void paint_titlebar(Container *root, Container *c) {
     }
 }
 
-void consume_event(Container *root, Container *c) {
-    root->consumed_event = true;
-    request_damage(root, c);
-}
-
 void create_titlebar(Container *root, Container *parent) {
     auto titlebar_parent = parent->child(::hbox, FILL_SPACE, FILL_SPACE); // actual wanted bounds set in pre_layout
     titlebar_parent->pre_layout = titlebar_pre_layout;
@@ -191,7 +183,7 @@ void create_titlebar(Container *root, Container *parent) {
         auto a = *datum<float>(client, "titlebar_alpha");
 
         auto b = c->real_bounds;
-        if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
+        if (active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW) {
             auto titlebar_color = color_titlebar_focused();
             if (!hypriso->has_focus(cid))
                 titlebar_color = color_titlebar_unfocused();
@@ -306,7 +298,7 @@ void titlebar::on_draw_decos(std::string name, int monitor, int id, float a) {
                    auto active_id = datum<int>(m, "active_id"); 
                    int before_stage = *stage;
                    int before_active_id = *active_id;
-                   *stage = (int) STAGE::RENDER_POST_WINDOW;
+                   *stage = (int) STAGE::RENDER_PRE_WINDOW;
                    *active_id = cid;
                    paint_outline(m, c);
                    *stage = before_stage;
@@ -314,6 +306,16 @@ void titlebar::on_draw_decos(std::string name, int monitor, int id, float a) {
                }
            } 
        } 
+    }
+}
+
+void titlebar::on_activated(int id) {
+    for (auto m : monitors) {
+       for (auto c : m->children) {
+           if (c->custom_type == (int) TYPE::CLIENT) {
+               request_damage(m, c);
+           }
+       }
     }
 }
 
