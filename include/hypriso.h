@@ -148,6 +148,7 @@ struct ThinMonitor {
 };
 
 struct HyprIso {
+    bool no_render = false;
 
     bool dragging = false;
     int dragging_id = -1;

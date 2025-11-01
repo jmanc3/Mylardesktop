@@ -152,6 +152,18 @@ static Container *first_above_of(Container *c, TYPE type) {
     return nullptr; 
 }
 
+static Container *get_cid_container(int id) {
+    for (auto m : monitors) {
+        for (auto child : m->children) {
+            if (*datum<int>(child, "cid") == id) {
+                return child;
+            }
+        }
+    }
+    return nullptr;
+}
+
+
 static void paint_debug(Container *root, Container *c) {
     border(c->real_bounds, {1, 0, 1, 1}, 4);
 }

@@ -2,7 +2,7 @@ PLUGIN_NAME = mylar-desktop
 MAKEFLAGS += -j16
 
 # Find all .cpp source files recursively under src/
-SOURCE_FILES := $(wildcard ./src/*.cpp ./src/*/*.cpp ./tracy/public/TracyClient.cpp)
+SOURCE_FILES := $(wildcard ./src/*.cpp ./src/*/*.cpp)
 OBJECT_FILES := $(patsubst ./src/%.cpp, out/%.o, $(SOURCE_FILES))
 
 # Common include and pkg-config flags

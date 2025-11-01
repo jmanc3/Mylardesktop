@@ -95,13 +95,20 @@ static bool on_scrolled(int id, int source, int axis, int direction, double delt
 
 static bool on_key_press(int id, int key, int state, bool update_mods) {
     if (key == KEY_TAB) {
-        notify("tab");
+        //notify("tab");
        if (state)  {
            alt_tab::show();
        } else {
            alt_tab::close();
        }
     }
+    if (key == KEY_TAB && state == 0) {
+        //hypriso->no_render = !hypriso->no_render;
+        //nz(fz(
+          //"rendering {}", !hypriso->no_render  
+        //));
+    }
+    
     return false;
 }
 

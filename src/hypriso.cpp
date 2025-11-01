@@ -835,6 +835,8 @@ void HyprIso::create_callbacks() {
     });
     
     static auto render = HyprlandAPI::registerCallbackDynamic(globals->api, "render", [](void* self, SCallbackInfo& info, std::any data) {
+        if (hypriso->no_render)
+            return;
         #ifdef TRACY_ENABLE
             ZoneScopedN("Mylar render");
         #endif
@@ -2490,7 +2492,7 @@ void HyprIso::screenshot_all() {
             if (decos->getDisplayName() == "MylarBar")
                 has_mylar_bar = true;
             
-        if (has_mylar_bar) {
+        if (true) {
             for (auto hw : hyprwindows) {
                 if (hw->w == w) {
                     if (!hw->fb)

@@ -64,7 +64,16 @@ void new_test() {
     add_float_rule();
 }
 */
+
+#ifdef TRACY_ENABLE
+#include "/home/jmanc3/Mylardesktop/tracy/public/tracy/Tracy.hpp"
+#endif
+
 APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) { // When started as a plugin
+#ifdef TRACY_ENABLE
+    TracyCAppInfo("Mylar Desktop");
+#endif
+    
     globals->api = handle;
 
     //new_test();
