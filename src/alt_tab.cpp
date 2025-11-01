@@ -36,9 +36,14 @@ void fill_root(Container *root, Container *alt_tab_parent) {
                 *datum<int>(child, "cid") = w;
                 child->when_paint = paint {
                     auto [rid, s, stage, active_id] = from_root(root);
+
+                    if (stage != (int) STAGE::RENDER_LAST_MOMENT) {
+                        return;
+                    }
                     
                     auto b = c->real_bounds;
                     auto w = *datum<int>(c, "cid");
+                    
                     b.shrink(2 * s);
                     if (c->state.mouse_pressing) {
                         rect(b, {1, 1, 1, 1});
@@ -47,9 +52,23 @@ void fill_root(Container *root, Container *alt_tab_parent) {
                     }
                     rect(b, {0, 0, 0, 1});
 
-                    auto info = gen_text_texture("Segoe UI", hypriso->title_name(w), 14 * s, {1, 1, 1, 1});
-                    draw_texture(info, c->real_bounds.x, c->real_bounds.y);
-                    free_text_texture(info.id);
+                    auto info = datum<TextureInfo>(c, "title");
+                    auto title = hypriso->title_name(w);
+                    if (title != info->cached_text) {
+                        free_text_texture(info->id);
+                        info->id = -1;
+                    }
+                    if (info->id == -1 && !title.empty()) {
+                        auto new_gen = gen_text_texture("Segoe UI", hypriso->title_name(w), 14 * s, {1, 1, 1, 1});
+                        info->id = new_gen.id;
+                        info->w = new_gen.w;
+                        info->h = new_gen.h;
+                        info->cached_text = title;
+                    }
+
+                    if (info->id != -1) {
+                        draw_texture(*info, c->real_bounds.x, c->real_bounds.y);
+                    }
                 };
                 child->when_clicked = paint {
                     auto w = *datum<int>(c, "cid");
