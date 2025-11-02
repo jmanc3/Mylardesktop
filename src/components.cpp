@@ -7,9 +7,7 @@
 #include "hsluv.h"
 
 #ifdef TRACY_ENABLE
-
-#include "../tracy/public/tracy/Tracy.hpp"
-
+#include "tracy/Tracy.hpp"
 #endif
 
 #include <atomic>

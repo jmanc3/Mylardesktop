@@ -1,47 +1,51 @@
 PLUGIN_NAME = mylar-desktop
 MAKEFLAGS += -j16
 
-# Find all .cpp source files recursively under src/
-SOURCE_FILES := $(wildcard ./src/*.cpp ./src/*/*.cpp)
-OBJECT_FILES := $(patsubst ./src/%.cpp, out/%.o, $(SOURCE_FILES))
+# --- Source discovery ---
+SOURCE_FILES := $(wildcard ./src/*.cpp ./src/*/*.cpp ./tracy/public/TracyClient.cpp)
+OBJECT_FILES := $(patsubst ./%, out/%, $(SOURCE_FILES:.cpp=.o))
 
-# Common include and pkg-config flags
-#PKG_FLAGS := $(shell pkg-config --cflags librsvg-2.0 pixman-1 libdrm hyprland pangocairo libinput libudev wayland-server xkbcommon pangocairo cairo)
-PKG_FLAGS := $(shell pkg-config --cflags librsvg-2.0 libdrm hyprland pangocairo wayland-server xkbcommon pangocairo cairo)
-INCLUDE_FLAGS := -I./include
+# --- Pkg-config dependencies ---
+PKG_FLAGS := $(shell pkg-config --cflags librsvg-2.0 libdrm hyprland pangocairo wayland-server xkbcommon cairo)
+PKG_LIBS  := $(shell pkg-config --libs   librsvg-2.0 libdrm hyprland pangocairo wayland-server xkbcommon cairo)
 
-# Compiler flags
-COMMON_FLAGS := --no-gnu-unique -fPIC -std=c++2b $(INCLUDE_FLAGS) $(PKG_FLAGS)
-#COMMON_FLAGS := -Wall --no-gnu-unique -fPIC -std=c++2b $(INCLUDE_FLAGS) $(PKG_FLAGS)
+# --- Include paths ---
+INCLUDE_FLAGS := -I./include -I./tracy/public
 
-# Build types
+# --- Common compiler flags ---
+COMMON_FLAGS := -std=c++2b -fPIC --no-gnu-unique $(INCLUDE_FLAGS) $(PKG_FLAGS) \
+	-DTRACY_ENABLE -DTRACY_NO_MEMORY
+
+# --- Build type flags ---
 DEBUG_FLAGS := -g -O0
-RELEASE_FLAGS := -g -O3
+RELEASE_FLAGS := -O3 -DNDEBUG
 
+# --- Output ---
 OUTPUT = out/$(PLUGIN_NAME).so
 
 .PHONY: all debug release clean load unload
 
-# Default target (debug)
+# --- Default target ---
 all: debug
 
-# Debug build
-debug: CXX_FLAGS := $(COMMON_FLAGS) $(DEBUG_FLAGS)
-debug: $(OUTPUT)
-
-# Release build
+# --- Build modes ---
+debug:   CXX_FLAGS := $(COMMON_FLAGS) $(DEBUG_FLAGS)
 release: CXX_FLAGS := $(COMMON_FLAGS) $(RELEASE_FLAGS)
-release: $(OUTPUT)
 
-# Link step
+debug release: $(OUTPUT)
+
+# --- Link step ---
 $(OUTPUT): $(OBJECT_FILES)
-	$(CXX) -shared $^ -o $@
+	@echo "Linking $@"
+	$(CXX) -shared $^ -o $@ $(PKG_LIBS) -lrt
 
-# Compile step
-out/%.o: ./src/%.cpp
+# --- Compile step ---
+out/%.o: %.cpp
 	@mkdir -p $(dir $@)
+	@echo "Compiling $<"
 	$(CXX) $(CXX_FLAGS) -c $< -o $@
 
+# --- Utility targets ---
 clean:
 	$(RM) $(OUTPUT) $(OBJECT_FILES)
 

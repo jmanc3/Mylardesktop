@@ -11,7 +11,7 @@
 #include <cstring>
 
 #ifdef TRACY_ENABLE
-#include "/home/jmanc3/NewMylar/subprojects/tracy/public/tracy/Tracy.hpp"
+#include "tracy/Tracy.hpp"
 #endif
 
 #include "container.h"
@@ -835,11 +835,6 @@ void HyprIso::create_callbacks() {
     });
     
     static auto render = HyprlandAPI::registerCallbackDynamic(globals->api, "render", [](void* self, SCallbackInfo& info, std::any data) {
-        if (hypriso->no_render)
-            return;
-        #ifdef TRACY_ENABLE
-            ZoneScopedN("Mylar render");
-        #endif
         //return;
         if (hypriso->on_render) {
             for (auto m : hyprmonitors) {
@@ -2859,6 +2854,7 @@ void HyprIso::add_float_rule() {
 }
 
 void HyprIso::overwrite_defaults() {
+    return;
     {
         Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:blur:enabled");
         auto target = (Hyprlang::INT*)val->dataPtr();

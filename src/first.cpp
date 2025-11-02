@@ -8,6 +8,10 @@
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
+#ifdef TRACY_ENABLE
+#include "tracy/Tracy.hpp"
+#endif
+
 Globals *globals = new Globals;
 
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
@@ -71,7 +75,7 @@ void new_test() {
 
 APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) { // When started as a plugin
 #ifdef TRACY_ENABLE
-    TracyCAppInfo("Mylar Desktop");
+    TracyAppInfo("Mylar Desktop", 13);
 #endif
     
     globals->api = handle;

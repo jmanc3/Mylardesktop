@@ -5,6 +5,10 @@
 #include <linux/input-event-codes.h>
 #include <algorithm>
 
+#ifdef TRACY_ENABLE
+#include "tracy/Tracy.hpp"
+#endif
+
 void fill_list_with_concerned(std::vector<Container*>& containers, Container* parent) {
     if (parent->type == ::newscroll) {
         auto s = (ScrollContainer*)parent;

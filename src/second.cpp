@@ -14,6 +14,10 @@
 #include "hotcorners.h"
 #include "alt_tab.h"
 
+#ifdef TRACY_ENABLE
+#include "tracy/Tracy.hpp"
+#endif
+
 #include <algorithm>
 #include <linux/input-event-codes.h>
 #include <thread>

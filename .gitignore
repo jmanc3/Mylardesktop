@@ -13,3 +13,5 @@ oldmakefile
 *.sh
 events
 *.so
+tracy/
+cbuild/
