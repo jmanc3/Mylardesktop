@@ -341,8 +341,14 @@ void create_titlebar(Container *root, Container *parent) {
     titlebar->when_paint = paint {
         paint_titlebar(root, c);
     };
-    titlebar->when_mouse_down = consume_event;
+    titlebar->when_mouse_down = paint {
+        auto client = first_above_of(c, TYPE::CLIENT);
+        auto cid = *datum<int>(client, "cid");
+        consume_event(root, c);
+        hypriso->bring_to_front(cid);        
+    };
     titlebar->when_mouse_up = consume_event;
+    titlebar->when_clicked = titlebar->when_mouse_down;
     titlebar->when_drag_start = paint {
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");

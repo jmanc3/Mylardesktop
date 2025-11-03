@@ -21,11 +21,11 @@ void fill_root(Container *root, Container *alt_tab_parent) {
     *datum<bool>(alt_tab_parent, "shown_yet") = false;
     alt_tab_parent->custom_type = (int) TYPE::ALT_TAB;
     alt_tab_parent->type = ::vbox;
-    //alt_tab_parent->receive_events_even_if_obstructed = true;
-    //alt_tab_parent->when_mouse_down = consume_event;
-    //alt_tab_parent->when_mouse_motion = consume_event;
-    //alt_tab_parent->when_drag = consume_event;
-    //alt_tab_parent->when_mouse_up = consume_event;
+    alt_tab_parent->receive_events_even_if_obstructed = true;
+    alt_tab_parent->when_mouse_down = consume_event;
+    alt_tab_parent->when_mouse_motion = consume_event;
+    alt_tab_parent->when_drag = consume_event;
+    alt_tab_parent->when_mouse_up = consume_event;
     alt_tab_parent->pre_layout = [](Container *root, Container *c, const Bounds &b) {
         auto [rid, s, stage, active_id] = from_root(root);
 

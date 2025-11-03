@@ -1430,7 +1430,7 @@ void notify(std::string text) {
     ZoneScoped;
 #endif
     
-    HyprlandAPI::addNotification(globals->api, text, {1, 1, 1, 1}, 1000);
+    HyprlandAPI::addNotification(globals->api, text, {1, 1, 1, 1}, 4000);
 }
 
 int current_rendering_monitor() {

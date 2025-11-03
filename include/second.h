@@ -48,6 +48,7 @@ enum struct TYPE : uint8_t {
     SNAP_THUMB,
     WORKSPACE_SWITCHER,
     WORKSPACE_THUMB,
+    TEST,
 };
 
 extern std::vector<Container *> monitors;

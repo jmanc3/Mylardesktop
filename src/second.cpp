@@ -182,9 +182,40 @@ static void on_layer_change() {
     // move snapped windows
 }
 
+static void test_container(Container *m) {
+    auto c = m->child(100, 100);
+    c->custom_type = (int) TYPE::TEST;
+    c->when_paint = [](Container *root, Container *c) {
+        if (c->state.mouse_pressing) {
+            rect(c->real_bounds, {1, 1, 1, 1});
+        } else if (c->state.mouse_hovering) {
+            rect(c->real_bounds, {1, 0, 0, 1});
+        } else {
+            rect(c->real_bounds, {1, 0, 1, 1});
+        }
+    };
+    c->pre_layout = [](Container *root, Container *c, const Bounds &bounds) {
+        c->real_bounds = Bounds(20, 20, 100, 100);
+    };
+    c->when_mouse_motion = request_damage;
+    c->when_mouse_down = paint {
+        consume_event(root, c);
+        //request_damage(root, c);
+    };
+    c->when_mouse_up = paint {
+        consume_event(root, c);
+        //request_damage(root, c);
+    };
+    c->when_clicked = request_damage;
+    c->when_mouse_leaves_container = request_damage;
+    c->when_mouse_enters_container = request_damage;
+}
+
 static void on_monitor_open(int id) {
     auto c = new Container();
     monitors.push_back(c);
+
+    //test_container(c);
 
     auto cid = datum<int>(c, "cid");
     *cid = id;
@@ -382,11 +413,18 @@ void second::layout_containers() {
 
     for (auto c : backup) {
         if (c->custom_type == (int) TYPE::ALT_TAB) {
-            c->parent->children.push_back(c);
+            c->parent->children.insert(c->parent->children.begin(), c);
             if (c->pre_layout) {
                 c->pre_layout(c->parent, c, c->parent->real_bounds);
                 *datum<bool>(c, "touched") = true;
             }
+        }
+        if (c->custom_type == (int) TYPE::TEST) {
+            c->parent->children.insert(c->parent->children.begin(), c);
+            if (c->pre_layout) {
+                c->pre_layout(c->parent, c, c->parent->real_bounds);
+            }
+            *datum<bool>(c, "touched") = true;
         }
     }
     for (auto c : backup) {
