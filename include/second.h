@@ -8,6 +8,10 @@
 #include <assert.h>
 #include <vector>
 
+#ifdef TRACY_ENABLE
+#include "tracy/Tracy.hpp"
+#endif
+
 #define paint [](Container *root, Container *c)
 #define fz std::format
 #define nz notify
@@ -16,6 +20,9 @@
 #define center_x(c, in_w) c->real_bounds.x + c->real_bounds.w * .5 - in_w * .5
 
 static std::string to_lower(const std::string& str) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     std::string result;
     result.reserve(str.size()); // avoid reallocations
 
@@ -24,6 +31,10 @@ static std::string to_lower(const std::string& str) {
 }
 
 static bool enough_time_since_last_check(long reattempt_timeout, long last_time_checked) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     return (get_current_time_in_ms() - last_time_checked) > reattempt_timeout;
 }
 
@@ -48,6 +59,10 @@ extern std::unordered_map<std::string, Datas> datas;
 
 template<typename T>
 static T *get_data(const std::string& uuid, const std::string& name) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+
     // Locate uuid
     auto it_uuid = datas.find(uuid);
     if (it_uuid == datas.end())
@@ -67,12 +82,18 @@ static T *get_data(const std::string& uuid, const std::string& name) {
 
 template<typename T>
 static void set_data(const std::string& uuid, const std::string& name, T&& value) {
-    datas[uuid].datas[name] = std::forward<T>(value);
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+     datas[uuid].datas[name] = std::forward<T>(value);
 }
 
 template<typename T>
 static T *get_or_create(const std::string& uuid, const std::string& name) {
-    T *data = get_data<T>(uuid, name);
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+     T *data = get_data<T>(uuid, name);
     if (!data) {
         set_data<T>(uuid, name, T());
         data = get_data<T>(uuid, name);
@@ -81,7 +102,10 @@ static T *get_or_create(const std::string& uuid, const std::string& name) {
 }
 
 static void remove_data(const std::string& uuid) {
-    datas.erase(uuid);
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+     datas.erase(uuid);
 }
 
 class FunctionTimer {
@@ -124,7 +148,10 @@ static std::vector<DD *> dds;
 
 template<typename T, typename C, typename N>
 auto datum(C&& container, N&& needle) {
-    //FunctionTimer timer("datum"); // Timer starts here
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+     //FunctionTimer timer("datum"); // Timer starts here
     //assert(container && "passed nullptr container to datum");
     auto a = get_or_create<T>(std::forward<C>(container)->uuid, std::forward<N>(needle));
     //dds->push_back();
@@ -132,7 +159,10 @@ auto datum(C&& container, N&& needle) {
 }
 
 static std::tuple<int, float, int, int> from_root(Container *r) {
-    int rid = *datum<int>(r, "cid"); 
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+     int rid = *datum<int>(r, "cid"); 
     float s = scale(rid);
     int stage = *datum<int>(r, "stage"); 
     int active_id = *datum<int>(r, "active_id"); 
@@ -140,7 +170,10 @@ static std::tuple<int, float, int, int> from_root(Container *r) {
 }
 
 static Container *first_above_of(Container *c, TYPE type) {
-    Container *client_above = nullptr; 
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+     Container *client_above = nullptr; 
     Container *current = c;
     while (current->parent != nullptr) {
         if (current->parent->custom_type == (int) type) {
@@ -153,7 +186,10 @@ static Container *first_above_of(Container *c, TYPE type) {
 }
 
 static Container *get_cid_container(int id) {
-    for (auto m : monitors) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+     for (auto m : monitors) {
         for (auto child : m->children) {
             if (*datum<int>(child, "cid") == id) {
                 return child;
@@ -165,11 +201,17 @@ static Container *get_cid_container(int id) {
 
 
 static void paint_debug(Container *root, Container *c) {
-    border(c->real_bounds, {1, 0, 1, 1}, 4);
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+     border(c->real_bounds, {1, 0, 1, 1}, 4);
 }
 
 static void request_damage(Container *root, Container *c) {
-    auto [rid, s, stage, active_id] = from_root(root);
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+     auto [rid, s, stage, active_id] = from_root(root);
     auto b = c->real_bounds;
     b.scale(1.0 / s);
     b.grow(2.0 * s);
@@ -177,6 +219,9 @@ static void request_damage(Container *root, Container *c) {
 }
 
 static void consume_event(Container *root, Container *c) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     root->consumed_event = true;
     request_damage(root, c);
 }

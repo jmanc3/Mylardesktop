@@ -392,6 +392,10 @@ void on_close_monitor(PHLMONITOR m) {
 inline CFunctionHook* g_pOnSurfacePassDraw = nullptr;
 typedef void (*origSurfacePassDraw)(CSurfacePassElement *, const CRegion& damage);
 void hook_onSurfacePassDraw(void* thisptr, const CRegion& damage) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
     auto  spe = (CSurfacePassElement *) thisptr;
     auto window = spe->m_data.pWindow;
     //notify("alo");
@@ -405,6 +409,10 @@ void hook_onSurfacePassDraw(void* thisptr, const CRegion& damage) {
 }
 
 void fix_window_corner_rendering() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
     //return;
     static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "draw");
     // TODO: check if m.address is same as set_rounding even though signature is SurfacePassElement
@@ -423,6 +431,10 @@ inline CFunctionHook* g_pOnReadProp = nullptr;
 typedef void (*origOnReadProp)(void*, SP<CXWaylandSurface> XSURF, uint32_t atom, xcb_get_property_reply_t* reply);
     //void CXWM::readProp(SP<CXWaylandSurface> XSURF, uint32_t atom, xcb_get_property_reply_t* reply) {
 void hook_OnReadProp(void* thisptr, SP<CXWaylandSurface> XSURF, uint32_t atom, xcb_get_property_reply_t* reply) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
     (*(origOnReadProp)g_pOnReadProp->m_original)(thisptr, XSURF, atom, reply);
 
     const auto* value    = sc<const char*>(xcb_get_property_value(reply));
@@ -483,6 +495,10 @@ void hook_OnReadProp(void* thisptr, SP<CXWaylandSurface> XSURF, uint32_t atom, x
 static wl_event_source *source = nullptr;
 
 void remove_request_listeners() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     for (auto& w : g_pCompositor->m_windows) {
         if (auto surface = w->m_xdgSurface) {
             if (auto toplevel = surface->m_toplevel.lock()) {
@@ -499,12 +515,18 @@ void remove_request_listeners() {
 inline CFunctionHook* g_pOnRMS = nullptr;
 typedef Vector2D (*origOnRMS)(void*);
 Vector2D hook_OnRMS(void* thisptr) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     //recheck_csd_for_all_wayland_windows();
     return Vector2D(10, 10);
     //return (*(origOnRMS)g_pOnRMS->m_original)(thisptr);
 }
 
 void overwrite_min() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "requestedMinSize");
         g_pOnRMS = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_OnRMS);
@@ -514,6 +536,9 @@ void overwrite_min() {
 }
 
 void recheck_csd_for_all_wayland_windows() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     if (source)    
         return;
     source = wl_event_loop_add_timer(g_pCompositor->m_wlEventLoop, [](void *) {
@@ -569,6 +594,9 @@ void recheck_csd_for_all_wayland_windows() {
 inline CFunctionHook* g_pOnKDECSD = nullptr;
 typedef uint32_t (*origOnKDECSD)(void*);
 uint32_t hook_OnKDECSD(void* thisptr) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     recheck_csd_for_all_wayland_windows();
     return (*(origOnKDECSD)g_pOnKDECSD->m_original)(thisptr);
 }
@@ -576,11 +604,17 @@ uint32_t hook_OnKDECSD(void* thisptr) {
 inline CFunctionHook* g_pOnXDGCSD = nullptr;
 typedef zxdgToplevelDecorationV1Mode (*origOnXDGCSD)(void*);
 zxdgToplevelDecorationV1Mode hook_OnXDGCSD(void* thisptr) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     recheck_csd_for_all_wayland_windows();
     return (*(origOnXDGCSD)g_pOnXDGCSD->m_original)(thisptr);
 }
 
 void detect_csd_request_change() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     // hook xdg and kde csd request mode, then set timeout for 25 ms, 5 times which checks and updates csd for current windows based on most recent requests
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "kdeDefaultModeCSD");
@@ -619,6 +653,9 @@ void detect_move_resize_requests() {
 inline CFunctionHook* g_pRenderWindowHook = nullptr;
 typedef void (*origRenderWindowFunc)(void*, PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp& time, bool decorate, eRenderPassMode mode, bool ignorePosition, bool standalone);
 void hook_RenderWindow(void* thisptr, PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp& time, bool decorate, eRenderPassMode mode, bool ignorePosition, bool standalone) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     Hyprlang::INT* rounding_amount = nullptr;
     int initial_value = 0;
 
@@ -649,6 +686,9 @@ void hook_RenderWindow(void* thisptr, PHLWINDOW pWindow, PHLMONITOR pMonitor, co
 inline CFunctionHook* g_pWindowRoundingHook = nullptr;
 typedef float (*origWindowRoundingFunc)(CWindow *);
 float hook_WindowRounding(void* thisptr) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     float result = (*(origWindowRoundingFunc)g_pWindowRoundingHook->m_original)((CWindow *)thisptr);
     return result;
 }
@@ -656,6 +696,9 @@ float hook_WindowRounding(void* thisptr) {
 inline CFunctionHook* g_pWindowRoundingPowerHook = nullptr;
 typedef float (*origWindowRoundingPowerFunc)(CWindow *);
 float hook_WindowRoundingPower(void* thisptr) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     float result = (*(origWindowRoundingPowerFunc)g_pWindowRoundingPowerHook->m_original)((CWindow *)thisptr);
     return result;
 }
@@ -714,6 +757,9 @@ SDispatchResult hook_onCircleNext(void* thisptr, std::string arg) {
 }
 
 void disable_default_alt_tab_behaviour() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "circleNext");
         g_pOnCircleNextHook       = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_onCircleNext);
@@ -722,11 +768,17 @@ void disable_default_alt_tab_behaviour() {
 }
 
 void set_window_corner_mask(int id, int cornermask) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     notify("deprecated(set_window_corner_mask): use set_corner_rendering_mask_for_window");
     hypriso->set_corner_rendering_mask_for_window(id, cornermask);
 }
 
 std::string HyprIso::class_name(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hyprwindow : hyprwindows) {
         if (hyprwindow->id == id) {
             if (auto w = hyprwindow->w.get()) {
@@ -739,6 +791,9 @@ std::string HyprIso::class_name(int id) {
 }
 
 float HyprIso::get_rounding(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw: hyprwindows)
         if (hw->id == id)
             return hw->w->rounding();
@@ -746,6 +801,9 @@ float HyprIso::get_rounding(int id) {
 }
 
 void HyprIso::floatit(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     //return;
     for (auto hw: hyprwindows)
         if (hw->id == id)
@@ -753,6 +811,11 @@ void HyprIso::floatit(int id) {
 }
 
 float HyprIso::get_varfloat(std::string target, float default_float) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    //return default_float;
+    
     auto confval = HyprlandAPI::getConfigValue(globals->api, target);
     if (!confval)
         return default_float;
@@ -762,6 +825,11 @@ float HyprIso::get_varfloat(std::string target, float default_float) {
 }
 
 RGBA HyprIso::get_varcolor(std::string target, RGBA default_color) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    //return default_color;
+    
     auto confval = HyprlandAPI::getConfigValue(globals->api, target);
     if (!confval)
         return default_color;
@@ -772,6 +840,10 @@ RGBA HyprIso::get_varcolor(std::string target, RGBA default_color) {
 }
 
 void HyprIso::create_config_variables() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_button_bg_hovered_color", Hyprlang::INT{*configStringToInt("rgba(202020ff)")});
     HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_button_bg_pressed_color", Hyprlang::INT{*configStringToInt("rgba(111111ff)")});
     HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_closed_button_bg_hovered_color", Hyprlang::INT{*configStringToInt("rgba(dd1111ff)")});
@@ -793,6 +865,9 @@ void HyprIso::create_config_variables() {
 }
 
 void HyprIso::create_callbacks() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto m : g_pCompositor->m_monitors) {
         on_open_monitor(m);
     }
@@ -836,13 +911,23 @@ void HyprIso::create_callbacks() {
     
     static auto render = HyprlandAPI::registerCallbackDynamic(globals->api, "render", [](void* self, SCallbackInfo& info, std::any data) {
         //return;
+        auto stage = std::any_cast<eRenderStage>(data);
+        if (stage == eRenderStage::RENDER_PRE) {
+            #ifdef TRACY_ENABLE
+                FrameMarkStart("Render");
+            #endif        
+        }
         if (hypriso->on_render) {
             for (auto m : hyprmonitors) {
                 if (m->m == g_pHyprOpenGL->m_renderData.pMonitor) {
-                    auto stage = std::any_cast<eRenderStage>(data);
                     hypriso->on_render(m->id, (int)stage);
                 }
             }
+        }
+        if (stage == eRenderStage::RENDER_LAST_MOMENT) {
+            #ifdef TRACY_ENABLE
+                FrameMarkEnd("Render");
+            #endif
         }
     });
     
@@ -974,12 +1059,18 @@ void HyprIso::create_callbacks() {
 inline CFunctionHook* g_pOnArrangeLayers = nullptr;
 typedef void (*origArrangeLayers)(CHyprRenderer *, const MONITORID& monitor);
 void hook_onArrangeLayers(void* thisptr, const MONITORID& monitor) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     auto spe = (CHyprRenderer *) thisptr;
     (*(origArrangeLayers)g_pOnArrangeLayers->m_original)(spe, monitor);
     notify("dock added");
 }
 
 void hook_dock_change() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     //g_pHyprRenderer->arrangeLayersForMonitor(m_id);
     static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "arrangeLayersForMonitor");
     // TODO: check if m.address is same as set_rounding even though signature is SurfacePassElement
@@ -995,6 +1086,9 @@ void hook_dock_change() {
 }
 
 void HyprIso::create_hooks() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     //return;
     fix_window_corner_rendering();
     notify("1 - remove me");
@@ -1008,6 +1102,9 @@ void HyprIso::create_hooks() {
 }
 
 void HyprIso::end() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     g_pHyprRenderer->m_renderPass.removeAllOfType("CRectPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CBorderPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CTexPassElement");
@@ -1016,14 +1113,24 @@ void HyprIso::end() {
 }
 
 CBox tocbox(Bounds b) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     return {b.x, b.y, b.w, b.h};
 }
 
 Bounds tobounds(CBox box) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     return {box.x, box.y, box.w, box.h};
 }
 
 void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPower, bool blur, float blurA) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
     //return;
     if (box.h <= 0 || box.w <= 0)
         return;
@@ -1035,6 +1142,10 @@ void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPow
     if (cornermask == 16)
         round = 0;
     AnyPass::AnyData anydata([box, color, cornermask, round, roundingPower, blur, blurA, clip, clipbox](AnyPass* pass) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
         CHyprOpenGLImpl::SRectRenderData rectdata;
         auto region = new CRegion(tocbox(box));
         rectdata.damage        = region;
@@ -1059,6 +1170,10 @@ void rect(Bounds box, RGBA color, int cornermask, float round, float roundingPow
 }
 
 void border(Bounds box, RGBA color, float size, int cornermask, float round, float roundingPower, bool blur, float blurA) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
     if (box.h <= 0 || box.w <= 0)
         return;
     CBorderPassElement::SBorderData rectdata;
@@ -1073,7 +1188,15 @@ void border(Bounds box, RGBA color, float size, int cornermask, float round, flo
 }
 
 void shadow(Bounds box, RGBA color, float rounding, float roundingPower, float size) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
     AnyPass::AnyData anydata([box, color, rounding, roundingPower, size](AnyPass* pass) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
         if (g_pCompositor->m_lastWindow.get()) {
             auto current = g_pHyprOpenGL->m_renderData.currentWindow;
             g_pHyprOpenGL->m_renderData.currentWindow = g_pCompositor->m_lastWindow;
@@ -1095,6 +1218,10 @@ struct MylarBar : public IHyprWindowDecoration {
     }
     
     SDecorationPositioningInfo getPositioningInfo() { 
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+        
         SDecorationPositioningInfo info;
         info.policy         = DECORATION_POSITION_STICKY;
         info.edges          = DECORATION_EDGE_TOP;
@@ -1104,10 +1231,18 @@ struct MylarBar : public IHyprWindowDecoration {
         return info;
     }
     void onPositioningReply(const SDecorationPositioningReply& reply) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+        
         //g_pHyprRenderer->damageMonitor(m_window->m_monitor.lock());
         //draw(m_window->m_monitor.lock(), 1.0);
     }
     void draw(PHLMONITOR monitor, float const& a) { 
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+        
         if (!hypriso->on_draw_decos)
            return; 
         for (auto m : hyprmonitors) {
@@ -1123,10 +1258,18 @@ struct MylarBar : public IHyprWindowDecoration {
     }
     eDecorationType getDecorationType() { return eDecorationType::DECORATION_GROUPBAR; }
     void updateWindow(PHLWINDOW) { 
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+        
         //g_pHyprRenderer->damageMonitor(m_window->m_monitor.lock());
         //draw(m_window->m_monitor.lock(), 1.0);
     }
     void damageEntire() { 
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+        
         //g_pHyprRenderer->damageMonitor(m_window->m_monitor.lock());
         //hypriso->damage_entire(m_window->m_monitorMovedFrom);
         //draw(m_window->m_monitor.lock(), 1.0);
@@ -1138,6 +1281,10 @@ struct MylarBar : public IHyprWindowDecoration {
 };
 
 bool HyprIso::wants_titlebar(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
    for (auto hyprwindow : hyprwindows) {
         if (hyprwindow->id == id) {
             if (hyprwindow->w->m_X11DoesntWantBorders) {
@@ -1150,6 +1297,10 @@ bool HyprIso::wants_titlebar(int id) {
 }
 
 void HyprIso::reserve_titlebar(int id, int size) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     for (auto hyprwindow : hyprwindows) {
         if (hyprwindow->id == id) {
             if (auto w = hyprwindow->w.get()) {
@@ -1165,6 +1316,10 @@ void HyprIso::reserve_titlebar(int id, int size) {
 }
 
 void request_refresh() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     for (auto m : g_pCompositor->m_monitors) {
         g_pHyprRenderer->damageMonitor(m);
         g_pCompositor->scheduleFrameForMonitor(m);
@@ -1172,17 +1327,29 @@ void request_refresh() {
 }
 
 void request_refresh_only() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     for (auto m : g_pCompositor->m_monitors) {
         g_pCompositor->scheduleFrameForMonitor(m);
     }
 }
 
 Bounds bounds_full(ThinClient *w) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     notify("deprecated(bounds_full): use bounds_full_client");
     return bounds_full_client(w->id);
 }
 
 Bounds bounds(ThinClient *w) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     notify("deprecated(bounds): use bounds_client");
     return bounds_client(w->id);
 }
@@ -1193,6 +1360,10 @@ Bounds real_bounds(ThinClient *w) {
 }
 
 std::string class_name(ThinClient *w) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     for (auto hyprwindow : hyprwindows) {
         if (hyprwindow->id == w->id) {
             if (auto w = hyprwindow->w.get()) {
@@ -1205,6 +1376,10 @@ std::string class_name(ThinClient *w) {
 }
 
 std::string HyprIso::title_name(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     for (auto hyprwindow : hyprwindows) {
         if (hyprwindow->id == id) {
             if (auto w = hyprwindow->w.get()) {
@@ -1217,6 +1392,10 @@ std::string HyprIso::title_name(int id) {
 }
 
 std::string title_name(ThinClient *w) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     for (auto hyprwindow : hyprwindows) {
         if (hyprwindow->id == w->id) {
             if (auto w = hyprwindow->w.get()) {
@@ -1229,20 +1408,36 @@ std::string title_name(ThinClient *w) {
 }
 
 Bounds bounds(ThinMonitor *m) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     notify("deprecated(bounds): use bounds_monitor");
     return bounds_monitor(m->id);
 }
 
 Bounds bounds_reserved(ThinMonitor *m) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     notify("deprecated(bounds_reserved): use bounds_reserved_monitor");
     return bounds_reserved_monitor(m->id);
 }
 
 void notify(std::string text) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     HyprlandAPI::addNotification(globals->api, text, {1, 1, 1, 1}, 1000);
 }
 
 int current_rendering_monitor() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     if (auto m = g_pHyprOpenGL->m_renderData.pMonitor.lock()) {
         for (auto hyprmonitor : hyprmonitors) {
             if (hyprmonitor->m == m) {
@@ -1254,6 +1449,10 @@ int current_rendering_monitor() {
 }
 
 int current_rendering_window() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     if (auto c = g_pHyprOpenGL->m_renderData.currentWindow.lock()) {
         for (auto hyprwindow : hyprwindows) {
             if (hyprwindow->w == c) {
@@ -1265,6 +1464,9 @@ int current_rendering_window() {
 }
 
 float scale(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hyprmonitor : hyprmonitors) {
         if (hyprmonitor->id == id) {
             return hyprmonitor->m->m_scale;
@@ -1274,6 +1476,9 @@ float scale(int id) {
 }
 
 std::vector<int> HyprIso::get_workspaces(int monitor) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     std::vector<int> vec;
     for (auto hm : hyprmonitors) {
         if (hm->id == monitor) {
@@ -1288,6 +1493,9 @@ std::vector<int> HyprIso::get_workspaces(int monitor) {
 }
 
 int HyprIso::get_active_workspace(int monitor) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hm : hyprmonitors) {
         if (hm->id == monitor) {
             if (hm->m->m_activeWorkspace.get()) {
@@ -1299,6 +1507,9 @@ int HyprIso::get_active_workspace(int monitor) {
 }
 
 int HyprIso::get_workspace(int client) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         if (hw->id == client) {
             if (hw->w->m_workspace.get()) {
@@ -1311,6 +1522,9 @@ int HyprIso::get_workspace(int client) {
 
 
 std::vector<int> get_window_stacking_order() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     std::vector<int> vec;
     for (auto w : g_pCompositor->m_windows) {
         for (auto hyprwindow : hyprwindows) {
@@ -1324,6 +1538,9 @@ std::vector<int> get_window_stacking_order() {
 }
 
 void HyprIso::move(int id, int x, int y) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto c : hyprwindows) {
         if (c->id == id) {
             c->w->m_realPosition->setValueAndWarp({x, y});
@@ -1332,6 +1549,9 @@ void HyprIso::move(int id, int x, int y) {
 }
 
 void HyprIso::move_resize(int id, int x, int y, int w, int h, bool instant) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto c : hyprwindows) {
         if (c->id == id) {
             if (instant) {
@@ -1347,6 +1567,9 @@ void HyprIso::move_resize(int id, int x, int y, int w, int h, bool instant) {
     }
 }
 void HyprIso::move_resize(int id, Bounds b, bool instant) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     move_resize(id, b.x, b.y, b.w, b.h, instant);
 }
 
@@ -1417,6 +1640,9 @@ bool paint_png_to_surface(cairo_surface_t* surface, std::string path, int target
 }
 
 cairo_surface_t* cairo_image_surface_create_from_xpm(const std::string& path) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     std::ifstream file(path);
     if (!file) {
         std::cerr << "Failed to open XPM file: " << path << std::endl;
@@ -1583,6 +1809,9 @@ void load_icon_full_path(cairo_surface_t** surface, std::string path, int target
 }
 
 SP<CTexture> missingTexure(int size) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     SP<CTexture> tex = makeShared<CTexture>();
     tex->allocate();
 
@@ -1624,6 +1853,9 @@ SP<CTexture> missingTexure(int size) {
 }
 
 SP<CTexture> loadAsset(const std::string& filename, int target_size) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     cairo_surface_t* icon = nullptr;
     load_icon_full_path(&icon, filename, target_size);
     if (!icon)
@@ -1657,6 +1889,9 @@ SP<CTexture> loadAsset(const std::string& filename, int target_size) {
 }
 
 void free_text_texture(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (int i = 0; i < hyprtextures.size(); i++) {
         auto h = hyprtextures[i];
         if (h->info.id == id) {
@@ -1669,6 +1904,9 @@ void free_text_texture(int id) {
 }
 
 TextureInfo gen_texture(std::string path, float h) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     //notify("gen texture");
     auto tex = loadAsset(path, h);
     if (tex.get()) {
@@ -1687,6 +1925,9 @@ TextureInfo gen_texture(std::string path, float h) {
 }
 
 TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA color) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     //notify("gen text");
     auto tex = g_pHyprOpenGL->renderText(text, CHyprColor(color.r, color.g, color.b, color.a), h, false, font, 0);
     if (tex.get()) {
@@ -1705,6 +1946,10 @@ TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA c
 }
 
 void draw_texture(TextureInfo info, int x, int y, float a, float clip_w) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
     //return;
     for (auto t : hyprtextures) {
         
@@ -1735,15 +1980,24 @@ void draw_texture(TextureInfo info, int x, int y, float a, float clip_w) {
 }
 
 void setCursorImageUntilUnset(std::string cursor) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     g_pInputManager->setCursorImageUntilUnset(cursor);
 
 }
 
 void unsetCursorImage() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     g_pInputManager->unsetCursorImage();
 }
 
 int get_monitor(int client) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
        if (hw->id == client) {
            for (auto hm : hyprmonitors) {
@@ -1757,11 +2011,17 @@ int get_monitor(int client) {
 }
 
 Bounds mouse() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     auto mouse = g_pInputManager->getMouseCoordsInternal();
     return {mouse.x, mouse.y, mouse.x, mouse.y};
 }
 
 void close_window(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             g_pCompositor->closeWindow(hw->w);
@@ -1770,6 +2030,9 @@ void close_window(int id) {
 }
 
 int HyprIso::monitor_from_cursor() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     auto m = g_pCompositor->getMonitorFromCursor();
     for (auto hm : hyprmonitors) {
         if (hm->m == m) {
@@ -1780,6 +2043,9 @@ int HyprIso::monitor_from_cursor() {
 }
 
 bool HyprIso::is_hidden(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             return hw->is_hidden;
@@ -1789,6 +2055,9 @@ bool HyprIso::is_hidden(int id) {
 }
 
 void HyprIso::set_hidden(int id, bool state) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             hw->w->updateWindowDecos();
@@ -1829,6 +2098,9 @@ void HyprIso::set_hidden(int id, bool state) {
 }
 
 void HyprIso::bring_to_front(int id, bool focus) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             if (focus)
@@ -1839,6 +2111,9 @@ void HyprIso::bring_to_front(int id, bool focus) {
 }
 
 Bounds HyprIso::min_size(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             auto s = hw->w->requestedMinSize();
@@ -1849,6 +2124,9 @@ Bounds HyprIso::min_size(int id) {
 }
 
 bool HyprIso::has_decorations(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             for (const auto &decos : hw->w->m_windowDecorations) {
@@ -1863,6 +2141,9 @@ bool HyprIso::has_decorations(int id) {
 
 
 bool HyprIso::is_x11(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             return hw->w->m_isX11;
@@ -1872,6 +2153,9 @@ bool HyprIso::is_x11(int id) {
 }
 
 void HyprIso::send_key(uint32_t key) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto k : g_pInputManager->m_keyboards) {
         IKeyboard::SKeyEvent event;
         event.timeMs     = get_current_time_in_ms();
@@ -1886,6 +2170,9 @@ void HyprIso::send_key(uint32_t key) {
 }
 
 bool HyprIso::is_fullscreen(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             return hw->w->isFullscreen();
@@ -1895,6 +2182,9 @@ bool HyprIso::is_fullscreen(int id) {
 }
 
 void HyprIso::should_round(int id, bool state) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             hw->no_rounding = !state;
@@ -1903,6 +2193,9 @@ void HyprIso::should_round(int id, bool state) {
 }
 
 void HyprIso::damage_entire(int monitor) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hm : hyprmonitors) {
         if (hm->id == monitor) {
             g_pHyprRenderer->damageMonitor(hm->m);
@@ -1911,10 +2204,16 @@ void HyprIso::damage_entire(int monitor) {
 }
 
 void HyprIso::damage_box(Bounds b) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     g_pHyprRenderer->damageBox(b.x, b.y, b.w, b.h);
 }
 
 int later_action(void* user_data) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     auto timer = (Timer*)user_data;
     if (timer->func)
         timer->func(timer);
@@ -1929,6 +2228,9 @@ int later_action(void* user_data) {
 }
 
 Timer* later(void* data, float time_ms, const std::function<void(Timer*)>& fn) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     auto timer    = new Timer;
     timer->func   = fn;
     timer->data   = data;
@@ -1939,6 +2241,9 @@ Timer* later(void* data, float time_ms, const std::function<void(Timer*)>& fn) {
 }
 
 Timer* later(float time_ms, const std::function<void(Timer*)>& fn) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     auto timer    = new Timer;
     timer->func   = fn;
     timer->delay  = time_ms;
@@ -1948,10 +2253,16 @@ Timer* later(float time_ms, const std::function<void(Timer*)>& fn) {
 }
 
 Timer* later_immediate(const std::function<void(Timer*)>& fn) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     return later(1, fn);
 }
 
 void screenshot_monitor(CFramebuffer* buffer, PHLMONITOR m) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     if (!buffer || !pRenderMonitor)
         return;
     if (!m || !m->m_output || m->m_pixelSize.x <= 0 || m->m_pixelSize.y <= 0)
@@ -1973,6 +2284,9 @@ void screenshot_monitor(CFramebuffer* buffer, PHLMONITOR m) {
 
 
 void render_wallpaper(PHLMONITOR pMonitor, const Time::steady_tp& time, const Vector2D& translate, const float& scale) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     static auto PDIMSPECIAL      = CConfigValue<Hyprlang::FLOAT>("decoration:dim_special");
     static auto PBLURSPECIAL     = CConfigValue<Hyprlang::INT>("decoration:blur:special");
     static auto PBLUR            = CConfigValue<Hyprlang::INT>("decoration:blur:enabled");
@@ -2032,6 +2346,9 @@ void render_wallpaper(PHLMONITOR pMonitor, const Time::steady_tp& time, const Ve
 }
 
 void actual_screenshot_wallpaper(CFramebuffer* buffer, PHLMONITOR m) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     if (!buffer || !pRenderMonitor)
         return;
     if (!m || !m->m_output || m->m_pixelSize.x <= 0 || m->m_pixelSize.y <= 0)
@@ -2049,6 +2366,9 @@ void actual_screenshot_wallpaper(CFramebuffer* buffer, PHLMONITOR m) {
 }
 
 void screenshot_workspace(CFramebuffer* buffer, PHLWORKSPACEREF w, PHLMONITOR m, bool include_cursor) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     //return;
     if (!buffer || pRenderWorkspace == nullptr)
         return;
@@ -2104,6 +2424,9 @@ void screenshot_workspace(CFramebuffer* buffer, PHLWORKSPACEREF w, PHLMONITOR m,
 }
 
 void makeSnapshot(PHLWINDOW pWindow, CFramebuffer *PFRAMEBUFFER) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     // we trust the window is valid.
     const auto PMONITOR = pWindow->m_monitor.lock();
 
@@ -2142,6 +2465,9 @@ void makeSnapshot(PHLWINDOW pWindow, CFramebuffer *PFRAMEBUFFER) {
 }
 
 void renderWindow(PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp& time, bool decorate, eRenderPassMode mode, bool ignorePosition, bool standalone) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     if (pWindow->m_fadingOut) {
         if (pMonitor == pWindow->m_monitor) // TODO: fix this
             g_pHyprRenderer->renderSnapshot(pWindow);
@@ -2386,6 +2712,9 @@ void renderWindow(PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp&
 
 
 void screenshot_window_with_decos(CFramebuffer* buffer, PHLWINDOW w) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     //makeSnapshot(w, buffer);
     //return;
     //return;
@@ -2444,6 +2773,9 @@ void screenshot_window_with_decos(CFramebuffer* buffer, PHLWINDOW w) {
 }
 
 void screenshot_window(HyprWindow *hw, PHLWINDOW w, bool include_decorations) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     
     //return;
     if (!pRenderWindow || !w.get())
@@ -2481,6 +2813,9 @@ void screenshot_window(HyprWindow *hw, PHLWINDOW w, bool include_decorations) {
 }
 
 void HyprIso::screenshot_all() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto w : g_pCompositor->m_windows) {
         bool has_mylar_bar = false;
         for (const auto &decos : w->m_windowDecorations) 
@@ -2500,6 +2835,10 @@ void HyprIso::screenshot_all() {
 }
 
 void HyprIso::draw_workspace(int mon, int id, Bounds b, int rounding) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
     //return;
     for (auto hs : hyprspaces) {
         if (hs->w->m_id != id)
@@ -2508,6 +2847,10 @@ void HyprIso::draw_workspace(int mon, int id, Bounds b, int rounding) {
             continue;
         //notify("draw space " + std::to_string(id));
         AnyPass::AnyData anydata([b, hs, rounding](AnyPass* pass) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
             //notify("draw");
             auto roundingPower = 2.0f;
             auto cornermask = 0;
@@ -2538,6 +2881,10 @@ void HyprIso::draw_workspace(int mon, int id, Bounds b, int rounding) {
 };
 
 void HyprIso::draw_wallpaper(int mon, Bounds b, int rounding) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
     //return;
     for (auto hm : hyprmonitors) {
         if (hm->id != mon)
@@ -2545,7 +2892,10 @@ void HyprIso::draw_wallpaper(int mon, Bounds b, int rounding) {
         if (!hm->wallfb)
             continue;
         AnyPass::AnyData anydata([hm, mon, b, rounding](AnyPass* pass) {
-            //notify("draw");
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+             //notify("draw");
             auto roundingPower = 2.0f;
             auto cornermask = 0;
             auto tex = hm->wallfb->getTexture();
@@ -2572,6 +2922,9 @@ void HyprIso::draw_wallpaper(int mon, Bounds b, int rounding) {
 };
 
 void HyprIso::screenshot_wallpaper(int mon) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
    for (auto hm : hyprmonitors) {
        if (hm->id == mon) {
            if (!hm->wallfb)
@@ -2584,6 +2937,9 @@ void HyprIso::screenshot_wallpaper(int mon) {
 }
 
 void HyprIso::screenshot_space(int mon, int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     //notify("attempt screenshot " + std::to_string(id));
     for (auto hs : hyprspaces) {
         //notify("against " + std::to_string(hs->w->m_id));
@@ -2603,6 +2959,9 @@ void HyprIso::screenshot_space(int mon, int id) {
 }
 
 void HyprIso::screenshot_deco(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto w : g_pCompositor->m_windows) {
         for (auto hw : hyprwindows) {
             if (hw->w == w && hw->id == id) {
@@ -2618,6 +2977,10 @@ void HyprIso::screenshot_deco(int id) {
 
 // Will stretch the thumbnail if the aspect ratio passed in is different from thumbnail
 void HyprIso::draw_thumbnail(int id, Bounds b, int rounding, float roundingPower, int cornermask, float alpha) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
     // return;
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
@@ -2625,6 +2988,10 @@ void HyprIso::draw_thumbnail(int id, Bounds b, int rounding, float roundingPower
                 bool clip = this->clip;
                 Bounds clipbox = this->clipbox;
                 AnyPass::AnyData anydata([id, b, hw, rounding, roundingPower, cornermask, alpha, clip, clipbox](AnyPass* pass) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
                     auto tex = hw->fb->getTexture();
                     auto box = tocbox(b);
                     CHyprOpenGLImpl::STextureRenderData data;
@@ -2654,6 +3021,9 @@ void HyprIso::draw_thumbnail(int id, Bounds b, int rounding, float roundingPower
 }
 
 void HyprIso::draw_deco_thumbnail(int id, Bounds b, int rounding, float roundingPower, int cornermask) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     // return;
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
@@ -2683,6 +3053,9 @@ void HyprIso::draw_deco_thumbnail(int id, Bounds b, int rounding, float rounding
 }
 
 void HyprIso::draw_raw_deco_thumbnail(int id, Bounds b, int rounding, float roundingPower, int cornermask) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     // return;
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
@@ -2713,6 +3086,9 @@ void HyprIso::draw_raw_deco_thumbnail(int id, Bounds b, int rounding, float roun
 
 
 void HyprIso::set_zoom_factor(float amount) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("cursor:zoom_factor");
     auto zoom_amount = (Hyprlang::FLOAT*)val->dataPtr();
     *zoom_amount = amount;
@@ -2724,6 +3100,9 @@ void HyprIso::set_zoom_factor(float amount) {
 }
 
 int HyprIso::parent(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             if (auto w = hw->w->parent()) {
@@ -2739,6 +3118,9 @@ int HyprIso::parent(int id) {
 }
 
 void HyprIso::set_reserved_edge(int side, int amount) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     SMonitorAdditionalReservedArea value;
     if (side == (int) RESIZE_TYPE::TOP) {
         value.top = amount;
@@ -2753,6 +3135,9 @@ void HyprIso::set_reserved_edge(int side, int amount) {
 }
 
 void HyprIso::show_desktop() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         hypriso->set_hidden(hw->id, hw->was_hidden);
     }
@@ -2762,6 +3147,9 @@ void HyprIso::show_desktop() {
 }
 
 void HyprIso::hide_desktop() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         hw->was_hidden = hw->is_hidden;
         hypriso->set_hidden(hw->id, true);
@@ -2772,6 +3160,9 @@ void HyprIso::hide_desktop() {
 }
 
 static void updateRelativeCursorCoords() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     static auto PNOWARPS = CConfigValue<Hyprlang::INT>("cursor:no_warps");
 
     if (*PNOWARPS)
@@ -2782,10 +3173,16 @@ static void updateRelativeCursorCoords() {
 }
 
 void HyprIso::move_to_workspace(int workspace) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     g_pKeybindManager->changeworkspace(std::to_string(workspace));
 }
 
 void HyprIso::move_to_workspace(int id, int workspace) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     PHLWINDOW PWINDOW;
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
@@ -2846,14 +3243,23 @@ void HyprIso::move_to_workspace(int id, int workspace) {
 }
 
 void HyprIso::reload() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     g_pConfigManager->reload(); 
 }
 
 void HyprIso::add_float_rule() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     g_pConfigManager->handleWindowRule("windowrulev2", "float, class:.*");
 }
 
 void HyprIso::overwrite_defaults() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     return;
     {
         Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:blur:enabled");
@@ -2887,6 +3293,9 @@ void HyprIso::overwrite_defaults() {
 }
 
 Bounds HyprIso::floating_offset(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             return {hw->w->m_floatingOffset.x, hw->w->m_floatingOffset.y, 0, 0};
@@ -2896,6 +3305,9 @@ Bounds HyprIso::floating_offset(int id) {
     return {};
 }
 Bounds HyprIso::workspace_offset(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             if (hw->w->m_workspace) {
@@ -2910,6 +3322,9 @@ Bounds HyprIso::workspace_offset(int id) {
 }
 
 bool HyprIso::has_focus(int client) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw: hyprwindows) {
         if (hw->id == client) {
             return hw->w == g_pCompositor->m_lastWindow;
@@ -2919,6 +3334,9 @@ bool HyprIso::has_focus(int client) {
 }
 
 PHLWINDOW vectorToWindowUnified(const Vector2D& pos, uint8_t properties, PHLWINDOW pIgnoreWindow) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     const auto  PMONITOR          = g_pCompositor->getMonitorFromVector(pos);
     static auto PRESIZEONBORDER   = CConfigValue<Hyprlang::INT>("general:resize_on_border");
     static auto PBORDERSIZE       = CConfigValue<Hyprlang::INT>("general:border_size");
@@ -3076,6 +3494,9 @@ PHLWINDOW vectorToWindowUnified(const Vector2D& pos, uint8_t properties, PHLWIND
 
 
 void mouseMoveUnified(uint32_t time, bool refocus, bool mouse, std::optional<Vector2D> overridePos) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     g_pInputManager->m_lastInputMouse = mouse;
 
     if (!g_pCompositor->m_readyToProcess || g_pCompositor->m_isShuttingDown || g_pCompositor->m_unsafeState)
@@ -3536,6 +3957,9 @@ void mouseMoveUnified(uint32_t time, bool refocus, bool mouse, std::optional<Vec
 }
 
 void renderWorkspaceWindows(PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& time) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     PHLWINDOW lastWindow;
 
     EMIT_HOOK_EVENT("render", RENDER_PRE_WINDOWS);
@@ -3622,6 +4046,10 @@ void renderWorkspaceWindows(PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const 
 inline CFunctionHook* g_pOnRenderWorkspaceWindows = nullptr;
 typedef void (*origRenderWorkspaceWindows)(CHyprRenderer *, PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& time);
 void hook_onRenderWorkspaceWindows(void* thisptr,  PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& time) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     //auto chr = (CHyprRenderer *) thisptr;
     //(*(origRenderWorkspaceWindows)g_pOnRenderWorkspaceWindows->m_original)(chr, pMonitor, pWorkspace, time);
     renderWorkspaceWindows(pMonitor, pWorkspace, time);
@@ -3630,16 +4058,27 @@ void hook_onRenderWorkspaceWindows(void* thisptr,  PHLMONITOR pMonitor, PHLWORKS
 inline CFunctionHook* g_pOnVectorToWindowUnified = nullptr;
 typedef void (*origVectorToWindowUnified)(CCompositor *, const Vector2D& pos, uint8_t properties, PHLWINDOW pIgnoreWindow);
 PHLWINDOW hook_onVectorToWindowUnified(void* thisptr, const Vector2D& pos, uint8_t properties, PHLWINDOW pIgnoreWindow) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     return vectorToWindowUnified(pos, properties, pIgnoreWindow);
 }
 
 inline CFunctionHook* g_pOnMouseMoveUnified = nullptr;
 typedef void (*origMouseMoveUnifiedd)(CInputManager *, uint32_t time, bool refocus, bool mouse, std::optional<Vector2D> overridePos);
 void hook_onMouseMoveUnified(void* thisptr, uint32_t time, bool refocus, bool mouse, std::optional<Vector2D> overridePos) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     mouseMoveUnified(time, refocus, mouse, overridePos);
 }
 
 void interleave_floating_and_tiled_windows() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     return;
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "renderWorkspaceWindows");
@@ -3680,12 +4119,18 @@ void interleave_floating_and_tiled_windows() {
 static PHLWINDOWREF prev;
 
 void HyprIso::all_lose_focus() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     prev = g_pCompositor->m_lastWindow;
     g_pSeatManager->setPointerFocus(nullptr, {});
     g_pCompositor->focusWindow(nullptr);
 }
 
 void HyprIso::all_gain_focus() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     if (auto p = prev.lock()) {
         //g_pSeatManager->setPointerFocus(p, {});
         g_pCompositor->focusWindow(p);        
@@ -3693,6 +4138,9 @@ void HyprIso::all_gain_focus() {
 }
 
 void HyprIso::set_corner_rendering_mask_for_window(int id, int mask) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hw: hyprwindows)
         if (hw->id == id)
             hw->cornermask = mask;
@@ -3701,8 +4149,10 @@ void HyprIso::set_corner_rendering_mask_for_window(int id, int mask) {
 Bounds bounds_monitor(int id);
 Bounds bounds_reserved_monitor(int id);
 
-
 Bounds bounds_full_client(int wid) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hyprwindow : hyprwindows) {
         if (hyprwindow->id == wid) {
             if (auto w = hyprwindow->w.get()) {
@@ -3714,6 +4164,9 @@ Bounds bounds_full_client(int wid) {
 }
 
 Bounds bounds_client(int wid) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hyprwindow : hyprwindows) {
         if (hyprwindow->id == wid) {
             if (auto w = hyprwindow->w.get()) {
@@ -3726,6 +4179,9 @@ Bounds bounds_client(int wid) {
 }
 
 Bounds real_bounds_client(int wid) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hyprwindow : hyprwindows) {
         if (hyprwindow->id == wid) {
             if (auto w = hyprwindow->w.get()) {
@@ -3741,6 +4197,9 @@ Bounds real_bounds_client(int wid) {
 }
 
 Bounds bounds_monitor(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hyprmonitor : hyprmonitors) {
         if (hyprmonitor->id == id) {
             if (auto m = hyprmonitor->m.get()) {
@@ -3752,6 +4211,9 @@ Bounds bounds_monitor(int id) {
 }
 
 Bounds bounds_reserved_monitor(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     for (auto hyprmonitor : hyprmonitors) {
         if (hyprmonitor->id == id) {
             if (auto m = hyprmonitor->m.get()) {

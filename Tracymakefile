@@ -2,7 +2,7 @@ PLUGIN_NAME = mylar-desktop
 MAKEFLAGS += -j16
 
 # --- Source discovery ---
-SOURCE_FILES := $(wildcard ./src/*.cpp ./src/*/*.cpp)
+SOURCE_FILES := $(wildcard ./src/*.cpp ./src/*/*.cpp ./tracy/public/TracyClient.cpp)
 OBJECT_FILES := $(patsubst ./%, out/%, $(SOURCE_FILES:.cpp=.o))
 
 # --- Pkg-config dependencies ---
@@ -10,11 +10,11 @@ PKG_FLAGS := $(shell pkg-config --cflags librsvg-2.0 libdrm hyprland pangocairo 
 PKG_LIBS  := $(shell pkg-config --libs   librsvg-2.0 libdrm hyprland pangocairo wayland-server xkbcommon cairo)
 
 # --- Include paths ---
-INCLUDE_FLAGS := -I./include
+INCLUDE_FLAGS := -I./include -I./tracy/public
 
 # --- Common compiler flags ---
-COMMON_FLAGS := -std=c++2b -fPIC --no-gnu-unique $(INCLUDE_FLAGS) $(PKG_FLAGS)
-	
+COMMON_FLAGS := -std=c++2b -fPIC --no-gnu-unique $(INCLUDE_FLAGS) $(PKG_FLAGS) \
+	-DTRACY_ENABLE -DTRACY_NO_MEMORY -DTRACY_ON_DEMAND
 
 # --- Build type flags ---
 DEBUG_FLAGS := -g -O0

@@ -38,4 +38,14 @@ void drag::end(int cid) {
     data = nullptr;
 }
 
+bool drag::dragging() {
+    if (!data)
+        return false;
+    return data->cid != -1;
+}
 
+int drag::drag_window() {
+    if (!data)
+        return -1;
+    return data->cid;
+}

@@ -11,6 +11,10 @@
 #include <functional>
 #include <regex>
 
+#ifdef TRACY_ENABLE
+#include "tracy/Tracy.hpp"
+#endif
+
 static int titlebar_h = 28;
 
 enum struct STAGE : uint8_t {
@@ -285,7 +289,10 @@ void border(Bounds box, RGBA color, float size, int cornermask = 0, float round 
 void shadow(Bounds box, RGBA color, float rounding, float roundingPower, float size);
 
 static long get_current_time_in_ms() {
-    using namespace std::chrono;
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+     using namespace std::chrono;
     milliseconds currentTime = duration_cast<milliseconds>(system_clock::now().time_since_epoch());
     return currentTime.count();
 }

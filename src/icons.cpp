@@ -845,6 +845,9 @@ void pick_best(std::vector<IconTarget>& targets, int target_size, IconContext ta
 }
 
 std::string one_shot_icon(int size, const std::vector<std::string>& alt_names) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     std::vector<IconTarget> targets;
     for (auto n : alt_names) {
         targets.emplace_back(n);
@@ -1031,6 +1034,10 @@ std::string c3ic_fix_desktop_file_icon(const std::string& given_name, const std:
 }
 
 std::string c3ic_fix_wm_class(const std::string& given_wm_class) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    
     if (given_wm_class == "steam")
         return given_wm_class;
     return c3ic_fix_desktop_file_icon(given_wm_class, given_wm_class, given_wm_class, given_wm_class);

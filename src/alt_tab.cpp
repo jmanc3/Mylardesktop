@@ -104,7 +104,10 @@ void fill_root(Container *root, Container *alt_tab_parent) {
     };
 }
 
+static bool showing = false;
+
 void alt_tab::show() {
+    showing = true;
     later_immediate([](Timer *) {
         hypriso->screenshot_all(); 
     });
@@ -116,6 +119,8 @@ void alt_tab::show() {
 }
 
 void alt_tab::close(bool focus) {
+    if (!showing)
+        return;
     for (auto m : monitors) {
         for (int i = m->children.size() - 1; i >= 0; i--) {
             auto c = m->children[i];

@@ -13,8 +13,10 @@
 #include "icons.h"
 #include "hotcorners.h"
 #include "alt_tab.h"
+#include "drag.h"
 
 #ifdef TRACY_ENABLE
+//#include "../tracy/public/client/TracyProfiler.hpp"
 #include "tracy/Tracy.hpp"
 #endif
 
@@ -33,6 +35,12 @@ static void any_container_closed(Container *c) {
 static bool on_mouse_move(int id, float x, float y) {
     Event event(x, y);
     second::layout_containers();
+
+    //if (drag::dragging()) {
+        //drag::motion(drag::drag_window());
+        //return true;
+    //}
+    
     for (auto m : monitors) {
         move_event(m, event);
     }
@@ -53,6 +61,10 @@ static bool on_mouse_move(int id, float x, float y) {
 }
 
 static bool on_mouse_press(int id, int button, int state, float x, float y) {
+    //if (drag::dragging() && !state) {
+        //drag::end(drag::drag_window());
+        //return true;
+    //}
     Event event(x, y, button, state);
     second::layout_containers();
     for (auto root : monitors)
@@ -98,13 +110,16 @@ static bool on_scrolled(int id, int source, int axis, int direction, double delt
 }
 
 static bool on_key_press(int id, int key, int state, bool update_mods) {
-    if (key == KEY_TAB) {
-        //notify("tab");
+    static bool alt_held = false;
+    if (key == KEY_LEFTALT || key == KEY_RIGHTALT) {
+        alt_held = state;
+    }
+    if (alt_held && key == KEY_TAB) {
        if (state)  {
-           alt_tab::show();
-       } else {
-           alt_tab::close();
+           //alt_tab::show();
        }
+    } else {
+        alt_tab::close();
     }
     if (key == KEY_TAB && state == 0) {
         //hypriso->no_render = !hypriso->no_render;
@@ -210,7 +225,7 @@ static void on_render(int id, int stage) {
 }
 
 static void on_drag_start_requested(int id) {
-
+    //drag::begin(id);
 }
 
 static void on_resize_start_requested(int id, RESIZE_TYPE type) {
@@ -222,6 +237,10 @@ static void on_config_reload() {
 }
 
 void second::begin() {
+//#ifdef TRACY_ENABLE
+    //tracy::StartupProfiler();
+//#endif
+    
     on_any_container_close = any_container_closed;
     
     hypriso->create_config_variables();
@@ -260,6 +279,10 @@ void second::begin() {
 
 void second::end() {
     hypriso->end();    
+
+//#ifdef TRACY_ENABLE
+    //tracy::ShutdownProfiler();
+//#endif
 }
 
 void second::layout_containers() {
