@@ -33,15 +33,22 @@ static void any_container_closed(Container *c) {
 }
 
 static bool on_mouse_move(int id, float x, float y) {
-    Event event(x, y);
     second::layout_containers();
 
     //if (drag::dragging()) {
         //drag::motion(drag::drag_window());
         //return true;
     //}
-    
+    int active_mon = hypriso->monitor_from_cursor();
     for (auto m : monitors) {
+        auto cid = *datum<int>(m, "cid");
+        if (cid != active_mon)
+            continue;
+        auto bounds = bounds_monitor(cid);
+        auto [rid, s, stage, active_id] = from_root(m);
+        Event event(x - bounds.x * s, y - bounds.y * s);
+        //notify(fz("{} {}                       ", event.x, event.y));
+        
         move_event(m, event);
     }
 
@@ -65,10 +72,17 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
         //drag::end(drag::drag_window());
         //return true;
     //}
-    Event event(x, y, button, state);
     second::layout_containers();
-    for (auto root : monitors)
-        mouse_event(root, event);
+    int active_mon = hypriso->monitor_from_cursor();
+    for (auto m: monitors) {
+        auto cid = *datum<int>(m, "cid");
+        if (cid != active_mon)
+            continue;
+        auto bounds = bounds_monitor(cid);
+        auto [rid, s, stage, active_id] = from_root(m);
+        Event event(x - bounds.x * s, y - bounds.y * s, button, state);
+        mouse_event(m, event);
+    }
     
     bool consumed = false;
     for (auto root : monitors) {
@@ -83,8 +97,8 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
 
 static bool on_scrolled(int id, int source, int axis, int direction, double delta, int discrete, bool from_mouse) {
     auto m = mouse();
-    auto mid = hypriso->monitor_from_cursor();
-    auto s = scale(mid);
+    int active_mon = hypriso->monitor_from_cursor();
+    auto s = scale(active_mon);
     Event event;
     event.x = m.x * s;
     event.y = m.y * s;
@@ -95,8 +109,17 @@ static bool on_scrolled(int id, int source, int axis, int direction, double delt
     event.descrete = discrete;
     event.from_mouse = from_mouse;
     second::layout_containers();
-    for (auto root : monitors)
-        mouse_event(root, event);
+    for (auto m : monitors) {
+        auto cid = *datum<int>(m, "cid");
+        if (cid != active_mon)
+            continue;
+        auto bounds = bounds_monitor(cid);
+        auto [rid, s, stage, active_id] = from_root(m);
+        event.x -= bounds.x * s;
+        event.y -= bounds.y * s;
+        //Event event(x - bounds.x * s, y - bounds.y * s, button, state);
+        mouse_event(m, event);
+    }
 
     bool consumed = false;
     for (auto root : monitors) {
@@ -185,7 +208,12 @@ static void on_layer_change() {
 static void test_container(Container *m) {
     auto c = m->child(100, 100);
     c->custom_type = (int) TYPE::TEST;
+    c->when_fine_scrolled = [](Container* root, Container* c, int scroll_x, int scroll_y, bool came_from_touchpad) {
+        c->scroll_v_real += scroll_y; 
+    };
     c->when_paint = [](Container *root, Container *c) {
+        auto b = c->real_bounds;
+        c->real_bounds.y += c->scroll_v_real;
         if (c->state.mouse_pressing) {
             rect(c->real_bounds, {1, 1, 1, 1});
         } else if (c->state.mouse_hovering) {
@@ -193,9 +221,16 @@ static void test_container(Container *m) {
         } else {
             rect(c->real_bounds, {1, 0, 1, 1});
         }
+        auto info = gen_text_texture("Segoe UI", fz("{} {}", c->real_bounds.x, c->real_bounds.y), 20, {1, 1, 1, 1});
+        draw_texture(info, c->real_bounds.x, c->real_bounds.y);
+        free_text_texture(info.id);
+        c->real_bounds = b;
     };
     c->pre_layout = [](Container *root, Container *c, const Bounds &bounds) {
-        c->real_bounds = Bounds(20, 20, 100, 100);
+        auto [rid, s, stage, active_id] = from_root(root);
+        //nz(fz("{} {}", root->real_bounds.x * s, root->real_bounds.y));
+        c->real_bounds = Bounds(20, 100, 100, 100);
+        //hypriso->damage_entire(rid);
     };
     c->when_mouse_motion = request_damage;
     c->when_mouse_down = paint {
@@ -215,7 +250,13 @@ static void on_monitor_open(int id) {
     auto c = new Container();
     monitors.push_back(c);
 
-    //test_container(c);
+    static bool skip = false;
+    if (skip) {
+        skip = false;
+    } else {
+        test_container(c);
+        nz("make");
+    }
 
     auto cid = datum<int>(c, "cid");
     *cid = id;
@@ -249,9 +290,12 @@ static void on_render(int id, int stage) {
     int active_id = current_window == -1 ? current_monitor : current_window;
 
     for (auto r : monitors) {
-        *datum<int>(r, "stage") = stage;
-        *datum<int>(r, "active_id") = active_id;
-        paint_outline(r, r);
+        auto cid = *datum<int>(r, "cid");
+        if (cid == current_monitor) {
+            *datum<int>(r, "stage") = stage;
+            *datum<int>(r, "active_id") = active_id;
+            paint_outline(r, r);
+        }
     }
 }
 
@@ -319,6 +363,11 @@ void second::end() {
 void second::layout_containers() {
     if (monitors.empty())
         return;
+    for (auto r : monitors) {
+        auto cid = *datum<int>(r, "cid");
+        r->real_bounds = bounds_monitor(cid);
+    }
+    
     std::vector<Container *> backup;
     for (auto r : monitors) {
         for (int i = r->children.size() - 1; i >= 0; i--) {

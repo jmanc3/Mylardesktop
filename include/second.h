@@ -212,8 +212,10 @@ static void request_damage(Container *root, Container *c) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-     auto [rid, s, stage, active_id] = from_root(root);
+    auto [rid, s, stage, active_id] = from_root(root);
     auto b = c->real_bounds;
+    b.x += root->real_bounds.x;
+    b.y += root->real_bounds.y;
     b.scale(1.0 / s);
     b.grow(2.0 * s);
     hypriso->damage_box(b);
