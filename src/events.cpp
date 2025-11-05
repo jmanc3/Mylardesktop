@@ -427,7 +427,12 @@ void paint_outline(Container* root, Container* c) {
         return;
     
     if (c->when_paint) {
+        // normalize render position to monitor because of how terrible confusing hyprland rendering works
+        //auto b = c->real_bounds;
+        //c->real_bounds.x -= root->real_bounds.x;
+        //c->real_bounds.y -= root->real_bounds.y;
         c->when_paint(root, c);
+        //c->real_bounds = b;
     }
     if (!c->automatically_paint_children) {
         return;

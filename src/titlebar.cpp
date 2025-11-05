@@ -14,93 +14,57 @@
 #include "tracy/Tracy.hpp"
 #endif
 
-float titlebar_button_ratio() { 
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
- return hypriso->get_varfloat("plugin:mylardesktop:titlebar_button_ratio", 1.4375f); 
-};
-float titlebar_text_h() { 
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
- return hypriso->get_varfloat("plugin:mylardesktop:titlebar_text_h", 15);
-}
-float titlebar_icon_h() { 
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
- return hypriso->get_varfloat("plugin:mylardesktop:titlebar_icon_h", 21);
-}
-float titlebar_button_icon_h() { 
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
- return hypriso->get_varfloat("plugin:mylardesktop:titlebar_button_icon_h", 13);
+float titlebar_button_ratio() {
+    return hypriso->get_varfloat("plugin:mylardesktop:titlebar_button_ratio", 1.4375f);
 }
 
-RGBA color_titlebar_focused() { 
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
- static RGBA default_color("ffffffff");
- return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_color", default_color);
+float titlebar_text_h() {
+    return hypriso->get_varfloat("plugin:mylardesktop:titlebar_text_h", 15);
 }
-RGBA color_titlebar_unfocused() { 
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
- static RGBA default_color("f0f0f0ff");
- return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_color", default_color);
+
+float titlebar_icon_h() {
+    return hypriso->get_varfloat("plugin:mylardesktop:titlebar_icon_h", 21);
 }
-RGBA color_titlebar_text_focused() { 
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
- static RGBA default_color("000000ff");
- return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_text_color", default_color);
+
+float titlebar_button_icon_h() {
+    return hypriso->get_varfloat("plugin:mylardesktop:titlebar_button_icon_h", 13);
 }
-RGBA color_titlebar_text_unfocused() { 
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
- static RGBA default_color("303030ff");
- return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_text_color", default_color);
+
+RGBA color_titlebar_focused() {
+    static RGBA default_color("ffffffff");
+    return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_color", default_color);
 }
-RGBA titlebar_button_bg_hovered_color() { 
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
- static RGBA default_color("rgba(ff0000ff)");
- return hypriso->get_varcolor("plugin:mylardesktop:titlebar_button_bg_hovered_color", default_color);
+RGBA color_titlebar_unfocused() {
+    static RGBA default_color("f0f0f0ff");
+    return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_color", default_color);
 }
-RGBA titlebar_button_bg_pressed_color() { 
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
- static RGBA default_color("rgba(0000ffff)");
- return hypriso->get_varcolor("plugin:mylardesktop:titlebar_button_bg_pressed_color", default_color);
+RGBA color_titlebar_text_focused() {
+    static RGBA default_color("000000ff");
+    return hypriso->get_varcolor("plugin:mylardesktop:titlebar_focused_text_color", default_color);
 }
-RGBA titlebar_closed_button_bg_hovered_color() { 
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
- static RGBA default_color("rgba(ff0000ff)");
- return hypriso->get_varcolor("plugin:mylardesktop:titlebar_closed_button_bg_hovered_color", default_color);
+RGBA color_titlebar_text_unfocused() {
+    static RGBA default_color("303030ff");
+    return hypriso->get_varcolor("plugin:mylardesktop:titlebar_unfocused_text_color", default_color);
 }
-RGBA titlebar_closed_button_bg_pressed_color() { 
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
- static RGBA default_color("rgba(0000ffff)");
- return hypriso->get_varcolor("plugin:mylardesktop:titlebar_closed_button_bg_pressed_color", default_color);
+RGBA titlebar_button_bg_hovered_color() {
+    static RGBA default_color("rgba(ff0000ff)");
+    return hypriso->get_varcolor("plugin:mylardesktop:titlebar_button_bg_hovered_color", default_color);
 }
-RGBA titlebar_closed_button_icon_color_hovered_pressed() { 
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
- static RGBA default_color("rgba(999999ff)");
- return hypriso->get_varcolor("plugin:mylardesktop:titlebar_closed_button_icon_color_hovered_pressed", default_color);
+RGBA titlebar_button_bg_pressed_color() {
+    static RGBA default_color("rgba(0000ffff)");
+    return hypriso->get_varcolor("plugin:mylardesktop:titlebar_button_bg_pressed_color", default_color);
+}
+RGBA titlebar_closed_button_bg_hovered_color() {
+    static RGBA default_color("rgba(ff0000ff)");
+    return hypriso->get_varcolor("plugin:mylardesktop:titlebar_closed_button_bg_hovered_color", default_color);
+}
+RGBA titlebar_closed_button_bg_pressed_color() {
+    static RGBA default_color("rgba(0000ffff)");
+    return hypriso->get_varcolor("plugin:mylardesktop:titlebar_closed_button_bg_pressed_color", default_color);
+}
+RGBA titlebar_closed_button_icon_color_hovered_pressed() {
+    static RGBA default_color("rgba(999999ff)");
+    return hypriso->get_varcolor("plugin:mylardesktop:titlebar_closed_button_icon_color_hovered_pressed", default_color);
 }
 
 void titlebar_pre_layout(Container* root, Container* self, const Bounds& bounds) {
@@ -110,7 +74,7 @@ void titlebar_pre_layout(Container* root, Container* self, const Bounds& bounds)
     auto rid = *datum<int>(root, "cid");
     auto cid = *datum<int>(self, "cid");
     auto s = scale(rid);
-    self->wanted_bounds.h = titlebar_h * s; 
+    self->wanted_bounds.h = std::ceil(titlebar_h * s); 
     self->children[1]->wanted_bounds.w = titlebar_h * s * titlebar_button_ratio();
     self->children[2]->wanted_bounds.w = titlebar_h * s * titlebar_button_ratio();
     self->children[3]->wanted_bounds.w = titlebar_h * s * titlebar_button_ratio();
@@ -120,7 +84,7 @@ TextureInfo *get_cached_texture(Container *root, Container *target, std::string 
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-     auto [rid, s, stage, active_id] = from_root(root);
+    auto [rid, s, stage, active_id] = from_root(root);
     TextureInfo *info = datum<TextureInfo>(target, needle);
     
     int h = std::round(wanted_h * s);
@@ -157,7 +121,7 @@ void paint_button(Container *root, Container *c, std::string name, std::string i
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-     auto [rid, s, stage, active_id] = from_root(root);
+    auto [rid, s, stage, active_id] = from_root(root);
     auto client = first_above_of(c, TYPE::CLIENT);
     assert(client);
     auto cid = *datum<int>(client, "cid");
@@ -208,57 +172,37 @@ void paint_titlebar(Container *root, Container *c) {
         int icon_width = 0; 
         { // load icon
             TextureInfo *info = datum<TextureInfo>(client, "icon");
-            {
-#ifdef TRACY_ENABLE
-    ZoneScopedN("1 info recaching");
-#endif
-                if (info->id != -1) {
-                    if (info->cached_h != std::round(titlebar_icon_h() * s)) {
-                        free_text_texture(info->id);
-                        info->id = -1;
-                        info->reattempts_count = 0;
-                        info->last_reattempt_time = 0;
-                    }                
-                }
+            if (info->id != -1) {
+                if (info->cached_h != std::round(titlebar_icon_h() * s)) {
+                    free_text_texture(info->id);
+                    info->id = -1;
+                    info->reattempts_count = 0;
+                    info->last_reattempt_time = 0;
+                }                
             }
             if (info->id == -1 && info->reattempts_count < 30) {
-                {
-                #ifdef TRACY_ENABLE
-                    ZoneScopedN("2 one shot");
-                #endif
-                    if (icons_loaded && enough_time_since_last_check(1000, info->last_reattempt_time)) {
-                        info->last_reattempt_time = get_current_time_in_ms();
-                        auto name = hypriso->class_name(cid);
-                        auto real_icon_h = std::round(titlebar_icon_h() * s);
-                        auto path = one_shot_icon(real_icon_h, {
-                            name, c3ic_fix_wm_class(name), to_lower(name), to_lower(c3ic_fix_wm_class(name))
-                        });
-                        if (!path.empty()) {
-                            *info = gen_texture(path, titlebar_icon_h() * s);
-                            info->cached_h = real_icon_h;
-                        }
+                if (icons_loaded && enough_time_since_last_check(1000, info->last_reattempt_time)) {
+                    info->last_reattempt_time = get_current_time_in_ms();
+                    auto name = hypriso->class_name(cid);
+                    auto real_icon_h = std::round(titlebar_icon_h() * s);
+                    auto path = one_shot_icon(real_icon_h, {
+                        name, c3ic_fix_wm_class(name), to_lower(name), to_lower(c3ic_fix_wm_class(name))
+                    });
+                    if (!path.empty()) {
+                        *info = gen_texture(path, titlebar_icon_h() * s);
+                        info->cached_h = real_icon_h;
                     }
                 }
             }
             if (info->id != -1)
                 icon_width = info->w;
             float focus_alpha = 1.0;
-            {
-                #ifdef TRACY_ENABLE
-                    ZoneScopedN("3 focus alpha");
-                #endif
-                if (hypriso->has_focus(cid)) {
-                    focus_alpha = color_titlebar_text_focused().a;
-                } else {
-                    focus_alpha = color_titlebar_text_unfocused().a;
-                }
+            if (hypriso->has_focus(cid)) {
+                focus_alpha = color_titlebar_text_focused().a;
+            } else {
+                focus_alpha = color_titlebar_text_unfocused().a;
             }
-            {
-            #ifdef TRACY_ENABLE
-                ZoneScopedN("4 draw texture");
-            #endif
-                draw_texture(*info, c->real_bounds.x + 8 * s, center_y(c, info->h), a * focus_alpha);
-            }
+            draw_texture(*info, c->real_bounds.x + 8 * s, center_y(c, info->h), a * focus_alpha);
         }
         
         std::string title_text = hypriso->title_name(cid);
@@ -268,44 +212,22 @@ void paint_titlebar(Container *root, Container *c) {
             auto color_titlebar_textfo = color_titlebar_text_focused();
             auto titlebar_text = titlebar_text_h();
             auto color_titlebar_textunfo = color_titlebar_text_unfocused();
-            {
-            #ifdef TRACY_ENABLE
-                ZoneScopedN("4.5 focused");
-            #endif
-                 focused = get_cached_texture(root, client, "title_focused", "Segoe UI Variable", 
-                    title_text, color_titlebar_textfo, titlebar_text);
-            }
-            {
-            #ifdef TRACY_ENABLE
-                ZoneScopedN("4.5 unfocused");
-            #endif
+            focused = get_cached_texture(root, client, "title_focused", "Segoe UI Variable", 
+                title_text, color_titlebar_textfo, titlebar_text);
             unfocused = get_cached_texture(root, client, "title_unfocused", "Segoe UI Variable", 
                 title_text, color_titlebar_textunfo, titlebar_text);
-            }
-
+            
             auto texture_info = focused;
-            {
-            #ifdef TRACY_ENABLE
-                ZoneScopedN("5 second has focus");
-            #endif
             if (!hypriso->has_focus(cid))
                 texture_info = unfocused;
  
+            if (texture_info->id != -1) {
+                auto overflow = std::max((c->real_bounds.h - texture_info->h), 0.0);
+                if (icon_width != 0)
+                    overflow = icon_width + 16 * s;
+                draw_texture(*texture_info, 
+                    c->real_bounds.x + overflow, center_y(c, texture_info->h), a, c->real_bounds.w - overflow);
             }
-
-           {
-            #ifdef TRACY_ENABLE
-                ZoneScopedN("6 second draw texture");
-            #endif
-           
-                if (texture_info->id != -1) {
-                    auto overflow = std::max((c->real_bounds.h - texture_info->h), 0.0);
-                    if (icon_width != 0)
-                        overflow = icon_width + 16 * s;
-                    draw_texture(*texture_info, 
-                        c->real_bounds.x + overflow, center_y(c, texture_info->h), a, c->real_bounds.w - overflow);
-                }
-           }
         }
     }
 }
@@ -437,31 +359,57 @@ void titlebar::on_window_closed(int id) {
     
 }
 
+static void draw_text(std::string text, int x, int y) {
+    TextureInfo first_info;
+    {
+        first_info = gen_text_texture("Monospace", text, 40, {0, 0, 0, 1});
+        rect(Bounds(x, y, (double) first_info.w, (double) first_info.h), {1, 0, 1, 1});
+        draw_texture(first_info, x + 3, y + 4);
+        free_text_texture(first_info.id);
+    }
+    {
+        auto info = gen_text_texture("Monospace", text, 40, {1, 1, 1, 1});
+        draw_texture(info, x, y);
+        free_text_texture(info.id);
+    }
+    
+}
+
 void titlebar::on_draw_decos(std::string name, int monitor, int id, float a) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-     for (auto m : monitors) {
-       for (auto c : m->children) {
-           if (c->custom_type == (int) TYPE::CLIENT) {
-               auto cid = *datum<int>(c, "cid");
-               *datum<float>(c, "titlebar_alpha") = a;
-               if (cid == id) {
-                   auto stage = datum<int>(m, "stage"); 
-                   auto active_id = datum<int>(m, "active_id"); 
-                   int before_stage = *stage;
-                   int before_active_id = *active_id;
-                   *stage = (int) STAGE::RENDER_PRE_WINDOW;
-                   *active_id = cid;
-                   c->children[0]->automatically_paint_children = true;
-                   paint_outline(m, c);
-                   c->children[0]->automatically_paint_children = false;
-                   *stage = before_stage;
-                   *active_id = before_active_id;
-               }
-           } 
-       } 
+    Container *c = get_cid_container(id);
+    if (!c) return;
+    
+    nz(fz("{} {}                                                        ", current_rendering_monitor(), monitor));
+    Container *m = nullptr;;
+    for (auto r : monitors) {
+        auto rid = *datum<int>(r, "cid");
+        if (rid == monitor)
+            m = r;
     }
+    if (!m) return;
+
+    //draw_text("here", 700, 600);
+    notify("found");
+
+    *datum<float>(c, "titlebar_alpha") = a;
+    auto stage = datum<int>(m, "stage"); 
+    auto active_id = datum<int>(m, "active_id"); 
+    int before_stage = *stage;
+    int before_active_id = *active_id;
+    *stage = (int) STAGE::RENDER_PRE_WINDOW;
+    *active_id = id;
+    c->children[0]->automatically_paint_children = true;
+    modify_all(c, -m->real_bounds.x, -m->real_bounds.y);
+    draw_text(fz("{} {}", c->real_bounds.x, c->real_bounds.y), 500, 200);
+    paint_outline(m, c);
+    modify_all(c, m->real_bounds.x, m->real_bounds.y);
+    c->children[0]->automatically_paint_children = false;
+    *stage = before_stage;
+    *active_id = before_active_id;
+    rect(bounds_client(id), {1, 1, 1, 1});
 }
 
 void titlebar::on_activated(int id) {

@@ -254,8 +254,8 @@ static void on_monitor_open(int id) {
     if (skip) {
         skip = false;
     } else {
-        test_container(c);
-        nz("make");
+        //test_container(c);
+        //nz("make");
     }
 
     auto cid = datum<int>(c, "cid");
@@ -280,6 +280,22 @@ static void on_draw_decos(std::string name, int monitor, int id, float a) {
     titlebar::on_draw_decos(name, monitor, id, a);
 }
 
+static void draw_text(std::string text, int x, int y) {
+    TextureInfo first_info;
+    {
+        first_info = gen_text_texture("Monospace", text, 40, {0, 0, 0, 1});
+        rect(Bounds(x, y, (double) first_info.w, (double) first_info.h), {1, 0, 1, 1});
+        draw_texture(first_info, x + 3, y + 4);
+        free_text_texture(first_info.id);
+    }
+    {
+        auto info = gen_text_texture("Monospace", text, 40, {1, 1, 1, 1});
+        draw_texture(info, x, y);
+        free_text_texture(info.id);
+    }
+    
+}
+
 static void on_render(int id, int stage) {
     if (stage == (int) STAGE::RENDER_BEGIN) {
         second::layout_containers();
@@ -289,13 +305,33 @@ static void on_render(int id, int stage) {
     int current_window = current_rendering_window();
     int active_id = current_window == -1 ? current_monitor : current_window;
 
+    Bounds mbounds;
     for (auto r : monitors) {
         auto cid = *datum<int>(r, "cid");
+        hypriso->damage_entire(cid);
         if (cid == current_monitor) {
+            mbounds = r->real_bounds;
             *datum<int>(r, "stage") = stage;
             *datum<int>(r, "active_id") = active_id;
             paint_outline(r, r);
         }
+    }
+    auto mo = mouse();
+    if (stage == (int) STAGE::RENDER_LAST_MOMENT) {
+        Bounds bb;
+        for (auto r : monitors) {
+            for (auto c : r->children) {
+                auto cid = *datum<int>(c, "cid");
+                if (hypriso->has_focus(cid)) {
+                    bb = bounds_client(cid);
+                }
+            }
+        }
+        draw_text(fz("{:.2f} {:.2f}\n{} {} {} {}\n{} {} {} {}", 
+            mo.x, mo.y, mbounds.x, mbounds.y, mbounds.w, mbounds.h,
+            bb.x, bb.y, bb.w, bb.h), 
+            0, 50);
+        
     }
 }
 
@@ -363,11 +399,6 @@ void second::end() {
 void second::layout_containers() {
     if (monitors.empty())
         return;
-    for (auto r : monitors) {
-        auto cid = *datum<int>(r, "cid");
-        r->real_bounds = bounds_monitor(cid);
-    }
-    
     std::vector<Container *> backup;
     for (auto r : monitors) {
         for (int i = r->children.size() - 1; i >= 0; i--) {
@@ -423,7 +454,6 @@ void second::layout_containers() {
         auto s = scale(rid);
         { // set the monitor bounds
             auto b = bounds_monitor(rid);
-            b.scale(s);
             r->real_bounds = Bounds(b.x, b.y, b.w, b.h);
         }
 
