@@ -34,11 +34,15 @@ static void any_container_closed(Container *c) {
 
 static bool on_mouse_move(int id, float x, float y) {
     second::layout_containers();
+    auto mou = mouse();
+    x = mou.x;
+    y = mou.y;
 
     //if (drag::dragging()) {
         //drag::motion(drag::drag_window());
         //return true;
     //}
+    //notify(fz("{} {}", x, y));
     int active_mon = hypriso->monitor_from_cursor();
     for (auto m : monitors) {
         auto cid = *datum<int>(m, "cid");
@@ -46,7 +50,7 @@ static bool on_mouse_move(int id, float x, float y) {
             continue;
         auto bounds = bounds_monitor(cid);
         auto [rid, s, stage, active_id] = from_root(m);
-        Event event(x - bounds.x * s, y - bounds.y * s);
+        Event event(x - bounds.x, y - bounds.y);
         //notify(fz("{} {}                       ", event.x, event.y));
         
         move_event(m, event);
@@ -68,6 +72,10 @@ static bool on_mouse_move(int id, float x, float y) {
 }
 
 static bool on_mouse_press(int id, int button, int state, float x, float y) {
+    auto mou = mouse();
+    x = mou.x;
+    y = mou.y;
+
     //if (drag::dragging() && !state) {
         //drag::end(drag::drag_window());
         //return true;
@@ -98,10 +106,10 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
 static bool on_scrolled(int id, int source, int axis, int direction, double delta, int discrete, bool from_mouse) {
     auto m = mouse();
     int active_mon = hypriso->monitor_from_cursor();
-    auto s = scale(active_mon);
+    //auto s = scale(active_mon);
     Event event;
-    event.x = m.x * s;
-    event.y = m.y * s;
+    event.x = m.x;
+    event.y = m.y;
     event.scroll = true;
     event.axis = axis;
     event.direction = direction;
@@ -248,6 +256,7 @@ static void test_container(Container *m) {
 
 static void on_monitor_open(int id) {
     auto c = new Container();
+    //c->when_paint = paint_debug;
     monitors.push_back(c);
 
     static bool skip = false;
@@ -281,6 +290,7 @@ static void on_draw_decos(std::string name, int monitor, int id, float a) {
 }
 
 static void draw_text(std::string text, int x, int y) {
+    return;
     TextureInfo first_info;
     {
         first_info = gen_text_texture("Monospace", text, 40, {0, 0, 0, 1});
@@ -331,6 +341,13 @@ static void on_render(int id, int stage) {
             mo.x, mo.y, mbounds.x, mbounds.y, mbounds.w, mbounds.h,
             bb.x, bb.y, bb.w, bb.h), 
             0, 50);
+
+        auto rid = current_rendering_monitor();
+        auto cbounds = bounds_monitor(rid);
+        auto mou = mouse();
+        auto s = scale(rid);
+        //rect(Bounds(mou.x * s - cbounds.x * s, mou.y * s - cbounds.y * s, 100, 100), {1, 1, 1, 1});
+        
         
     }
 }
@@ -411,24 +428,22 @@ void second::layout_containers() {
     }
 
     // put client on the correct monitor
-    std::vector<Container *> clients;
+    /*std::vector<Container *> clients;
     for (auto r : monitors) {
         for (auto c: clients)
             clients.push_back(c);
+        r->children.clear();
     }
     for (auto c : clients) {
         auto cid = *datum<int>(c, "cid");
         int monitor = get_monitor(cid); 
         for (auto r : monitors) {
             auto rid = *datum<int>(r, "cid");
-            if (monitor == -1) // if client not on any monitor, simply put it in first available monitor
-                monitor = rid;
-            if (rid == monitor) {
-                r->children.push_back(c);
-               break;
-            }
+            notify(fz("{} {}", monitor, rid));
+            c->parent = r;
+            r->children.push_back(c);
         }
-    }
+    }*/
 
     // reorder based on stacking
     std::vector<int> order = get_window_stacking_order();
@@ -451,7 +466,7 @@ void second::layout_containers() {
     
     for (auto r : monitors) {
         auto rid = *datum<int>(r, "cid");
-        auto s = scale(rid);
+        //auto s = scale(rid);
         { // set the monitor bounds
             auto b = bounds_monitor(rid);
             r->real_bounds = Bounds(b.x, b.y, b.w, b.h);
@@ -461,17 +476,19 @@ void second::layout_containers() {
             auto cid = *datum<int>(c, "cid");
             {
                 auto b = bounds_client(cid);            
-                b.scale(s);
+                //b.scale(s);
                 auto fo = hypriso->floating_offset(cid);
-               fo.scale(s);
+               //fo.scale(s);
                 auto so = hypriso->workspace_offset(cid);
-                so.scale(s);
+                //so.scale(s);
                 if (hypriso->has_decorations(cid))  {
                     c->real_bounds = Bounds(
-                        b.x + fo.x + so.x, 
-                        b.y - titlebar_h * s + fo.y + so.y, 
+                        //b.x + fo.x + so.x, 
+                        b.x, 
+                        //b.y - titlebar_h + fo.y + so.y, 
+                        b.y - titlebar_h, 
                         b.w, 
-                        b.h + titlebar_h * s
+                        b.h + titlebar_h
                     );
                 } else {
                     c->real_bounds = Bounds(

@@ -5,6 +5,7 @@
 #include "events.h"
 #include "drag.h"
 #include "icons.h"
+#include "defer.h"
 
 #include <assert.h>
 #include <unistd.h>
@@ -74,10 +75,10 @@ void titlebar_pre_layout(Container* root, Container* self, const Bounds& bounds)
     auto rid = *datum<int>(root, "cid");
     auto cid = *datum<int>(self, "cid");
     auto s = scale(rid);
-    self->wanted_bounds.h = std::ceil(titlebar_h * s); 
-    self->children[1]->wanted_bounds.w = titlebar_h * s * titlebar_button_ratio();
-    self->children[2]->wanted_bounds.w = titlebar_h * s * titlebar_button_ratio();
-    self->children[3]->wanted_bounds.w = titlebar_h * s * titlebar_button_ratio();
+    self->wanted_bounds.h = std::ceil(titlebar_h); 
+    self->children[1]->wanted_bounds.w = titlebar_h * titlebar_button_ratio();
+    self->children[2]->wanted_bounds.w = titlebar_h * titlebar_button_ratio();
+    self->children[3]->wanted_bounds.w = titlebar_h * titlebar_button_ratio();
 }
 
 TextureInfo *get_cached_texture(Container *root, Container *target, std::string needle, std::string font, std::string text, RGBA color, int wanted_h) {
@@ -121,6 +122,8 @@ void paint_button(Container *root, Container *c, std::string name, std::string i
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
+    renderfix
+    
     auto [rid, s, stage, active_id] = from_root(root);
     auto client = first_above_of(c, TYPE::CLIENT);
     assert(client);
@@ -164,6 +167,8 @@ void paint_titlebar(Container *root, Container *c) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
+    renderfix
+
     auto [rid, s, stage, active_id] = from_root(root);
     auto client = first_above_of(c, TYPE::CLIENT);
     auto cid = *datum<int>(client, "cid");
@@ -240,6 +245,7 @@ void create_titlebar(Container *root, Container *parent) {
     titlebar_parent->automatically_paint_children = false;
     titlebar_parent->pre_layout = titlebar_pre_layout;
     titlebar_parent->when_paint = paint {
+        renderfix
         auto [rid, s, stage, active_id] = from_root(root);
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");
@@ -303,6 +309,9 @@ void create_titlebar(Container *root, Container *parent) {
         auto client = first_above_of(c, TYPE::CLIENT);
         assert(client);
         bool snapped = *datum<bool>(client, "snapped");
+        //notify(fz("mouse {:.2f} {:.2f}                                           ", mouse().x, mouse().y));
+        //notify(fz("{:.2f} {:.2f}                                           ", c->real_bounds.x, c->real_bounds.y));
+
         if (snapped) {
             paint_button(root, c, "max", "\ue923");
         } else {
@@ -360,6 +369,7 @@ void titlebar::on_window_closed(int id) {
 }
 
 static void draw_text(std::string text, int x, int y) {
+    return;
     TextureInfo first_info;
     {
         first_info = gen_text_texture("Monospace", text, 40, {0, 0, 0, 1});
@@ -382,34 +392,36 @@ void titlebar::on_draw_decos(std::string name, int monitor, int id, float a) {
     Container *c = get_cid_container(id);
     if (!c) return;
     
-    nz(fz("{} {}                                                        ", current_rendering_monitor(), monitor));
+    //nz(fz("{} {}                                                        ", current_rendering_monitor(), monitor));
     Container *m = nullptr;;
     for (auto r : monitors) {
         auto rid = *datum<int>(r, "cid");
+        r->real_bounds = bounds_monitor(rid);
         if (rid == monitor)
             m = r;
     }
     if (!m) return;
 
-    //draw_text("here", 700, 600);
-    notify("found");
 
     *datum<float>(c, "titlebar_alpha") = a;
+    
     auto stage = datum<int>(m, "stage"); 
     auto active_id = datum<int>(m, "active_id"); 
+    
     int before_stage = *stage;
     int before_active_id = *active_id;
+    
     *stage = (int) STAGE::RENDER_PRE_WINDOW;
     *active_id = id;
+
+    
     c->children[0]->automatically_paint_children = true;
-    modify_all(c, -m->real_bounds.x, -m->real_bounds.y);
-    draw_text(fz("{} {}", c->real_bounds.x, c->real_bounds.y), 500, 200);
     paint_outline(m, c);
-    modify_all(c, m->real_bounds.x, m->real_bounds.y);
     c->children[0]->automatically_paint_children = false;
+    
+    
     *stage = before_stage;
     *active_id = before_active_id;
-    rect(bounds_client(id), {1, 1, 1, 1});
 }
 
 void titlebar::on_activated(int id) {

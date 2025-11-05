@@ -3,6 +3,7 @@
 
 #include "container.h"
 #include "hypriso.h"
+#include "defer.h"
 
 #include <any>
 #include <assert.h>
@@ -18,6 +19,13 @@
 
 #define center_y(c, in_h) c->real_bounds.y + c->real_bounds.h * .5 - in_h * .5
 #define center_x(c, in_w) c->real_bounds.x + c->real_bounds.w * .5 - in_w * .5
+
+static void render_fix(Container *root, Container *c);
+
+// We need to make unscaled coords, into the fully scaled coord via monitor scale
+#define renderfix auto c_backup = c->real_bounds; \
+                  render_fix(root, c); \
+                  defer(c->real_bounds = c_backup);
 
 static std::string to_lower(const std::string& str) {
 #ifdef TRACY_ENABLE
@@ -214,10 +222,11 @@ static void request_damage(Container *root, Container *c) {
 #endif
     auto [rid, s, stage, active_id] = from_root(root);
     auto b = c->real_bounds;
-    b.x += root->real_bounds.x;
-    b.y += root->real_bounds.y;
-    b.scale(1.0 / s);
-    b.grow(2.0 * s);
+    //b.scale(s);
+    //b.x += root->real_bounds.x;
+    //b.y += root->real_bounds.y;
+    //b.scale(1.0 / s);
+    b.grow(1);
     hypriso->damage_box(b);
 }
 
@@ -229,6 +238,20 @@ static void consume_event(Container *root, Container *c) {
     request_damage(root, c);
 }
 
+static void render_fix(Container *root, Container *c) {
+    // Containers are in raw unscaled coordinates, but rendering needs to be per monitor based
+    // So first, if the monitor is positioned at 1000 1000 and this container is at 1100 and 1500, we want it's new coordinates to be 100 500
+    c->real_bounds.x -= root->real_bounds.x;
+    c->real_bounds.y -= root->real_bounds.y;
+    
+    // Then we also need to scale our raw unscaled coordianates, to scaled ones (scaled by the current scale set by the monitor)
+    c->real_bounds.scale(scale(*datum<int>(root, "cid")));
+    c->real_bounds.x = std::round(c->real_bounds.x);
+    c->real_bounds.y = std::round(c->real_bounds.y);
+    c->real_bounds.w = std::round(c->real_bounds.w);
+    c->real_bounds.h = std::round(c->real_bounds.h);
+}
+
 namespace second {    
     void begin();
     void end();
@@ -236,3 +259,4 @@ namespace second {
 }
 
 #endif // second_h_INCLUDED
+
