@@ -26,15 +26,27 @@ void fill_root(Container *root, Container *alt_tab_parent) {
     alt_tab_parent->when_mouse_motion = consume_event;
     alt_tab_parent->when_drag = consume_event;
     alt_tab_parent->when_mouse_up = consume_event;
+    alt_tab_parent->when_mouse_enters_container = paint {
+        hypriso->all_lose_focus();
+        consume_event(root, c);
+    };
+    alt_tab_parent->when_mouse_leaves_container = paint {
+        hypriso->all_gain_focus();
+        consume_event(root, c);
+    };
     alt_tab_parent->pre_layout = [](Container *root, Container *c, const Bounds &b) {
         auto [rid, s, stage, active_id] = from_root(root);
 
         if (c->children.empty()) {
             auto windows = get_window_stacking_order();
-            for (auto w : windows) {
-                auto child = c->child(FILL_SPACE, 20 * s);
+            for (int i = windows.size() - 1; i >= 0; i--) {
+                auto w = windows[i];
+                if (!hypriso->alt_tabbable(w))
+                    continue;
+                auto child = c->child(200, 100);
                 *datum<int>(child, "cid") = w;
                 child->when_paint = paint {
+                    renderfix
                     auto [rid, s, stage, active_id] = from_root(root);
 
                     if (stage != (int) STAGE::RENDER_LAST_MOMENT) {
@@ -69,6 +81,7 @@ void fill_root(Container *root, Container *alt_tab_parent) {
                     if (info->id != -1) {
                         draw_texture(*info, c->real_bounds.x, c->real_bounds.y);
                     }
+                    hypriso->draw_thumbnail(w, c->real_bounds);
                 };
                 child->when_clicked = paint {
                     auto w = *datum<int>(c, "cid");
@@ -80,11 +93,13 @@ void fill_root(Container *root, Container *alt_tab_parent) {
             }
         }
 
-        c->wanted_bounds = Bounds(center_x(root, 600 *s), center_y(root, 450 * s), 600 * s, 450 *s);
+        c->wanted_bounds = Bounds(0, 0, 600, 450);
         c->real_bounds = c->wanted_bounds;
         ::layout(root, c, c->real_bounds);
     };
     alt_tab_parent->when_paint = paint {
+        renderfix
+        
         auto [rid, s, stage, active_id] = from_root(root);
         if (stage != (int) STAGE::RENDER_POST_WINDOWS)
             return;
@@ -100,14 +115,20 @@ void fill_root(Container *root, Container *alt_tab_parent) {
             rect(c->real_bounds, {1, 0, 1, 1});
         }
  
-        //rect(c->real_bounds, {1, 1, 1, .4}, 20);
+        rect(c->real_bounds, {1, 1, 1, .4}, 20);
     };
 }
 
-static bool showing = false;
+static bool is_showing = false;
+
+bool alt_tab::showing() {
+    return showing;
+}
 
 void alt_tab::show() {
-    showing = true;
+    if (is_showing)
+        return;
+    is_showing = true;
     later_immediate([](Timer *) {
         hypriso->screenshot_all(); 
     });
@@ -119,8 +140,9 @@ void alt_tab::show() {
 }
 
 void alt_tab::close(bool focus) {
-    if (!showing)
+    if (!is_showing)
         return;
+    is_showing = false;
     for (auto m : monitors) {
         for (int i = m->children.size() - 1; i >= 0; i--) {
             auto c = m->children[i];
@@ -131,6 +153,10 @@ void alt_tab::close(bool focus) {
             }
         }
     }
+}
+
+void alt_tab::move(int dir) {
+    
 }
 
 void alt_tab::on_activated(int id) {

@@ -757,6 +757,7 @@ SDispatchResult hook_onCircleNext(void* thisptr, std::string arg) {
 }
 
 void disable_default_alt_tab_behaviour() {
+    return;
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
@@ -1064,7 +1065,7 @@ void hook_onArrangeLayers(void* thisptr, const MONITORID& monitor) {
 #endif
     auto spe = (CHyprRenderer *) thisptr;
     (*(origArrangeLayers)g_pOnArrangeLayers->m_original)(spe, monitor);
-    notify("dock added");
+    //notify("dock added");
 }
 
 void hook_dock_change() {
@@ -1091,8 +1092,7 @@ void HyprIso::create_hooks() {
 #endif
     //return;
     fix_window_corner_rendering();
-    notify("1 - remove me");
-    //disable_default_alt_tab_behaviour();
+    disable_default_alt_tab_behaviour();
     detect_csd_request_change();
     detect_move_resize_requests();    
     overwrite_min();
@@ -1100,6 +1100,26 @@ void HyprIso::create_hooks() {
     interleave_floating_and_tiled_windows();
     hook_dock_change();
 }
+
+bool HyprIso::alt_tabbable(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    for (auto h : hyprwindows) {
+        if (h->id == id) {
+            bool found = false;
+            for (const auto &w : g_pCompositor->m_windows) {
+                if (w == h->w && w->m_isMapped) {
+                    found = true;
+                }
+            }
+            return found;
+        }
+    }
+
+    return false; 
+}
+
 
 void HyprIso::end() {
 #ifdef TRACY_ENABLE
@@ -2042,6 +2062,15 @@ int HyprIso::monitor_from_cursor() {
     return -1;
 }
 
+bool HyprIso::is_mapped(int id) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            return hw->w->m_isMapped;
+        }
+    }
+    return false; 
+}
+
 bool HyprIso::is_hidden(int id) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
@@ -2064,6 +2093,9 @@ void HyprIso::set_hidden(int id, bool state) {
             hw->w->setHidden(state);
             hw->is_hidden = state;
         }
+    }
+    for (auto m : hyprmonitors) {
+        hypriso->damage_entire(m->id);
     }
  
     /*

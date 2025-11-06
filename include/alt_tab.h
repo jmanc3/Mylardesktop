@@ -7,4 +7,8 @@ namespace alt_tab {
     
     void show();
     void close(bool focus = false);
+
+    void move(int dir);
+
+    bool showing();
 }

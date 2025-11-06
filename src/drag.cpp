@@ -14,6 +14,7 @@ struct DraggingData {
 DraggingData *data = nullptr;
 
 void drag::begin(int cid) {
+    notify("begin");
     data = new DraggingData;
     data->cid = cid;
     data->mouse_start = mouse();
@@ -34,6 +35,7 @@ void drag::motion(int cid) {
 }
 
 void drag::end(int cid) {
+    notify("end");
     delete data;
     data = nullptr;
 }

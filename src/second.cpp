@@ -38,10 +38,10 @@ static bool on_mouse_move(int id, float x, float y) {
     x = mou.x;
     y = mou.y;
 
-    //if (drag::dragging()) {
-        //drag::motion(drag::drag_window());
-        //return true;
-    //}
+    if (drag::dragging()) {
+        drag::motion(drag::drag_window());
+        return true;
+    }
     //notify(fz("{} {}", x, y));
     int active_mon = hypriso->monitor_from_cursor();
     for (auto m : monitors) {
@@ -76,10 +76,10 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
     x = mou.x;
     y = mou.y;
 
-    //if (drag::dragging() && !state) {
-        //drag::end(drag::drag_window());
-        //return true;
-    //}
+    bool consumed = false;
+    if (drag::dragging() && !state) {
+        drag::end(drag::drag_window());
+    }
     second::layout_containers();
     int active_mon = hypriso->monitor_from_cursor();
     for (auto m: monitors) {
@@ -88,18 +88,16 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
             continue;
         auto bounds = bounds_monitor(cid);
         auto [rid, s, stage, active_id] = from_root(m);
-        Event event(x - bounds.x * s, y - bounds.y * s, button, state);
+        Event event(x - bounds.x, y - bounds.y, button, state);
         mouse_event(m, event);
     }
     
-    bool consumed = false;
     for (auto root : monitors) {
        if (root->consumed_event) {
            consumed = true;
            root->consumed_event = false;
        } 
     }
-
     return consumed;
 }
 
@@ -123,9 +121,9 @@ static bool on_scrolled(int id, int source, int axis, int direction, double delt
             continue;
         auto bounds = bounds_monitor(cid);
         auto [rid, s, stage, active_id] = from_root(m);
-        event.x -= bounds.x * s;
-        event.y -= bounds.y * s;
-        //Event event(x - bounds.x * s, y - bounds.y * s, button, state);
+        event.x -= bounds.x;
+        event.y -= bounds.y;
+        //Event event(x - bounds.x, y - bounds.y, button, state);
         mouse_event(m, event);
     }
 
@@ -145,13 +143,27 @@ static bool on_key_press(int id, int key, int state, bool update_mods) {
     if (key == KEY_LEFTALT || key == KEY_RIGHTALT) {
         alt_held = state;
     }
+    static bool shift_held = false;
+    if (key == KEY_LEFTSHIFT || key == KEY_RIGHTSHIFT) {
+        shift_held = state;
+    }
+    bool alt_showing = alt_tab::showing();
+    if (!alt_held && alt_showing) {
+       alt_tab::close(); 
+    }
     if (alt_held && key == KEY_TAB) {
        if (state)  {
-           //alt_tab::show();
+           alt_tab::show();
+           if (shift_held) {
+               alt_tab::move(-1);
+           } else {
+               alt_tab::move(1);
+           }
        }
     } else {
         alt_tab::close();
     }
+    
     if (key == KEY_TAB && state == 0) {
         //hypriso->no_render = !hypriso->no_render;
         //nz(fz(
@@ -356,7 +368,7 @@ static void on_render(int id, int stage) {
 }
 
 static void on_drag_start_requested(int id) {
-    //drag::begin(id);
+    drag::begin(id);
 }
 
 static void on_resize_start_requested(int id, RESIZE_TYPE type) {
@@ -430,24 +442,6 @@ void second::layout_containers() {
         }
     }
 
-    // put client on the correct monitor
-    /*std::vector<Container *> clients;
-    for (auto r : monitors) {
-        for (auto c: clients)
-            clients.push_back(c);
-        r->children.clear();
-    }
-    for (auto c : clients) {
-        auto cid = *datum<int>(c, "cid");
-        int monitor = get_monitor(cid); 
-        for (auto r : monitors) {
-            auto rid = *datum<int>(r, "cid");
-            notify(fz("{} {}", monitor, rid));
-            c->parent = r;
-            r->children.push_back(c);
-        }
-    }*/
-
     // reorder based on stacking
     std::vector<int> order = get_window_stacking_order();
     for (auto r : monitors) {
@@ -477,7 +471,8 @@ void second::layout_containers() {
 
         for (auto c : r->children) {
             auto cid = *datum<int>(c, "cid");
-            {
+            c->exists = hypriso->is_mapped(cid) && !hypriso->is_hidden(cid);
+            if (c->exists) {
                 auto b = bounds_client(cid);            
                 auto fo = hypriso->floating_offset(cid);
                 auto so = hypriso->workspace_offset(cid);

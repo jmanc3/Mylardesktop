@@ -288,6 +288,7 @@ void create_titlebar(Container *root, Container *parent) {
     titlebar->when_mouse_up = consume_event;
     titlebar->when_clicked = titlebar->when_mouse_down;
     titlebar->when_drag_start = paint {
+        notify("title drag start");
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");
         drag::begin(cid);
@@ -297,13 +298,13 @@ void create_titlebar(Container *root, Container *parent) {
     titlebar->when_drag = paint {
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");
-        drag::motion(cid);
+        //drag::motion(cid);
         root->consumed_event = true;
     };
     titlebar->when_drag_end = paint {
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");
-        drag::end(cid);
+        //drag::end(cid);
         root->consumed_event = true;
     };
  
@@ -314,6 +315,11 @@ void create_titlebar(Container *root, Container *parent) {
     };
     min->when_mouse_down = consume_event;
     min->when_mouse_up = consume_event;
+    min->when_clicked = paint {
+         notify("here");
+         auto client = first_above_of(c, TYPE::CLIENT);
+         hypriso->set_hidden(*datum<int>(client, "cid"), true);
+    };
     auto max = titlebar_parent->child(FILL_SPACE, FILL_SPACE);
     max->when_paint = paint {
         auto client = first_above_of(c, TYPE::CLIENT);

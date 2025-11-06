@@ -239,10 +239,13 @@ struct HyprIso {
     bool has_focus(int client);
     void all_lose_focus();
     void all_gain_focus();
-    
+
+    bool is_mapped(int id);
     bool is_hidden(int id);
     
     void floatit(int id);
+
+    bool alt_tabbable(int id);
 
     void should_round(int id, bool state);
 
