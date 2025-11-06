@@ -171,7 +171,7 @@ static std::tuple<int, float, int, int> from_root(Container *r) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-     int rid = *datum<int>(r, "cid"); 
+    int rid = current_rendering_monitor(); 
     float s = scale(rid);
     int stage = *datum<int>(r, "stage"); 
     int active_id = *datum<int>(r, "active_id"); 
@@ -241,11 +241,14 @@ static void consume_event(Container *root, Container *c) {
 static void render_fix(Container *root, Container *c) {
     // Containers are in raw unscaled coordinates, but rendering needs to be per monitor based
     // So first, if the monitor is positioned at 1000 1000 and this container is at 1100 and 1500, we want it's new coordinates to be 100 500
-    c->real_bounds.x -= root->real_bounds.x;
-    c->real_bounds.y -= root->real_bounds.y;
+    auto rendering_monitor = current_rendering_monitor();
+    auto root_real_bounds = bounds_monitor(rendering_monitor);
+
+    c->real_bounds.x -= root_real_bounds.x;
+    c->real_bounds.y -= root_real_bounds.y;
     
     // Then we also need to scale our raw unscaled coordianates, to scaled ones (scaled by the current scale set by the monitor)
-    c->real_bounds.scale(scale(*datum<int>(root, "cid")));
+    c->real_bounds.scale(scale(rendering_monitor));
     c->real_bounds.x = std::round(c->real_bounds.x);
     c->real_bounds.y = std::round(c->real_bounds.y);
     c->real_bounds.w = std::round(c->real_bounds.w);

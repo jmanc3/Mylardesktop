@@ -26,7 +26,7 @@
 
 std::unordered_map<std::string, Datas> datas;
 
-std::vector<Container *> monitors;
+std::vector<Container *> monitors; // actually just root of all
 
 static void any_container_closed(Container *c) {
     remove_data(c->uuid); 
@@ -46,7 +46,7 @@ static bool on_mouse_move(int id, float x, float y) {
     int active_mon = hypriso->monitor_from_cursor();
     for (auto m : monitors) {
         auto cid = *datum<int>(m, "cid");
-        if (cid != active_mon)
+        if (cid != active_mon && false)
             continue;
         auto bounds = bounds_monitor(cid);
         auto [rid, s, stage, active_id] = from_root(m);
@@ -84,7 +84,7 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
     int active_mon = hypriso->monitor_from_cursor();
     for (auto m: monitors) {
         auto cid = *datum<int>(m, "cid");
-        if (cid != active_mon)
+        if (cid != active_mon && false)
             continue;
         auto bounds = bounds_monitor(cid);
         auto [rid, s, stage, active_id] = from_root(m);
@@ -119,7 +119,7 @@ static bool on_scrolled(int id, int source, int axis, int direction, double delt
     second::layout_containers();
     for (auto m : monitors) {
         auto cid = *datum<int>(m, "cid");
-        if (cid != active_mon)
+        if (cid != active_mon && false)
             continue;
         auto bounds = bounds_monitor(cid);
         auto [rid, s, stage, active_id] = from_root(m);
@@ -255,6 +255,9 @@ static void test_container(Container *m) {
 }
 
 static void on_monitor_open(int id) {
+    if (!monitors.empty())
+       return; 
+
     auto c = new Container();
     //c->when_paint = paint_debug;
     monitors.push_back(c);
@@ -318,7 +321,7 @@ static void on_render(int id, int stage) {
     Bounds mbounds;
     for (auto r : monitors) {
         auto cid = *datum<int>(r, "cid");
-        hypriso->damage_entire(cid);
+        //hypriso->damage_entire(cid);
         if (cid == current_monitor) {
             mbounds = r->real_bounds;
             *datum<int>(r, "stage") = stage;

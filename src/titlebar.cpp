@@ -245,6 +245,16 @@ void create_titlebar(Container *root, Container *parent) {
     titlebar_parent->automatically_paint_children = false;
     titlebar_parent->pre_layout = titlebar_pre_layout;
     titlebar_parent->when_paint = paint {
+        /*
+        auto rendering_monitor = current_rendering_monitor();
+        auto s = scale(rendering_monitor);
+        auto mb = bounds_monitor(rendering_monitor);
+        auto b = c->real_bounds;
+        b.x -= mb.x;
+        b.y -= mb.y;
+        b.scale(s);
+        rect(b, {1, 0, 1, 1});
+        */
         renderfix
         auto [rid, s, stage, active_id] = from_root(root);
         auto client = first_above_of(c, TYPE::CLIENT);
@@ -395,10 +405,8 @@ void titlebar::on_draw_decos(std::string name, int monitor, int id, float a) {
     //nz(fz("{} {}                                                        ", current_rendering_monitor(), monitor));
     Container *m = nullptr;;
     for (auto r : monitors) {
-        auto rid = *datum<int>(r, "cid");
-        r->real_bounds = bounds_monitor(rid);
-        if (rid == monitor)
-            m = r;
+        m = r;
+        break;
     }
     if (!m) return;
 
