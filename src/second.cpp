@@ -479,17 +479,14 @@ void second::layout_containers() {
             auto cid = *datum<int>(c, "cid");
             {
                 auto b = bounds_client(cid);            
-                //b.scale(s);
                 auto fo = hypriso->floating_offset(cid);
-               //fo.scale(s);
                 auto so = hypriso->workspace_offset(cid);
-                //so.scale(s);
                 if (hypriso->has_decorations(cid))  {
                     c->real_bounds = Bounds(
-                        //b.x + fo.x + so.x, 
-                        b.x, 
-                        //b.y - titlebar_h + fo.y + so.y, 
-                        b.y - titlebar_h, 
+                        b.x + fo.x + so.x, 
+                        //b.x, 
+                        b.y - titlebar_h + fo.y + so.y, 
+                        //b.y - titlebar_h, 
                         b.w, 
                         b.h + titlebar_h
                     );
