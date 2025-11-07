@@ -18,6 +18,8 @@ void alt_tab::on_window_closed(int id) {
 }
 
 void fill_root(Container *root, Container *alt_tab_parent) {
+    log("fill root -------");
+    
     *datum<bool>(alt_tab_parent, "shown_yet") = false;
     alt_tab_parent->custom_type = (int) TYPE::ALT_TAB;
     alt_tab_parent->type = ::vbox;
@@ -34,10 +36,11 @@ void fill_root(Container *root, Container *alt_tab_parent) {
         hypriso->all_gain_focus();
         consume_event(root, c);
     };
-    alt_tab_parent->pre_layout = [](Container *root, Container *c, const Bounds &b) {
-        auto [rid, s, stage, active_id] = from_root(root);
+    alt_tab_parent->pre_layout = [](Container *actual_root, Container *c, const Bounds &b) {
+        auto root = get_rendering_root();
+        auto [rid, s, stage, active_id] = roots_info(actual_root, root);
 
-        if (c->children.empty()) {
+        /*if (c->children.empty()) {
             auto windows = get_window_stacking_order();
             for (int i = windows.size() - 1; i >= 0; i--) {
                 auto w = windows[i];
@@ -45,13 +48,14 @@ void fill_root(Container *root, Container *alt_tab_parent) {
                     continue;
                 auto child = c->child(200, 100);
                 *datum<int>(child, "cid") = w;
-                child->when_paint = paint {
-                    renderfix
-                    auto [rid, s, stage, active_id] = from_root(root);
+                child->when_paint = [](Container *actual_root, Container *c) {
+                    return;
+                    auto root = get_rendering_root();
+                    auto [rid, s, stage, active_id] = roots_info(actual_root, root);
 
-                    if (stage != (int) STAGE::RENDER_LAST_MOMENT) {
+                    if (stage != (int) STAGE::RENDER_LAST_MOMENT)
                         return;
-                    }
+                    renderfix
                     
                     auto b = c->real_bounds;
                     auto w = *datum<int>(c, "cid");
@@ -91,18 +95,20 @@ void fill_root(Container *root, Container *alt_tab_parent) {
                     });
                 };
             }
-        }
+        }*/
 
         c->wanted_bounds = Bounds(0, 0, 600, 450);
         c->real_bounds = c->wanted_bounds;
-        ::layout(root, c, c->real_bounds);
+        ::layout(actual_root, c, c->real_bounds);
     };
-    alt_tab_parent->when_paint = paint {
-        renderfix
-        
-        auto [rid, s, stage, active_id] = from_root(root);
-        if (stage != (int) STAGE::RENDER_POST_WINDOWS)
-            return;
+    alt_tab_parent->when_paint = [](Container *actual_root, Container *c) {
+        auto root = get_rendering_root();
+        auto [rid, s, stage, active_id] = roots_info(actual_root, root);
+
+        //if (stage != (int) STAGE::RENDER_POST_WINDOWS)
+            //return;
+        //renderfix
+
         bool any_subpart_damaged = false;
         auto shown_yet = datum<bool>(c, "shown_yet");
         if (any_subpart_damaged || !(*shown_yet)) {
@@ -126,16 +132,17 @@ bool alt_tab::showing() {
 }
 
 void alt_tab::show() {
+    return;
     if (is_showing)
         return;
     is_showing = true;
     later_immediate([](Timer *) {
         hypriso->screenshot_all(); 
     });
-    for (auto m : monitors) {
+    {
+        auto m = actual_root;
         auto alt_tab_parent = m->child(FILL_SPACE, FILL_SPACE);
         fill_root(m, alt_tab_parent);
-        break;
     }
 }
 
@@ -143,7 +150,8 @@ void alt_tab::close(bool focus) {
     if (!is_showing)
         return;
     is_showing = false;
-    for (auto m : monitors) {
+    {
+        auto m = actual_root;
         for (int i = m->children.size() - 1; i >= 0; i--) {
             auto c = m->children[i];
             if (c->custom_type == (int) TYPE::ALT_TAB) {

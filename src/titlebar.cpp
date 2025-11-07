@@ -14,7 +14,7 @@
 #ifdef TRACY_ENABLE
 #include "tracy/Tracy.hpp"
 #endif
-
+ 
 float titlebar_button_ratio() {
     return hypriso->get_varfloat("plugin:mylardesktop:titlebar_button_ratio", 1.4375f);
 }
@@ -81,16 +81,26 @@ void titlebar_pre_layout(Container* root, Container* self, const Bounds& bounds)
     self->children[3]->wanted_bounds.w = titlebar_h * titlebar_button_ratio();
 }
 
-TextureInfo *get_cached_texture(Container *root, Container *target, std::string needle, std::string font, std::string text, RGBA color, int wanted_h) {
+TextureInfo *get_cached_texture(Container *root_with_scale, Container *container_texture_saved_on, std::string needle, std::string font, std::string text, RGBA color, int wanted_h) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    auto [rid, s, stage, active_id] = from_root(root);
-    TextureInfo *info = datum<TextureInfo>(target, needle);
+    //return {};
+    
+    auto rid = *datum<int>(root_with_scale, "cid");
+    auto s = scale(rid);
+    TextureInfo *info = datum<TextureInfo>(container_texture_saved_on, needle);
+    //notify(needle + "                                                  ");
+    //notify(needle + " " + std::to_string(info->id));
     
     int h = std::round(wanted_h * s);
+
     if (info->id != -1) { // regenerate if any of the following changes
-        if (info->cached_color != color || info->cached_h != h || info->cached_text != text) {
+        bool diff_color = info->cached_color != color;
+        bool diff_h = info->cached_h != h;
+        bool diff_text = info->cached_text != text;
+        if (diff_color || diff_h || diff_text) {
+            log(fz("{} {} {} {} {} {} cached:{} text:{}", needle, info->cached_h, h, diff_color, diff_h, diff_text, info->cached_text, text));
             free_text_texture(info->id);
             info->id = -1;
             info->reattempts_count = 0;
@@ -118,20 +128,21 @@ TextureInfo *get_cached_texture(Container *root, Container *target, std::string 
     return info; 
 }
 
-void paint_button(Container *root, Container *c, std::string name, std::string icon, bool is_close = false) {
+void paint_button(Container *actual_root, Container *c, std::string name, std::string icon, bool is_close = false) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    renderfix
-    
-    auto [rid, s, stage, active_id] = from_root(root);
+    auto root = get_rendering_root();
+    auto [rid, s, stage, active_id] = roots_info(actual_root, root);
     auto client = first_above_of(c, TYPE::CLIENT);
-    assert(client);
     auto cid = *datum<int>(client, "cid");
-    auto a = *datum<float>(client, "titlebar_alpha"); 
 
-    auto b = c->real_bounds;
     if (active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW) {
+        renderfix
+        
+        auto b = c->real_bounds;
+        auto a = *datum<float>(client, "titlebar_alpha");
+        
         auto focused = get_cached_texture(root, root, name + "_focused", "Segoe Fluent Icons",
             icon, color_titlebar_text_focused(), titlebar_button_icon_h());
         auto unfocused = get_cached_texture(root, root, name + "_unfocused", "Segoe Fluent Icons", 
@@ -163,22 +174,25 @@ void paint_button(Container *root, Container *c, std::string name, std::string i
     }
 }
 
-void paint_titlebar(Container *root, Container *c) {
+void paint_titlebar(Container *actual_root, Container *c) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    renderfix
-
-    auto [rid, s, stage, active_id] = from_root(root);
+    auto root = get_rendering_root();
+    auto [rid, s, stage, active_id] = roots_info(actual_root, root);
     auto client = first_above_of(c, TYPE::CLIENT);
     auto cid = *datum<int>(client, "cid");
-    auto a = *datum<float>(client, "titlebar_alpha");
+
     if (active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW) {
+        renderfix
+        auto a = *datum<float>(client, "titlebar_alpha");
+        
         int icon_width = 0; 
         { // load icon
-            TextureInfo *info = datum<TextureInfo>(client, "icon");
+            TextureInfo *info = datum<TextureInfo>(client, std::to_string(rid) + "_icon");
+            auto real_icon_h = std::round(titlebar_icon_h() * s);
             if (info->id != -1) {
-                if (info->cached_h != std::round(titlebar_icon_h() * s)) {
+                if (info->cached_h != real_icon_h) {
                     free_text_texture(info->id);
                     info->id = -1;
                     info->reattempts_count = 0;
@@ -189,12 +203,13 @@ void paint_titlebar(Container *root, Container *c) {
                 if (icons_loaded && enough_time_since_last_check(1000, info->last_reattempt_time)) {
                     info->last_reattempt_time = get_current_time_in_ms();
                     auto name = hypriso->class_name(cid);
-                    auto real_icon_h = std::round(titlebar_icon_h() * s);
                     auto path = one_shot_icon(real_icon_h, {
                         name, c3ic_fix_wm_class(name), to_lower(name), to_lower(c3ic_fix_wm_class(name))
                     });
                     if (!path.empty()) {
-                        *info = gen_texture(path, titlebar_icon_h() * s);
+                        log(fz("{} {} {} ",path, real_icon_h, info->cached_h));
+                        
+                        *info = gen_texture(path, real_icon_h);
                         info->cached_h = real_icon_h;
                     }
                 }
@@ -217,9 +232,9 @@ void paint_titlebar(Container *root, Container *c) {
             auto color_titlebar_textfo = color_titlebar_text_focused();
             auto titlebar_text = titlebar_text_h();
             auto color_titlebar_textunfo = color_titlebar_text_unfocused();
-            focused = get_cached_texture(root, client, "title_focused", "Segoe UI Variable", 
+            focused = get_cached_texture(root, client, std::to_string(rid) + "_title_focused", "Segoe UI Variable", 
                 title_text, color_titlebar_textfo, titlebar_text);
-            unfocused = get_cached_texture(root, client, "title_unfocused", "Segoe UI Variable", 
+            unfocused = get_cached_texture(root, client, std::to_string(rid) + "_title_unfocused", "Segoe UI Variable", 
                 title_text, color_titlebar_textunfo, titlebar_text);
             
             auto texture_info = focused;
@@ -244,30 +259,22 @@ void create_titlebar(Container *root, Container *parent) {
     auto titlebar_parent = parent->child(::hbox, FILL_SPACE, FILL_SPACE); // actual wanted bounds set in pre_layout
     titlebar_parent->automatically_paint_children = false;
     titlebar_parent->pre_layout = titlebar_pre_layout;
-    titlebar_parent->when_paint = paint {
-        /*
-        auto rendering_monitor = current_rendering_monitor();
-        auto s = scale(rendering_monitor);
-        auto mb = bounds_monitor(rendering_monitor);
-        auto b = c->real_bounds;
-        b.x -= mb.x;
-        b.y -= mb.y;
-        b.scale(s);
-        rect(b, {1, 0, 1, 1});
-        */
-        renderfix
-        auto [rid, s, stage, active_id] = from_root(root);
+    titlebar_parent->when_paint = [](Container *actual_root, Container *c) {
+        auto root = get_rendering_root();
+        auto [rid, s, stage, active_id] = roots_info(actual_root, root);
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");
-        auto a = *datum<float>(client, "titlebar_alpha");
-
-        auto b = c->real_bounds;
+ 
         if (active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW) {
+            renderfix
+     
+            auto a = *datum<float>(client, "titlebar_alpha");
+            
             auto titlebar_color = color_titlebar_focused();
             if (!hypriso->has_focus(cid))
                 titlebar_color = color_titlebar_unfocused();
             titlebar_color.a *= a;
-            rect(b, titlebar_color, 12, hypriso->get_rounding(cid), 2.0f);
+            rect(c->real_bounds, titlebar_color, 12, hypriso->get_rounding(cid), 2.0f);
         }
     };
     titlebar_parent->receive_events_even_if_obstructed_by_one = true;
@@ -288,7 +295,7 @@ void create_titlebar(Container *root, Container *parent) {
     titlebar->when_mouse_up = consume_event;
     titlebar->when_clicked = titlebar->when_mouse_down;
     titlebar->when_drag_start = paint {
-        notify("title drag start");
+        //notify("title drag start");
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");
         drag::begin(cid);
@@ -329,9 +336,9 @@ void create_titlebar(Container *root, Container *parent) {
         //notify(fz("{:.2f} {:.2f}                                           ", c->real_bounds.x, c->real_bounds.y));
 
         if (snapped) {
-            paint_button(root, c, "max", "\ue923");
+            paint_button(root, c, "max_snapped", "\ue923");
         } else {
-            paint_button(root, c, "max", "\ue922");
+            paint_button(root, c, "max_unsnapped", "\ue922");
         }
     };
     max->when_mouse_down = consume_event;
@@ -365,17 +372,9 @@ void titlebar::on_window_open(int id) {
      if (hypriso->wants_titlebar(id)) {
         hypriso->reserve_titlebar(id, titlebar_h);
 
-        for (auto m : monitors) {
-            for (auto c : m->children) {
-                if (c->custom_type == (int) TYPE::CLIENT) {
-                    auto cid = *datum<int>(c, "cid");
-                    if (cid == id) {
-                        create_titlebar(m, c);
-                        *datum<float>(c, "titlebar_alpha") = 1.0;
-                        break;
-                    }
-                }
-            }
+        if (auto c = get_cid_container(id)) {
+            create_titlebar(actual_root, c);
+            *datum<float>(c, "titlebar_alpha") = 1.0;
         }
     }
 }
@@ -408,14 +407,8 @@ void titlebar::on_draw_decos(std::string name, int monitor, int id, float a) {
     Container *c = get_cid_container(id);
     if (!c) return;
     
-    //nz(fz("{} {}                                                        ", current_rendering_monitor(), monitor));
-    Container *m = nullptr;;
-    for (auto r : monitors) {
-        m = r;
-        break;
-    }
+    Container *m = actual_root;
     if (!m) return;
-
 
     *datum<float>(c, "titlebar_alpha") = a;
     
@@ -428,12 +421,10 @@ void titlebar::on_draw_decos(std::string name, int monitor, int id, float a) {
     *stage = (int) STAGE::RENDER_PRE_WINDOW;
     *active_id = id;
 
-    
     c->children[0]->automatically_paint_children = true;
-    paint_outline(m, c);
+    paint_outline(actual_root, c);
     c->children[0]->automatically_paint_children = false;
-    
-    
+
     *stage = before_stage;
     *active_id = before_active_id;
 }
@@ -442,12 +433,8 @@ void titlebar::on_activated(int id) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-     for (auto m : monitors) {
-       for (auto c : m->children) {
-           if (c->custom_type == (int) TYPE::CLIENT) {
-               request_damage(m, c);
-           }
-       }
+    if (auto c = get_cid_container(id)) {
+        request_damage(actual_root, c);
     }
 }
 

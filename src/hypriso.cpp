@@ -7,6 +7,7 @@
  */
 
 #include "hypriso.h"
+#include "second.h"
 
 #include <cstring>
 
@@ -1057,6 +1058,33 @@ void HyprIso::create_callbacks() {
     });
 }
 
+inline CFunctionHook* g_pOnArrangeMonitors = nullptr;
+typedef void (*origArrangeMonitors)(CCompositor *);
+void hook_onArrangeMonitors(void* thisptr) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    auto spe = (CCompositor *) thisptr;
+    (*(origArrangeMonitors) g_pOnArrangeMonitors->m_original)(spe);
+    //notify("Some change in monitors");
+    // Go through all and check any that no longer exist or that need to exist
+    
+}
+
+void hook_monitor_arrange() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "arrangeMonitors");
+    for (auto m : METHODS) {
+        if (m.signature.find("CCompositor") != std::string::npos) {
+            g_pOnArrangeMonitors = HyprlandAPI::createFunctionHook(globals->api, m.address, (void*)&hook_onArrangeMonitors);
+            g_pOnArrangeMonitors->hook();
+            return;
+        }
+    }
+}
+
 inline CFunctionHook* g_pOnArrangeLayers = nullptr;
 typedef void (*origArrangeLayers)(CHyprRenderer *, const MONITORID& monitor);
 void hook_onArrangeLayers(void* thisptr, const MONITORID& monitor) {
@@ -1077,8 +1105,8 @@ void hook_dock_change() {
     // TODO: check if m.address is same as set_rounding even though signature is SurfacePassElement
     for (auto m : METHODS) {
         if (m.signature.find("CHyprRenderer") != std::string::npos) {
-            notify(m.demangled);
-            notify(m.demangled);
+            //notify(m.demangled);
+            //notify(m.demangled);
             g_pOnArrangeLayers = HyprlandAPI::createFunctionHook(globals->api, m.address, (void*)&hook_onArrangeLayers);
             g_pOnArrangeLayers->hook();
             return;
@@ -1099,6 +1127,7 @@ void HyprIso::create_hooks() {
     hook_render_functions();
     interleave_floating_and_tiled_windows();
     hook_dock_change();
+    hook_monitor_arrange();
 }
 
 bool HyprIso::alt_tabbable(int id) {
@@ -1927,6 +1956,7 @@ TextureInfo gen_texture(std::string path, float h) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
+    log("gen texture");
     //notify("gen texture");
     auto tex = loadAsset(path, h);
     if (tex.get()) {
@@ -1948,6 +1978,7 @@ TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA c
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
+    log("gen text texture");
     //notify("gen text");
     auto tex = g_pHyprOpenGL->renderText(text, CHyprColor(color.r, color.g, color.b, color.a), h, false, font, 0);
     if (tex.get()) {

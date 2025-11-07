@@ -26,7 +26,8 @@
 
 std::unordered_map<std::string, Datas> datas;
 
-std::vector<Container *> monitors; // actually just root of all
+std::vector<Container *> actual_monitors; // actually just root of all
+Container *actual_root = new Container; 
 
 static void any_container_closed(Container *c) {
     remove_data(c->uuid); 
@@ -44,10 +45,9 @@ static bool on_mouse_move(int id, float x, float y) {
     }
     //notify(fz("{} {}", x, y));
     int active_mon = hypriso->monitor_from_cursor();
-    for (auto m : monitors) {
+    {
+        auto m = actual_root;
         auto cid = *datum<int>(m, "cid");
-        if (cid != active_mon && false)
-            continue;
         auto bounds = bounds_monitor(cid);
         auto [rid, s, stage, active_id] = from_root(m);
         Event event(x - bounds.x, y - bounds.y);
@@ -57,11 +57,12 @@ static bool on_mouse_move(int id, float x, float y) {
     }
 
     bool consumed = false;
-    for (auto root : monitors) {
-       if (root->consumed_event) {
-           consumed = true;
-           root->consumed_event = false;
-       } 
+    {
+        auto root = actual_root;
+        if (root->consumed_event) {
+            consumed = true;
+            root->consumed_event = false;
+        }
     }
 
     if (!consumed) {
@@ -82,21 +83,21 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
     }
     second::layout_containers();
     int active_mon = hypriso->monitor_from_cursor();
-    for (auto m: monitors) {
+    {
+        auto m = actual_root; 
         auto cid = *datum<int>(m, "cid");
-        if (cid != active_mon && false)
-            continue;
         auto bounds = bounds_monitor(cid);
         auto [rid, s, stage, active_id] = from_root(m);
         Event event(x - bounds.x, y - bounds.y, button, state);
         mouse_event(m, event);
     }
-    
-    for (auto root : monitors) {
-       if (root->consumed_event) {
+
+    {
+        auto root = actual_root;
+        if (root->consumed_event) {
            consumed = true;
            root->consumed_event = false;
-       } 
+        } 
     }
     return consumed;
 }
@@ -115,10 +116,9 @@ static bool on_scrolled(int id, int source, int axis, int direction, double delt
     event.descrete = discrete;
     event.from_mouse = from_mouse;
     second::layout_containers();
-    for (auto m : monitors) {
+    {
+        auto m = actual_root;
         auto cid = *datum<int>(m, "cid");
-        if (cid != active_mon && false)
-            continue;
         auto bounds = bounds_monitor(cid);
         auto [rid, s, stage, active_id] = from_root(m);
         event.x -= bounds.x;
@@ -128,11 +128,12 @@ static bool on_scrolled(int id, int source, int axis, int direction, double delt
     }
 
     bool consumed = false;
-    for (auto root : monitors) {
-       if (root->consumed_event) {
-           consumed = true;
-           root->consumed_event = false;
-       } 
+    {
+        auto root = actual_root; 
+        if (root->consumed_event) {
+            consumed = true;
+            root->consumed_event = false;
+        }
     }
 
     return consumed;
@@ -176,7 +177,8 @@ static bool on_key_press(int id, int key, int state, bool update_mods) {
 
 static void on_window_open(int id) {    
     // We make the client on the first monitor we fine, because we move the container later based on actual monitor location
-    for (auto m : monitors) {
+    {
+        auto m = actual_root; 
         auto c = m->child(FILL_SPACE, FILL_SPACE);
         c->custom_type = (int) TYPE::CLIENT;
         c->when_paint = paint {
@@ -190,8 +192,6 @@ static void on_window_open(int id) {
         
         *datum<int>(c, "cid") = id; 
         *datum<bool>(c, "snapped") = false; 
-
-        break;
     }
     
     hypriso->set_corner_rendering_mask_for_window(id, 3);
@@ -206,7 +206,8 @@ static void on_window_closed(int id) {
     //notify("close: " + std::to_string(id));
     //notify("monitors: " + std::to_string(monitors.size()));
 
-    for (auto m : monitors) {
+    {
+        auto m = actual_root; 
         //notify("ch: " + std::to_string(m->children.size()));
         
         for (int i = m->children.size() - 1; i >= 0; i--) {
@@ -267,30 +268,19 @@ static void test_container(Container *m) {
 }
 
 static void on_monitor_open(int id) {
-    if (!monitors.empty())
-       return; 
-
+    log("monitor opened -------");
     auto c = new Container();
     //c->when_paint = paint_debug;
-    monitors.push_back(c);
-
-    static bool skip = false;
-    if (skip) {
-        skip = false;
-    } else {
-        //test_container(c);
-        //nz("make");
-    }
-
+    actual_monitors.push_back(c);
     auto cid = datum<int>(c, "cid");
     *cid = id;
 }
 
 static void on_monitor_closed(int id) {
-    for (int i = monitors.size() - 1; i >= 0; i--) {
-        auto cid = *datum<int>(monitors[i], "cid");
+    for (int i = actual_monitors.size() - 1; i >= 0; i--) {
+        auto cid = *datum<int>(actual_monitors[i], "cid");
         if (cid == id) {
-            monitors.erase(monitors.begin() + i);
+            actual_monitors.erase(actual_monitors.begin() + i);
         }
     }
 }
@@ -330,40 +320,17 @@ static void on_render(int id, int stage) {
     int current_window = current_rendering_window();
     int active_id = current_window == -1 ? current_monitor : current_window;
 
-    Bounds mbounds;
-    for (auto r : monitors) {
+    for (auto r : actual_monitors) {
         auto cid = *datum<int>(r, "cid");
         //hypriso->damage_entire(cid);
         if (cid == current_monitor) {
-            mbounds = r->real_bounds;
             *datum<int>(r, "stage") = stage;
             *datum<int>(r, "active_id") = active_id;
-            paint_outline(r, r);
+            paint_outline(actual_root, actual_root);
         }
     }
-    auto mo = mouse();
     if (stage == (int) STAGE::RENDER_LAST_MOMENT) {
-        Bounds bb;
-        for (auto r : monitors) {
-            for (auto c : r->children) {
-                auto cid = *datum<int>(c, "cid");
-                if (hypriso->has_focus(cid)) {
-                    bb = bounds_client(cid);
-                }
-            }
-        }
-        draw_text(fz("{:.2f} {:.2f}\n{} {} {} {}\n{} {} {} {}", 
-            mo.x, mo.y, mbounds.x, mbounds.y, mbounds.w, mbounds.h,
-            bb.x, bb.y, bb.w, bb.h), 
-            0, 50);
 
-        auto rid = current_rendering_monitor();
-        auto cbounds = bounds_monitor(rid);
-        auto mou = mouse();
-        auto s = scale(rid);
-        //rect(Bounds(mou.x * s - cbounds.x * s, mou.y * s - cbounds.y * s, 100, 100), {1, 1, 1, 1});
-        
-        
     }
 }
 
@@ -429,10 +396,11 @@ void second::end() {
 }
 
 void second::layout_containers() {
-    if (monitors.empty())
+    if (actual_monitors.empty())
         return;
     std::vector<Container *> backup;
-    for (auto r : monitors) {
+    {
+        auto r = actual_root;
         for (int i = r->children.size() - 1; i >= 0; i--) {
             auto c = r->children[i];
             if (c->custom_type != (int) TYPE::CLIENT) {
@@ -444,7 +412,8 @@ void second::layout_containers() {
 
     // reorder based on stacking
     std::vector<int> order = get_window_stacking_order();
-    for (auto r : monitors) {
+    {
+        auto r = actual_root;
         // update the index based on the stacking order
         for (auto c : r->children) {
             auto sort_index = datum<int>(c, "sort_index");
@@ -461,41 +430,29 @@ void second::layout_containers() {
         });
     }
     
-    for (auto r : monitors) {
+    for (auto r : actual_monitors) {
         auto rid = *datum<int>(r, "cid");
-        //auto s = scale(rid);
-        { // set the monitor bounds
-            auto b = bounds_monitor(rid);
-            r->real_bounds = Bounds(b.x, b.y, b.w, b.h);
-        }
+        r->real_bounds = bounds_monitor(rid); 
+    }
 
-        for (auto c : r->children) {
-            auto cid = *datum<int>(c, "cid");
-            c->exists = hypriso->is_mapped(cid) && !hypriso->is_hidden(cid);
-            if (c->exists) {
-                auto b = bounds_client(cid);            
-                auto fo = hypriso->floating_offset(cid);
-                auto so = hypriso->workspace_offset(cid);
-                if (hypriso->has_decorations(cid))  {
-                    c->real_bounds = Bounds(
-                        b.x + fo.x + so.x, 
-                        //b.x, 
-                        b.y - titlebar_h + fo.y + so.y, 
-                        //b.y - titlebar_h, 
-                        b.w, 
-                        b.h + titlebar_h
-                    );
-                } else {
-                    c->real_bounds = Bounds(
-                        b.x + fo.x + so.x, 
-                        b.y + fo.y + so.y, 
-                        b.w, 
-                        b.h
-                    );
-                }
-                ::layout(r, c, c->real_bounds);
+    for (auto c : actual_root->children) {
+        auto cid = *datum<int>(c, "cid");
+        c->exists = hypriso->is_mapped(cid) && !hypriso->is_hidden(cid);
+        if (c->exists) {
+            auto b = bounds_client(cid);
+            auto fo = hypriso->floating_offset(cid);
+            auto so = hypriso->workspace_offset(cid);
+            if (hypriso->has_decorations(cid)) {
+                c->real_bounds = Bounds(b.x + fo.x + so.x,
+                                        //b.x,
+                                        b.y - titlebar_h + fo.y + so.y,
+                                        //b.y - titlebar_h,
+                                        b.w, b.h + titlebar_h);
+            } else {
+                c->real_bounds = Bounds(b.x + fo.x + so.x, b.y + fo.y + so.y, b.w, b.h);
             }
-        } 
+            ::layout(actual_root, c, c->real_bounds);
+        }
     }
 
     for (auto c : backup) {
@@ -506,14 +463,14 @@ void second::layout_containers() {
         if (c->custom_type == (int) TYPE::ALT_TAB) {
             c->parent->children.insert(c->parent->children.begin(), c);
             if (c->pre_layout) {
-                c->pre_layout(c->parent, c, c->parent->real_bounds);
+                c->pre_layout(actual_root, c, c->parent->real_bounds);
                 *datum<bool>(c, "touched") = true;
             }
         }
         if (c->custom_type == (int) TYPE::TEST) {
             c->parent->children.insert(c->parent->children.begin(), c);
             if (c->pre_layout) {
-                c->pre_layout(c->parent, c, c->parent->real_bounds);
+                c->pre_layout(actual_root, c, c->parent->real_bounds);
             }
             *datum<bool>(c, "touched") = true;
         }
@@ -523,7 +480,57 @@ void second::layout_containers() {
             notify("hey you forgot to layout one of the containers in layout_containers probably leading to it not getting drawn");
         }
     }
-
-    
 }
 
+#include <fstream>
+#include <string>
+#include <mutex>
+
+void log(const std::string& msg) {
+    //return;
+    static bool firstCall = true;
+    static std::ofstream ofs;
+    static std::mutex writeMutex;
+    static long num = 0; 
+
+    std::lock_guard<std::mutex> lock(writeMutex);
+
+    if (firstCall) {
+        ofs.open("/tmp/log", std::ios::out | std::ios::trunc);
+        firstCall = false;
+
+        // Replace "program" with something that displays a live-updating file.
+        // Example choices:
+        //   - `xterm -e "tail -f /tmp/log"`
+        //   - `gedit /tmp/log`
+        //   - `glow /tmp/log`
+        //std::thread t([]() {
+            //system("alacritty -e tail -f /tmp/log");
+        //});
+        //t.detach();
+    } else if (!ofs.is_open()) {
+        // If log is called after close, recover
+        ofs.open("/tmp/log", std::ios::out | std::ios::app);
+    }
+
+    std::string result = std::format("{:>10}", num++);
+    ofs << result << ' ' << msg << '\n';
+    ofs.flush(); // force write so GUI viewer always shows latest content
+}
+
+Container *get_rendering_root() {
+    auto rendering_monitor = current_rendering_monitor();
+    for (auto m : actual_monitors) {
+        auto rid = *datum<int>(m, "cid");
+        m->real_bounds = bounds_monitor(rid);
+        if (rid == rendering_monitor)
+            return m;
+    }
+
+    notify("[][][]][][][][][][][failed");
+
+    for (auto m : actual_monitors)
+        return m;
+
+    return nullptr;
+}

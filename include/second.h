@@ -59,7 +59,8 @@ enum struct TYPE : uint8_t {
     TEST,
 };
 
-extern std::vector<Container *> monitors;
+extern std::vector<Container *> actual_monitors;
+extern Container *actual_root;
 
 struct Datas {
     std::unordered_map<std::string, std::any> datas;
@@ -167,14 +168,34 @@ auto datum(C&& container, N&& needle) {
     return a;
 }
 
-static std::tuple<int, float, int, int> from_root(Container *r) {
+static std::tuple<int, float, int, int> roots_info(Container *actual_root, Container *rendering_root) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    auto rid = *datum<int>(rendering_root, "cid");
+    auto s = scale(rid);
+    auto stage = *datum<int>(actual_root, "stage");
+    auto active_id = *datum<int>(actual_root, "active_id");
+    return {rid, s, stage, active_id};
+}
+
+static std::tuple<int, float, int, int> from_root(Container *c) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
     int rid = current_rendering_monitor(); 
     float s = scale(rid);
-    int stage = *datum<int>(r, "stage"); 
-    int active_id = *datum<int>(r, "active_id"); 
+    int stage = 0; 
+    int active_id = 0; 
+    for (auto m : actual_monitors) {
+        auto mrid = *datum<int>(m, "cid");
+        if (mrid == rid) {
+            stage = *datum<int>(m, "stage");
+            active_id = *datum<int>(m, "active_id");
+            break;
+        }
+    }
+    
     return {rid, s, stage, active_id};
 }
 
@@ -182,7 +203,7 @@ static Container *first_above_of(Container *c, TYPE type) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-     Container *client_above = nullptr; 
+    Container *client_above = nullptr; 
     Container *current = c;
     while (current->parent != nullptr) {
         if (current->parent->custom_type == (int) type) {
@@ -198,11 +219,9 @@ static Container *get_cid_container(int id) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-     for (auto m : monitors) {
-        for (auto child : m->children) {
-            if (*datum<int>(child, "cid") == id) {
-                return child;
-            }
+    for (auto child : actual_root->children) {
+        if (*datum<int>(child, "cid") == id) {
+            return child;
         }
     }
     return nullptr;
@@ -254,6 +273,10 @@ static void render_fix(Container *root, Container *c) {
     c->real_bounds.w = std::round(c->real_bounds.w);
     c->real_bounds.h = std::round(c->real_bounds.h);
 }
+
+void log(const std::string& msg);
+
+Container *get_rendering_root();
 
 namespace second {    
     void begin();
