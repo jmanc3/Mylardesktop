@@ -133,6 +133,7 @@ void paint_button(Container *actual_root, Container *c, std::string name, std::s
     ZoneScoped;
 #endif
     auto root = get_rendering_root();
+    if (!root) return;
     auto [rid, s, stage, active_id] = roots_info(actual_root, root);
     auto client = first_above_of(c, TYPE::CLIENT);
     auto cid = *datum<int>(client, "cid");
@@ -179,6 +180,8 @@ void paint_titlebar(Container *actual_root, Container *c) {
     ZoneScoped;
 #endif
     auto root = get_rendering_root();
+    if (!root) return;
+    
     auto [rid, s, stage, active_id] = roots_info(actual_root, root);
     auto client = first_above_of(c, TYPE::CLIENT);
     auto cid = *datum<int>(client, "cid");
@@ -261,6 +264,8 @@ void create_titlebar(Container *root, Container *parent) {
     titlebar_parent->pre_layout = titlebar_pre_layout;
     titlebar_parent->when_paint = [](Container *actual_root, Container *c) {
         auto root = get_rendering_root();
+        if (!root) return;
+        
         auto [rid, s, stage, active_id] = roots_info(actual_root, root);
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");

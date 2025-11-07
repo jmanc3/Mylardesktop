@@ -268,7 +268,6 @@ static void test_container(Container *m) {
 }
 
 static void on_monitor_open(int id) {
-    log("monitor opened -------");
     auto c = new Container();
     //c->when_paint = paint_debug;
     actual_monitors.push_back(c);
@@ -526,8 +525,6 @@ Container *get_rendering_root() {
         if (rid == rendering_monitor)
             return m;
     }
-
-    notify("[][][]][][][][][][][failed");
 
     for (auto m : actual_monitors)
         return m;

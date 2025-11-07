@@ -38,6 +38,7 @@ void fill_root(Container *root, Container *alt_tab_parent) {
     };
     alt_tab_parent->pre_layout = [](Container *actual_root, Container *c, const Bounds &b) {
         auto root = get_rendering_root();
+        if (!root) return;
         auto [rid, s, stage, active_id] = roots_info(actual_root, root);
 
         /*if (c->children.empty()) {
@@ -51,6 +52,8 @@ void fill_root(Container *root, Container *alt_tab_parent) {
                 child->when_paint = [](Container *actual_root, Container *c) {
                     return;
                     auto root = get_rendering_root();
+                    if (!root) return;
+                    
                     auto [rid, s, stage, active_id] = roots_info(actual_root, root);
 
                     if (stage != (int) STAGE::RENDER_LAST_MOMENT)
@@ -103,6 +106,8 @@ void fill_root(Container *root, Container *alt_tab_parent) {
     };
     alt_tab_parent->when_paint = [](Container *actual_root, Container *c) {
         auto root = get_rendering_root();
+        if (!root) return;
+        
         auto [rid, s, stage, active_id] = roots_info(actual_root, root);
 
         //if (stage != (int) STAGE::RENDER_POST_WINDOWS)
