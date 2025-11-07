@@ -372,7 +372,7 @@ void on_open_monitor(PHLMONITOR m) {
     hm->m = m;
     hyprmonitors.push_back(hm);
     hypriso->on_monitor_open(hm->id);
-    notify("monitor open");
+    //notify("monitor open");
 }
 
 void on_close_monitor(PHLMONITOR m) {
@@ -1070,7 +1070,7 @@ void hook_onArrangeMonitors(void* thisptr) {
     //notify("Some change in monitors");
     // Go through all and check any that no longer exist or that need to exist
 
-    return;
+    //return;
     for (const auto &m : g_pCompositor->m_monitors) {
         bool already_in = false;
         for (auto hm : hyprmonitors) {
