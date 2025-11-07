@@ -1068,7 +1068,31 @@ void hook_onArrangeMonitors(void* thisptr) {
     (*(origArrangeMonitors) g_pOnArrangeMonitors->m_original)(spe);
     //notify("Some change in monitors");
     // Go through all and check any that no longer exist or that need to exist
-    
+    for (const auto &m : g_pCompositor->m_monitors) {
+        bool already_in = false;
+        for (auto hm : hyprmonitors) {
+            if (hm->m == m) {
+                already_in = true;
+            }
+        }
+
+        if (!already_in) {
+            on_open_monitor(m);
+        }
+    }
+    for (int i = hyprmonitors.size() - 1; i >= 0; i--) {
+        auto hm = hyprmonitors[i];
+        bool in = false;
+        for (const auto &m : g_pCompositor->m_monitors) {
+            if (hm->m == m) {
+                in = true;
+            }
+        }
+
+        if (!in) {
+            on_close_monitor(hm->m);
+        }
+    }
 }
 
 void hook_monitor_arrange() {
