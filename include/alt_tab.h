@@ -6,7 +6,7 @@ namespace alt_tab {
     void on_activated(int id); // on a window become the focused window that is
     
     void show();
-    void close(bool focus = false);
+    void close(bool focus);
 
     void move(int dir);
 

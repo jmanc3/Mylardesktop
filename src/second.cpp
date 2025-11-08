@@ -14,6 +14,7 @@
 #include "hotcorners.h"
 #include "alt_tab.h"
 #include "drag.h"
+#include "resizing.h"
 
 #ifdef TRACY_ENABLE
 //#include "../tracy/public/client/TracyProfiler.hpp"
@@ -148,21 +149,21 @@ static bool on_key_press(int id, int key, int state, bool update_mods) {
     if (key == KEY_LEFTSHIFT || key == KEY_RIGHTSHIFT) {
         shift_held = state;
     }
+    if (alt_held) {
+        if (key == KEY_TAB) {
+            if (state) {
+                alt_tab::show();
+                if (shift_held) {
+                    alt_tab::move(-1);
+                } else {
+                    alt_tab::move(1);
+                }
+            }
+        }
+    }
     bool alt_showing = alt_tab::showing();
     if (!alt_held && alt_showing) {
-       alt_tab::close(); 
-    }
-    if (alt_held && key == KEY_TAB) {
-       if (state)  {
-           alt_tab::show();
-           if (shift_held) {
-               alt_tab::move(-1);
-           } else {
-               alt_tab::move(1);
-           }
-       }
-    } else {
-        alt_tab::close();
+       alt_tab::close(true); 
     }
     
     if (key == KEY_TAB && state == 0) {
@@ -198,11 +199,13 @@ static void on_window_open(int id) {
     
     titlebar::on_window_open(id);
     alt_tab::on_window_open(id);
+    resizing::on_window_open(id);
     second::layout_containers();
 }
 
 static void on_window_closed(int id) {
     titlebar::on_window_closed(id);
+    resizing::on_window_closed(id);
     alt_tab::on_window_closed(id);
     //notify("close: " + std::to_string(id));
     //notify("monitors: " + std::to_string(monitors.size()));
@@ -495,6 +498,22 @@ void second::layout_containers() {
                 *datum<bool>(c, "touched") = true;
             }
         }
+        if (c->custom_type == (int) TYPE::CLIENT_RESIZE) {
+            auto id = *datum<int>(c, "cid");
+            for (int i = actual_root->children.size() - 1; i >= 0; i--) {
+                auto child = actual_root->children[i];
+                auto cid = *datum<int>(child, "cid");
+                if (child->custom_type == (int) TYPE::CLIENT && cid == id) {
+                    c->real_bounds = child->real_bounds;
+                    //actual_root->children.insert(actual_root->children.begin() + i + 1, c);
+                    actual_root->children.insert(actual_root->children.begin() + i, c);
+                    *datum<bool>(c, "touched") = true;
+                    if (c->pre_layout) {
+                        c->pre_layout(actual_root, c, actual_root->real_bounds);
+                    }
+                }
+            }
+        }
         if (c->custom_type == (int) TYPE::TEST) {
             c->parent->children.insert(c->parent->children.begin(), c);
             if (c->pre_layout) {
@@ -544,10 +563,10 @@ void log(const std::string& msg) {
         //   - `xterm -e "tail -f /tmp/log"`
         //   - `gedit /tmp/log`
         //   - `glow /tmp/log`
-        //std::thread t([]() {
-            //system("alacritty -e tail -f /tmp/log");
-        //});
-        //t.detach();
+        std::thread t([]() {
+            system("alacritty -e tail -f /tmp/log");
+        });
+        t.detach();
     } else if (!ofs.is_open()) {
         // If log is called after close, recover
         ofs.open("/tmp/log", std::ios::out | std::ios::app);

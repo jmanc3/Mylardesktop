@@ -221,7 +221,7 @@ static Container *get_cid_container(int id) {
     ZoneScoped;
 #endif
     for (auto child : actual_root->children) {
-        if (*datum<int>(child, "cid") == id) {
+        if (*datum<int>(child, "cid") == id && child->custom_type == (int) TYPE::CLIENT) {
             return child;
         }
     }

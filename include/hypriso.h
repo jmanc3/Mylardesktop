@@ -261,6 +261,8 @@ struct HyprIso {
     void screenshot_space(int mon, int id);
     void screenshot_wallpaper(int mon);
 
+    Bounds thumbnail_size(int id);
+
     void draw_thumbnail(int id, Bounds b, int rounding = 0, float roundingPower = 2.0f, int cornermask = 0, float alpha = 1.0);
     void draw_deco_thumbnail(int id, Bounds b, int rounding = 0, float roundingPower = 2.0f, int cornermask = 0);
     void draw_raw_deco_thumbnail(int id, Bounds b, int rounding = 0, float roundingPower = 2.0f, int cornermask = 0);

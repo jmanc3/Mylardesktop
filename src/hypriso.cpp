@@ -98,9 +98,11 @@ struct HyprWindow {
     bool was_hidden = false; // used in show/hide desktop
     
     CFramebuffer *fb = nullptr;
+    Bounds w_bounds_raw; // 0 -> 1, percentage of fb taken up by the actual window used for drawing
     Bounds w_size; // 0 -> 1, percentage of fb taken up by the actual window used for drawing
     
     CFramebuffer *deco_fb = nullptr;
+    Bounds w_deco_raw; // 0 -> 1, percentage of fb taken up by the actual window used for drawing
     Bounds w_decos_size; // 0 -> 1, percentage of fb taken up by the actual window used for drawing
 
     int cornermask = 0; // when rendering the surface, what corners should be rounded
@@ -769,7 +771,7 @@ SDispatchResult hook_onCircleNext(void* thisptr, std::string arg) {
 }
 
 void disable_default_alt_tab_behaviour() {
-    return;
+    //return;
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
@@ -875,6 +877,8 @@ void HyprIso::create_config_variables() {
     HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_text_h", Hyprlang::FLOAT{15});
     HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_icon_h", Hyprlang::FLOAT{21});
     HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_button_icon_h", Hyprlang::FLOAT{13});
+
+    HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:resize_edge_size", Hyprlang::FLOAT{10});
 }
 
 static void on_open_layer(PHLLS l) {
@@ -2931,6 +2935,8 @@ void screenshot_window(HyprWindow *hw, PHLWINDOW w, bool include_decorations) {
        //m->m_scale 
         hw->w_decos_size = tobounds(w->getFullWindowBoundingBox());
         hw->w_decos_size.scale(m->m_scale);
+        hw->w_deco_raw = tobounds(w->getFullWindowBoundingBox());
+
         w->m_hidden = h;
 
         return;
@@ -2951,6 +2957,7 @@ void screenshot_window(HyprWindow *hw, PHLWINDOW w, bool include_decorations) {
     g_pHyprRenderer->m_bRenderingSnapshot = false;
 
     hw->w_size = Bounds(0, 0, (w->m_realSize->value().x * m->m_scale), (w->m_realSize->value().y * m->m_scale));
+    hw->w_bounds_raw = Bounds(0, 0, (w->m_realSize->value().x), (w->m_realSize->value().y));
 }
 
 void HyprIso::screenshot_all() {
@@ -3114,7 +3121,14 @@ void HyprIso::screenshot_deco(int id) {
     }
 }
 
-
+Bounds HyprIso::thumbnail_size(int id) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            return hw->w_bounds_raw;
+        }
+    }
+    return {1, 1, 1, 1};
+}
 
 // Will stretch the thumbnail if the aspect ratio passed in is different from thumbnail
 void HyprIso::draw_thumbnail(int id, Bounds b, int rounding, float roundingPower, int cornermask, float alpha) {
