@@ -198,6 +198,7 @@ static void on_window_open(int id) {
     
     titlebar::on_window_open(id);
     alt_tab::on_window_open(id);
+    second::layout_containers();
 }
 
 static void on_window_closed(int id) {
@@ -220,6 +221,30 @@ static void on_window_closed(int id) {
             }
         } 
     }
+    second::layout_containers();
+}
+
+static void on_layer_open(int id) {    
+    return;
+    auto m = actual_root; 
+    auto c = m->child(FILL_SPACE, FILL_SPACE);
+    c->custom_type = (int) TYPE::LAYER;
+    *datum<int>(c, "cid") = id;
+    log(fz("open layer {}", id));
+}
+
+static void on_layer_closed(int id) {    
+    auto m = actual_root; 
+
+    for (int i = m->children.size() - 1; i >= 0; i--) {
+        auto cid = *datum<int>(m->children[i], "cid");
+        if (cid == id) {
+            delete m->children[i];
+            m->children.erase(m->children.begin() + i);
+        }
+    } 
+
+    second::layout_containers();
 }
 
 static void on_layer_change() {
@@ -273,6 +298,7 @@ static void on_monitor_open(int id) {
     actual_monitors.push_back(c);
     auto cid = datum<int>(c, "cid");
     *cid = id;
+    second::layout_containers();
 }
 
 static void on_monitor_closed(int id) {
@@ -282,6 +308,7 @@ static void on_monitor_closed(int id) {
             actual_monitors.erase(actual_monitors.begin() + i);
         }
     }
+    second::layout_containers();
 }
 
 static void on_activated(int id) {
@@ -323,8 +350,8 @@ static void on_render(int id, int stage) {
         auto cid = *datum<int>(r, "cid");
         //hypriso->damage_entire(cid);
         if (cid == current_monitor) {
-            *datum<int>(r, "stage") = stage;
-            *datum<int>(r, "active_id") = active_id;
+            *datum<int>(actual_root, "stage") = stage;
+            *datum<int>(actual_root, "active_id") = active_id;
             paint_outline(actual_root, actual_root);
         }
     }
@@ -362,6 +389,8 @@ void second::begin() {
     hypriso->on_render = on_render;
     hypriso->on_window_open = on_window_open;
     hypriso->on_window_closed = on_window_closed;
+    hypriso->on_layer_open = on_layer_open;
+    hypriso->on_layer_closed = on_layer_closed;
     hypriso->on_layer_change = on_layer_change;
     hypriso->on_monitor_open = on_monitor_open;
     hypriso->on_monitor_closed = on_monitor_closed;
@@ -473,6 +502,18 @@ void second::layout_containers() {
             }
             *datum<bool>(c, "touched") = true;
         }
+
+        if (c->custom_type == (int) TYPE::LAYER) {
+            log("TODO: layer needs to be positioned based on above or below, and level in that stack");
+            c->parent->children.insert(c->parent->children.begin(), c);
+            auto id = *datum<int>(c, "cid");
+            log(fz("layout layer: {}", id));
+            c->real_bounds = bounds_layer(id);
+            
+            log(fz("{} {} {} {}", c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h));
+            
+            *datum<bool>(c, "touched") = true;
+        }
     }
     for (auto c : backup) {
         if (!(*datum<bool>(c, "touched"))) {
@@ -486,7 +527,7 @@ void second::layout_containers() {
 #include <mutex>
 
 void log(const std::string& msg) {
-    //return;
+    return;
     static bool firstCall = true;
     static std::ofstream ofs;
     static std::mutex writeMutex;
@@ -530,4 +571,12 @@ Container *get_rendering_root() {
         return m;
 
     return nullptr;
+}
+
+void consume_event(Container *actual_root, Container *c) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    actual_root->consumed_event = true;
+    request_damage(actual_root, c);
 }

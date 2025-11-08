@@ -51,6 +51,7 @@ enum struct TYPE : uint8_t {
     RESIZE_HANDLE, // The handle that exists between two snapped winodws
     CLIENT_RESIZE, // The resize that exists around a window
     CLIENT, // Windows
+    LAYER, // Layer: dock, lockscreens, notifications
     ALT_TAB,
     SNAP_HELPER,
     SNAP_THUMB,
@@ -249,13 +250,7 @@ static void request_damage(Container *root, Container *c) {
     hypriso->damage_box(b);
 }
 
-static void consume_event(Container *root, Container *c) {
-#ifdef TRACY_ENABLE
-    ZoneScoped;
-#endif
-    root->consumed_event = true;
-    request_damage(root, c);
-}
+void consume_event(Container *root, Container *c);
 
 static void render_fix(Container *root, Container *c) {
     // Containers are in raw unscaled coordinates, but rendering needs to be per monitor based

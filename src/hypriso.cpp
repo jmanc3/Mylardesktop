@@ -119,6 +119,14 @@ struct HyprMonitor {
 
 static std::vector<HyprMonitor *> hyprmonitors;
 
+// Similar to windows (docks, locksavers, and stuff like that)
+struct HyprLayer {
+    int id;  
+    PHLLS l;
+};
+
+static std::vector<HyprLayer *> hyprlayers;
+
 struct HyprWorkspaces {
     int id;
     PHLWORKSPACEREF w;
@@ -358,6 +366,7 @@ void on_close_window(PHLWINDOW w) {
     }
     if (hw) {
         hypriso->on_window_closed(hw->id);
+        delete hw;
         hyprwindows.erase(hyprwindows.begin() + target_index);
     }
 }
@@ -387,6 +396,7 @@ void on_close_monitor(PHLMONITOR m) {
     }
     if (hm) {
         hypriso->on_monitor_closed(hm->id);
+        delete hm;
         hyprmonitors.erase(hyprmonitors.begin() + target_index);
     }
 }
@@ -867,6 +877,38 @@ void HyprIso::create_config_variables() {
     HyprlandAPI::addConfigValue(globals->api, "plugin:mylardesktop:titlebar_button_icon_h", Hyprlang::FLOAT{13});
 }
 
+static void on_open_layer(PHLLS l) {
+    for (auto hl : hyprlayers) {
+        if (hl->l == l)
+            return;
+    }
+    auto hl = new HyprLayer;
+    hl->id = unique_id++;
+    hl->l = l;
+    hyprlayers.push_back(hl);
+
+    if (hypriso->on_layer_open) {
+       hypriso->on_layer_open(hl->id); 
+    }
+}
+
+void on_layer_close(PHLLS l) {
+    HyprLayer *hl = nullptr;
+    int target_index = 0;
+    for (int i = 0; i < hyprlayers.size(); i++) {
+        auto hlt = hyprlayers[i];
+        if (hlt->l == l) {
+            target_index = i;
+            hl = hlt;
+        }
+    }
+    if (hl) {
+        hypriso->on_layer_closed(hl->id);
+        delete hl;
+        hyprlayers.erase(hyprlayers.begin() + target_index);
+    }
+}
+
 void HyprIso::create_callbacks() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
@@ -878,7 +920,11 @@ void HyprIso::create_callbacks() {
     for (auto w : g_pCompositor->m_windows) {
         on_open_window(w);
     }
- 
+    
+    for (auto l : g_pCompositor->m_layers) {
+        on_open_layer(l);
+    }
+
     static auto openWindow  = HyprlandAPI::registerCallbackDynamic(globals->api, "openWindow", [](void* self, SCallbackInfo& info, std::any data) {
         if (hypriso->on_window_open) {
             auto w = std::any_cast<PHLWINDOW>(data); // todo getorcreate ref on our side
@@ -893,20 +939,25 @@ void HyprIso::create_callbacks() {
     });
 
     static auto openLayer  = HyprlandAPI::registerCallbackDynamic(globals->api, "openLayer", [](void* self, SCallbackInfo& info, std::any data) {
-        //if (hypriso->on_window_open) {
-            //auto w = std::any_cast<PHLLS>(data); // todo getorcreate ref on our side
-            //on_open_window(w);
-        //}
+        try {
+            auto l = std::any_cast<PHLLS>(data); 
+            on_open_layer(l);
+        } catch (...) {
+            notify("openLayer cast failed");
+        }
+
         if (hypriso->on_layer_change) {
             hypriso->on_layer_change();
         }
     });
     static auto closeLayer = HyprlandAPI::registerCallbackDynamic(globals->api, "closeLayer", [](void* self, SCallbackInfo& info, std::any data) {
-        //if (hypriso->on_window_closed) {
-            //auto w = std::any_cast<PHLLS>(data); // todo getorcreate ref on our side
-            //w->m_realPosition
-            //on_close_window(w);
-        //}
+        try {
+            auto l = std::any_cast<PHLLS>(data); 
+            on_layer_close(l);
+        } catch (...) {
+            notify("closeLayer cast failed");
+        }
+
         if (hypriso->on_layer_change) {
             hypriso->on_layer_change();
         }
@@ -4262,6 +4313,22 @@ Bounds bounds_client(int wid) {
             if (auto w = hyprwindow->w.get()) {
                 //return w->getFullWindowBoundingBox();
                 return tobounds(w->getWindowMainSurfaceBox());
+            }
+        }
+    }    
+    return {0, 0, 0, 0};
+}
+
+Bounds bounds_layer(int wid) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    for (auto hl : hyprlayers) {
+        if (hl->id == wid) {
+            if (auto w = hl->l.get()) {
+                log("found");
+                //return tobounds(CBox(w->m_realPosition->value().x, w->m_realPosition->value().y, w->m_realSize->value().x, w->m_realSize->value().y));
+                return tobounds(CBox(w->m_geometry.x, w->m_geometry.y, w->m_geometry.w, w->m_geometry.h));
             }
         }
     }    

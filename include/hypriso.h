@@ -192,6 +192,10 @@ struct HyprIso {
     std::function<void(int id)> on_monitor_open = nullptr;
     
     std::function<void(int id)> on_monitor_closed = nullptr;
+
+    std::function<void(int id)> on_layer_open = nullptr;
+    
+    std::function<void(int id)> on_layer_closed = nullptr;
     
     std::function<void(int id)> on_activated = nullptr;
     
@@ -315,6 +319,7 @@ Bounds bounds_monitor(int id);
 Bounds bounds_reserved_monitor(int id);
 
 Bounds bounds_client(int id);
+Bounds bounds_layer(int id);
 Bounds real_bounds_client(int id);
 Bounds bounds_full_client(int id);
 
