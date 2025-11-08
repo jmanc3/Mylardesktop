@@ -1,6 +1,4 @@
-# Mylar Desktop
-
-Mylar is a smooth and beautiful wayland desktop
+# Mylarplugin
 
 ## Features
 
