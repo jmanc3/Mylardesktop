@@ -230,6 +230,9 @@ void alt_tab::show() {
         auto alt_tab_parent = m->child(FILL_SPACE, FILL_SPACE);
         fill_root(m, alt_tab_parent);
     }
+    for (auto m : actual_monitors) {
+        hypriso->damage_entire(*datum<int>(m, "cid"));
+    }
 }
 
 void alt_tab::close(bool focus) {
@@ -273,71 +276,6 @@ void alt_tab::on_activated(int id) {
     
     *datum<long>(c, LAST_TIME_ACTIVE) = get_current_time_in_ms();
 }
-
-
-
-/*
-void layout_containers(std::vector<Container*>& items, Container* root)
-{
-    if (!root || items.empty())
-        return;
-
-    const float rootW = root->real_w;
-    const float rootH = root->real_h;
-
-    // --- PREPASS: determine min/max constraints across items ---
-    float minW = 0, minH = 0, maxW = FLT_MAX, maxH = FLT_MAX;
-    for (auto c : items) {
-        minW = std::max(minW, c->min_w);
-        minH = std::max(minH, c->min_h);
-        maxW = std::min(maxW, c->max_w);
-        maxH = std::min(maxH, c->max_h);
-    }
-
-    // --- Find best column count: try all counts, choose one that yields largest usable size ---
-    struct Candidate { int cols; float cellW; float cellH; float area; };
-    Candidate best = {1, minW, minH, minW * minH};
-
-    for (int cols = 1; cols <= (int)items.size(); ++cols) {
-        float cellW = rootW / cols;
-        if (cellW < minW) break;
-        if (cellW > maxW) cellW = maxW;
-
-        int rows = (items.size() + cols - 1) / cols;
-        float cellH = rootH / rows;
-        if (cellH < minH) continue;
-        if (cellH > maxH) cellH = maxH;
-
-        float area = cellW * cellH;
-        if (area > best.area)
-            best = {cols, cellW, cellH, area};
-    }
-
-    const int cols = best.cols;
-    const float cellW = best.cellW;
-    const float cellH = best.cellH;
-
-    // --- Center entire grid inside the root ---
-    int rows = (items.size() + cols - 1) / cols;
-    float usedW = cols * cellW;
-    float usedH = rows * cellH;
-
-    float offsetX = root->x + (rootW - usedW) * 0.5f;
-    float offsetY = root->y + (rootH - usedH) * 0.5f;
-
-    // --- Assign positions ---
-    for (int i = 0; i < (int)items.size(); ++i) {
-        int col = i % cols;
-        int row = i / cols;
-
-        Container* c = items[i];
-        c->real_w = cellW;
-        c->real_h = cellH;
-        c->x = offsetX + col * cellW;
-        c->y = offsetY + row * cellH;
-    }
-}
-*/
 
 bool alt_tab::showing() {
     return showing;
