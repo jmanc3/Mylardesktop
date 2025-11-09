@@ -8,6 +8,8 @@
 static float sd = .65;
 Bounds max_thumb = { 510 * sd, 310 * sd, 510 * sd, 310 * sd };
 static int active_index = 0;
+static long show_time = 0;
+static long show_delay = 40;
 
 void alt_tab::on_window_open(int id) {
     Container *c = get_cid_container(id);
@@ -26,6 +28,9 @@ void alt_tab::on_window_closed(int id) {
 }
 
 void paint_tab_option(Container *actual_root, Container *c) {
+    if (get_current_time_in_ms() - show_time < show_delay)
+        return;
+ 
     auto root = get_rendering_root();
     if (!root) return;
     auto [rid, s, stage, active_id] = roots_info(actual_root, root);
@@ -190,6 +195,10 @@ void fill_root(Container *root, Container *alt_tab_parent) {
         alt_tab_parent_pre_layout(actual_root, c, b); 
     };
     alt_tab_parent->when_paint = [](Container *actual_root, Container *c) {
+        if (get_current_time_in_ms() - show_time < show_delay) {
+            request_damage(actual_root, c);
+            return;
+        }
         auto root = get_rendering_root();
         if (!root) return;
 
@@ -220,6 +229,7 @@ void alt_tab::show() {
     //return;
     if (is_showing)
         return;
+    show_time = get_current_time_in_ms();
     active_index = 0;
     is_showing = true;
     later_immediate([](Timer *) {

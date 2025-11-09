@@ -82,6 +82,16 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
     if (drag::dragging() && !state) {
         drag::end(drag::drag_window());
     }
+    if (alt_tab::showing()) {
+        for (auto c : actual_root->children) {
+            if (c->custom_type == (int)TYPE::ALT_TAB) {
+                if (!bounds_contains(c->real_bounds, x, y)) {
+                    alt_tab::close(true); 
+                }
+            }
+        }
+    }
+ 
     second::layout_containers();
     int active_mon = hypriso->monitor_from_cursor();
     {

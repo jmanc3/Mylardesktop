@@ -18,6 +18,15 @@ void do_alt_tab() {
     }
 }
 
+void do_overview() {
+    static long last_time = 0;
+    auto current = get_current_time_in_ms();
+    if (current - last_time > 300) {
+        alt_tab::show();
+        last_time = current;
+    }
+}
+
 void do_spotify_toggle() {
     static long last_time = 0;
     auto current = get_current_time_in_ms();
@@ -57,6 +66,8 @@ void monitor_hotspot(Container *m, int x, int y) {
             } else {
                 do_alt_tab();
             }
+        } else {
+            do_overview();
         }
     }
 }
