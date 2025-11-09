@@ -44,6 +44,11 @@ static bool on_mouse_move(int id, float x, float y) {
         drag::motion(drag::drag_window());
         return true;
     }
+    if (resizing::resizing()) {
+        resizing::motion(resizing::resizing_window());
+        return true;
+    }
+    
     //notify(fz("{} {}", x, y));
     int active_mon = hypriso->monitor_from_cursor();
     {
@@ -82,6 +87,10 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
     if (drag::dragging() && !state) {
         drag::end(drag::drag_window());
     }
+    if (resizing::resizing() && !state) {
+        resizing::end(resizing::resizing_window());
+    }
+ 
     if (alt_tab::showing()) {
         for (auto c : actual_root->children) {
             if (c->custom_type == (int)TYPE::ALT_TAB) {
@@ -378,7 +387,7 @@ static void on_drag_start_requested(int id) {
 }
 
 static void on_resize_start_requested(int id, RESIZE_TYPE type) {
-
+    resizing::begin(id, (int) type);
 }
 
 static void on_config_reload() {

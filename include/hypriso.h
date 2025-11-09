@@ -159,6 +159,8 @@ struct HyprIso {
     long drag_stop_time = 0;
     Bounds drag_initial_mouse_pos;
     Bounds drag_initial_window_pos;
+
+    std::string last_cursor_set = "";
     
     bool resizing = false;
     int resizing_id = false;

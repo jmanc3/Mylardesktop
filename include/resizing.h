@@ -7,4 +7,7 @@ namespace resizing {
     void begin(int cid, int type);
     void motion(int cid);
     void end(int cid);
+
+    bool resizing();
+    int resizing_window();
 }

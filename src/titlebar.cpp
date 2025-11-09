@@ -15,7 +15,7 @@
 #include "tracy/Tracy.hpp"
 #endif
    
-float titlebar_button_ratio() {
+static float titlebar_button_ratio() {
     return hypriso->get_varfloat("plugin:mylardesktop:titlebar_button_ratio", 1.4375f);
 }
 
@@ -23,7 +23,7 @@ float titlebar_text_h() {
     return hypriso->get_varfloat("plugin:mylardesktop:titlebar_text_h", 15);
 }
 
-float titlebar_icon_h() {
+static float titlebar_icon_h() {
     return hypriso->get_varfloat("plugin:mylardesktop:titlebar_icon_h", 21);
 }
 
@@ -157,10 +157,12 @@ void paint_button(Container *actual_root, Container *c, std::string name, std::s
         if (c->state.mouse_pressing) {
             auto color = is_close ? titlebar_closed_button_bg_pressed_color() : titlebar_button_bg_pressed_color();
             color.a = a;
+            clip(c->parent->real_bounds, s);
             rect(b, color, mask, hypriso->get_rounding(cid), 2.0f);
         } else if (c->state.mouse_hovering) {
             auto color = is_close ? titlebar_closed_button_bg_hovered_color() : titlebar_button_bg_hovered_color();
             color.a = a;
+            clip(c->parent->real_bounds, s);
             rect(b, color, mask, hypriso->get_rounding(cid), 2.0f);
         }
 

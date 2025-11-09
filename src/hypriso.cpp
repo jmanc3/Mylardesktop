@@ -2116,14 +2116,20 @@ void setCursorImageUntilUnset(std::string cursor) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
+    if (hypriso->last_cursor_set == cursor) {
+        return; 
+    }
+    hypriso->last_cursor_set = cursor;
     g_pInputManager->setCursorImageUntilUnset(cursor);
-
 }
 
 void unsetCursorImage() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
+    if (hypriso->last_cursor_set == "none")
+        return;
+    hypriso->last_cursor_set = "none";
     g_pInputManager->unsetCursorImage();
 }
 
