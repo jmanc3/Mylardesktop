@@ -140,7 +140,7 @@ void paint_button(Container *actual_root, Container *c, std::string name, std::s
 
     if (active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW) {
         renderfix
-        
+
         auto b = c->real_bounds;
         auto a = *datum<float>(client, "titlebar_alpha");
         
@@ -189,7 +189,7 @@ void paint_titlebar(Container *actual_root, Container *c) {
     if (active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW) {
         renderfix
         auto a = *datum<float>(client, "titlebar_alpha");
-        
+
         int icon_width = 0; 
         { // load icon
             TextureInfo *info = datum<TextureInfo>(client, std::to_string(rid) + "_icon");
@@ -268,11 +268,15 @@ void create_titlebar(Container *root, Container *parent) {
         
         auto [rid, s, stage, active_id] = roots_info(actual_root, root);
         auto client = first_above_of(c, TYPE::CLIENT);
+
+        auto already_painted = *datum<bool>(client, "already_painted");
+        if (already_painted)
+            return;        
         auto cid = *datum<int>(client, "cid");
- 
+
         if (active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW) {
             renderfix
-     
+
             auto a = *datum<float>(client, "titlebar_alpha");
             
             auto titlebar_color = color_titlebar_focused();
@@ -416,7 +420,8 @@ void titlebar::on_draw_decos(std::string name, int monitor, int id, float a) {
     if (!m) return;
 
     *datum<float>(c, "titlebar_alpha") = a;
-    
+    *datum<bool>(c, "already_painted") = false;
+
     auto stage = datum<int>(m, "stage"); 
     auto active_id = datum<int>(m, "active_id"); 
     
@@ -429,6 +434,8 @@ void titlebar::on_draw_decos(std::string name, int monitor, int id, float a) {
     c->children[0]->automatically_paint_children = true;
     paint_outline(actual_root, c);
     c->children[0]->automatically_paint_children = false;
+    
+    *datum<bool>(c, "already_painted") = true;
 
     *stage = before_stage;
     *active_id = before_active_id;

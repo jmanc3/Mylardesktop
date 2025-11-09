@@ -573,10 +573,10 @@ void log(const std::string& msg) {
         //   - `xterm -e "tail -f /tmp/log"`
         //   - `gedit /tmp/log`
         //   - `glow /tmp/log`
-        std::thread t([]() {
-            system("alacritty -e tail -f /tmp/log");
-        });
-        t.detach();
+        //std::thread t([]() {
+            //system("alacritty -e tail -f /tmp/log");
+        //});
+        //t.detach();
     } else if (!ofs.is_open()) {
         // If log is called after close, recover
         ofs.open("/tmp/log", std::ios::out | std::ios::app);

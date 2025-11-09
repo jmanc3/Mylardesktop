@@ -31,6 +31,31 @@ void paint_resize_edge(Container *actual_root, Container *c) {
     }
 }
 
+// mouse inside rounded rectangle (uniform radius)
+bool mouse_inside_rounded(const Bounds& r, float mx, float my, float radius)
+{
+    // clamp mouse pos to the nearest point *inside* the rect's inner bounds
+    // (the area excluding corner arcs)
+    float innerLeft   = r.x + radius;
+    float innerRight  = r.x + r.w - radius;
+    float innerTop    = r.y + radius;
+    float innerBottom = r.y + r.h - radius;
+
+    // if mouse is inside the central box, no need to test circles
+    if (mx >= innerLeft && mx <= innerRight)
+        return true;
+    if (my >= innerTop && my <= innerBottom)
+        return true;
+
+    // Otherwise: test distance to nearest corner circle center
+    float cx = (mx < innerLeft)  ? innerLeft  : innerRight;
+    float cy = (my < innerTop)   ? innerTop   : innerBottom;
+
+    float dx = mx - cx;
+    float dy = my - cy;
+    return dx*dx + dy*dy <= radius * radius;
+}
+
 void create_resize_container_for_window(int id) {
     auto c = actual_root->child(FILL_SPACE, FILL_SPACE);
     c->custom_type = (int) TYPE::CLIENT_RESIZE;
@@ -54,10 +79,13 @@ void create_resize_container_for_window(int id) {
     c->handles_pierced = [](Container* c, int x, int y) {
         auto b = c->real_bounds;
         b.shrink(resize_edge_size());
+        auto cid = *datum<int>(c, "cid");
+        float rounding = hypriso->get_rounding(cid);
+       
         if (bounds_contains(c->real_bounds, x, y)) {
             if (bounds_contains(b, x, y)) {
                 return false;
-            }
+            }            
             return true;
         }
         return false; 
