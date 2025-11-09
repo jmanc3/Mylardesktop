@@ -157,12 +157,12 @@ void paint_button(Container *actual_root, Container *c, std::string name, std::s
         if (c->state.mouse_pressing) {
             auto color = is_close ? titlebar_closed_button_bg_pressed_color() : titlebar_button_bg_pressed_color();
             color.a = a;
-            clip(c->parent->real_bounds, s);
+            clip(to_parent(root, c), s);
             rect(b, color, mask, hypriso->get_rounding(cid), 2.0f);
         } else if (c->state.mouse_hovering) {
             auto color = is_close ? titlebar_closed_button_bg_hovered_color() : titlebar_button_bg_hovered_color();
             color.a = a;
-            clip(c->parent->real_bounds, s);
+            clip(to_parent(root, c), s);
             rect(b, color, mask, hypriso->get_rounding(cid), 2.0f);
         }
 
@@ -172,7 +172,7 @@ void paint_button(Container *actual_root, Container *c, std::string name, std::s
         if (is_close && c->state.mouse_pressing || c->state.mouse_hovering)
             texture_info = closed;
         if (texture_info->id != -1) {
-            clip(c->parent->real_bounds, s);
+            clip(to_parent(root, c), s);
             draw_texture(*texture_info, center_x(c, texture_info->w), center_y(c, texture_info->h), a);
         }
     }
@@ -228,7 +228,7 @@ void paint_titlebar(Container *actual_root, Container *c) {
             } else {
                 focus_alpha = color_titlebar_text_unfocused().a;
             }
-            clip(c->parent->real_bounds, s);
+            clip(to_parent(root, c), s);
             draw_texture(*info, c->real_bounds.x + 8 * s, center_y(c, info->h), a * focus_alpha);
         }
         

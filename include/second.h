@@ -29,6 +29,13 @@
     defer(hypriso->clipbox = _beforebox); \
     defer(hypriso->clip = _before);
 
+static Bounds to_parent(Container *rendering_root, Container *c) {
+    auto pb = c->parent->real_bounds;
+    pb.x -= rendering_root->real_bounds.x;
+    pb.y -= rendering_root->real_bounds.y; 
+    return pb; 
+};
+
 static void render_fix(Container *root, Container *c);
 
 // We need to make unscaled coords, into the fully scaled coord via monitor scale

@@ -378,7 +378,20 @@ static void on_render(int id, int stage) {
         }
     }
     if (stage == (int) STAGE::RENDER_LAST_MOMENT) {
-
+        /*
+        auto root = get_rendering_root();
+        hypriso->damage_entire(*datum<int>(root, "cid"));
+        if (!root) return;
+        auto [rid, s, stage, active_id] = roots_info(actual_root, root);
+ 
+        auto m = mouse();
+        auto box = Bounds(m.x - root->real_bounds.x, m.y - root->real_bounds.y, 100, 100);
+        auto b2 = box;
+        b2.shrink(30);
+        clip(b2, s);
+        box.scale(s);
+        rect(box, {1, 0, 1, 1});
+        */
     }
 }
 
