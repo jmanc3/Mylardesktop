@@ -14,16 +14,7 @@
 #ifdef TRACY_ENABLE
 #include "tracy/Tracy.hpp"
 #endif
-
-#define set_clip(clipbounds, s) bool _before = hypriso->clip; \
-    Bounds _beforebox = hypriso->clipbox; \
-    hypriso->clip = true; \
-    auto _parentbox = clipbounds; \
-    _parentbox.scale(s); \
-    hypriso->clipbox = _parentbox; \
-    defer(hypriso->clipbox = _beforebox); \
-    defer(hypriso->clip = _before);
-    
+   
 float titlebar_button_ratio() {
     return hypriso->get_varfloat("plugin:mylardesktop:titlebar_button_ratio", 1.4375f);
 }
@@ -179,7 +170,7 @@ void paint_button(Container *actual_root, Container *c, std::string name, std::s
         if (is_close && c->state.mouse_pressing || c->state.mouse_hovering)
             texture_info = closed;
         if (texture_info->id != -1) {
-            set_clip(c->parent->real_bounds, s);
+            clip(c->parent->real_bounds, s);
             draw_texture(*texture_info, center_x(c, texture_info->w), center_y(c, texture_info->h), a);
         }
     }
@@ -235,7 +226,7 @@ void paint_titlebar(Container *actual_root, Container *c) {
             } else {
                 focus_alpha = color_titlebar_text_unfocused().a;
             }
-            set_clip(c->parent->real_bounds, s);
+            clip(c->parent->real_bounds, s);
             draw_texture(*info, c->real_bounds.x + 8 * s, center_y(c, info->h), a * focus_alpha);
         }
         

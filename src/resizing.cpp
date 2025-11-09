@@ -85,7 +85,8 @@ void create_resize_container_for_window(int id) {
         if (bounds_contains(c->real_bounds, x, y)) {
             if (bounds_contains(b, x, y)) {
                 return false;
-            }            
+            }
+            
             return true;
         }
         return false; 

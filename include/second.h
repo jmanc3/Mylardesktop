@@ -20,6 +20,15 @@
 #define center_y(c, in_h) c->real_bounds.y + c->real_bounds.h * .5 - in_h * .5
 #define center_x(c, in_w) c->real_bounds.x + c->real_bounds.w * .5 - in_w * .5
 
+#define clip(clipbounds, s) bool _before = hypriso->clip; \
+    Bounds _beforebox = hypriso->clipbox; \
+    hypriso->clip = true; \
+    auto _parentbox = clipbounds; \
+    _parentbox.scale(s); \
+    hypriso->clipbox = _parentbox; \
+    defer(hypriso->clipbox = _beforebox); \
+    defer(hypriso->clip = _before);
+
 static void render_fix(Container *root, Container *c);
 
 // We need to make unscaled coords, into the fully scaled coord via monitor scale

@@ -60,13 +60,13 @@ void monitor_hotspot(Container *m, int x, int y) {
     int x_off = x - m->real_bounds.x;
     float y_off = (y - m->real_bounds.y);
     if (x_off < 1) {
-        if (y_off > 200) {
+        if (y_off > 100) {
             if (y_off < 500) {
                 do_spotify_toggle();
             } else {
                 do_alt_tab();
             }
-        } else {
+        } else if (y_off < 50) {
             do_overview();
         }
     }
