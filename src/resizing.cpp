@@ -168,6 +168,7 @@ void resizing::motion(int cid) {
 void resizing::end(int cid) {
     is_resizing = false;
     window_resizing = -1;
+    update_cursor((int) RESIZE_TYPE::NONE);
     //notify("stop resizing");
 }
 
@@ -326,6 +327,12 @@ void create_resize_container_for_window(int id) {
         auto b = c->real_bounds;
         b.shrink(resize_edge_size());
         auto cid = *datum<int>(c, "cid");
+        // no resizing when snapped (for now)
+        if (auto container = get_cid_container(cid)) {
+            if (*datum<bool>(container, "snapped")) {
+                return false;
+            }
+        }
         float rounding = hypriso->get_rounding(cid);
        
         if (bounds_contains(c->real_bounds, x, y)) {

@@ -207,6 +207,7 @@ struct HyprIso {
 
     std::function<void(int id)> on_drag_start_requested = nullptr;
     std::function<void(int id, RESIZE_TYPE type)> on_resize_start_requested = nullptr;
+    std::function<void()> on_drag_or_resize_cancel_requested = nullptr;
 
     std::function<void()> on_config_reload = nullptr;
     void reload();

@@ -246,7 +246,8 @@ Bounds snap_position_to_bounds(int mon, SnapPosition pos) {
     Bounds out = {x, y, w, h};
 
     if (pos == SnapPosition::MAX) {
-        return {x, y, w + 2, h};
+        return {x, y, w, h};
+        //return {x, y, w + 2, h};
     } else if (pos == SnapPosition::LEFT) {
         return {x, y, w * .5, h};
     } else if (pos == SnapPosition::RIGHT) {
@@ -298,7 +299,7 @@ static void on_window_open(int id) {
             auto cid = *datum<int>(c, "cid"); 
             
             if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
-                if (*datum<bool>(c, "snapped")) {
+                if (*datum<bool>(c, "snapped") && (*datum<int>(c, "snap_type") != (int) SnapPosition::MAX)) {
                     renderfix
                     border(c->real_bounds, {.5, .5, .5, .8}, 1);
                 }
@@ -518,6 +519,16 @@ static void on_resize_start_requested(int id, RESIZE_TYPE type) {
     resizing::begin(id, (int) type);
 }
 
+static void on_drag_or_resize_cancel_requested() {
+    if (drag::dragging()) {
+        drag::end(drag::drag_window());
+    }
+    if (resizing::resizing()) {
+        resizing::end(resizing::resizing_window());
+    }
+}
+
+
 static void on_config_reload() {
 
 }
@@ -550,6 +561,7 @@ void second::begin() {
     hypriso->on_monitor_closed = on_monitor_closed;
     hypriso->on_drag_start_requested = on_drag_start_requested;
     hypriso->on_resize_start_requested = on_resize_start_requested;
+    hypriso->on_drag_or_resize_cancel_requested = on_drag_or_resize_cancel_requested;
     hypriso->on_config_reload = on_config_reload;
     hypriso->on_activated = on_activated;
 

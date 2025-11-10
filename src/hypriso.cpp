@@ -48,10 +48,10 @@
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/managers/KeybindManager.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
+#include <hyprland/src/xwayland/XWM.hpp>
 #undef private
 
 #include <hyprland/src/xwayland/XWayland.hpp>
-#include <hyprland/src/xwayland/XWM.hpp>
 
 #include <hyprland/src/config/ConfigManager.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
@@ -273,7 +273,7 @@ void on_open_window(PHLWINDOW w) {
             auto resource = toplevel->m_resource;
             if (resource) {
                 resource->setMove([](CXdgToplevel*, wl_resource*, uint32_t) {
-                    //notify("move requested");
+                    notify("move requested");
                     if (hypriso->on_drag_start_requested) {
                         if (auto w = get_window_from_mouse()) {
                             for (auto hw : hyprwindows) {
@@ -650,18 +650,137 @@ void detect_csd_request_change() {
 
 }
 
-void detect_move_resize_requests() {
-   /*if (auto surface = PWINDOW->m_xdgSurface) {
-        if (auto toplevel = surface->m_toplevel.lock()) {
-            auto resource = *toplevel.*result<r_data_tag>::ptr;
-            if (resource) {
-            //HyprlandAPI::createFunctionHook(stable_hypr::APIHANDLE, resource->requests.move, dest);
-            resource->setMove(on_move_requsted);
-            resource->setResize(on_resize_requested);
+
+#define _NET_WM_MOVERESIZE_SIZE_TOPLEFT     0
+#define _NET_WM_MOVERESIZE_SIZE_TOP         1
+#define _NET_WM_MOVERESIZE_SIZE_TOPRIGHT    2
+#define _NET_WM_MOVERESIZE_SIZE_RIGHT       3
+#define _NET_WM_MOVERESIZE_SIZE_BOTTOMRIGHT 4
+#define _NET_WM_MOVERESIZE_SIZE_BOTTOM      5
+#define _NET_WM_MOVERESIZE_SIZE_BOTTOMLEFT  6
+#define _NET_WM_MOVERESIZE_SIZE_LEFT        7
+#define _NET_WM_MOVERESIZE_MOVE             8  /* movement only */
+#define _NET_WM_MOVERESIZE_SIZE_KEYBOARD    9  /* size via keyboard */
+#define _NET_WM_MOVERESIZE_MOVE_KEYBOARD    10 /* move via keyboard */
+#define _NET_WM_MOVERESIZE_CANCEL           11 /* cancel operation */
+
+std::string get_atom_name(xcb_connection_t* conn, xcb_atom_t atom) {
+    if (atom == XCB_ATOM_NONE)
+        return "XCB_ATOM_NONE";
+
+    xcb_get_atom_name_cookie_t cookie = xcb_get_atom_name(conn, atom);
+    xcb_get_atom_name_reply_t* reply  = xcb_get_atom_name_reply(conn, cookie, nullptr);
+    if (!reply)
+        return "(failed to get atom)";
+
+    std::string name(xcb_get_atom_name_name(reply), xcb_get_atom_name_name_length(reply));
+    free(reply);
+    return name;
+}
+
+PHLWINDOW winref_from_x11(xcb_window_t window) {
+    for (auto w : g_pCompositor->m_windows) {
+        if (w->m_isX11 && w->m_xwaylandSurface->m_xID == window) {
+            return w;
+        }
+    }
+    return nullptr;
+}
+
+void resizing_start(RESIZE_TYPE type, PHLWINDOW w, Vector2D mouse) {
+    if (hypriso->on_resize_start_requested) {
+        for (auto hw : hyprwindows) {
+            if (hw->w == w) {
+                hypriso->on_resize_start_requested(hw->id, type);
+                return;                
             }
         }
-   }*/
-  
+    }
+}
+
+inline CFunctionHook* g_pOnClientMessageHook = nullptr;
+typedef void (*origOnClientMessage)(void*, xcb_client_message_event_t* e);
+void hook_onClientMessage(void* thisptr, xcb_client_message_event_t* e) {
+    (*(origOnClientMessage)g_pOnClientMessageHook->m_original)(thisptr, e);
+    auto spe = (CXWM*)thisptr;
+
+    xcb_connection_t* conn = spe->getConnection(); // calls the private getConnection()
+    if (conn && e->type != HYPRATOMS["WM_PROTOCOLS"]) {
+        //auto name = get_atom_name(conn, e->type);
+        if (e->type == HYPRATOMS["_NET_WM_MOVERESIZE"]) {
+            auto direction = e->data.data32[2];
+            //n(f("move resize: {}", direction));
+            if (auto w = winref_from_x11(e->window)) {
+                auto mouse = g_pInputManager->getMouseCoordsInternal();
+                if (direction == _NET_WM_MOVERESIZE_SIZE_TOPLEFT) {
+                    resizing_start(RESIZE_TYPE::TOP_LEFT, w, mouse);
+                } else if (direction == _NET_WM_MOVERESIZE_SIZE_TOP) {
+                    resizing_start(RESIZE_TYPE::TOP, w, mouse);
+                } else if (direction == _NET_WM_MOVERESIZE_SIZE_TOPRIGHT) {
+                    resizing_start(RESIZE_TYPE::TOP_RIGHT, w, mouse);
+                } else if (direction == _NET_WM_MOVERESIZE_SIZE_RIGHT) {
+                    resizing_start(RESIZE_TYPE::RIGHT, w, mouse);
+                } else if (direction == _NET_WM_MOVERESIZE_SIZE_BOTTOMRIGHT) {
+                    resizing_start(RESIZE_TYPE::BOTTOM_RIGHT, w, mouse);
+                } else if (direction == _NET_WM_MOVERESIZE_SIZE_BOTTOM) {
+                    resizing_start(RESIZE_TYPE::BOTTOM, w, mouse);
+                } else if (direction == _NET_WM_MOVERESIZE_SIZE_BOTTOMLEFT) {
+                    resizing_start(RESIZE_TYPE::BOTTOM_LEFT, w, mouse);
+                } else if (direction == _NET_WM_MOVERESIZE_SIZE_LEFT) {
+                    resizing_start(RESIZE_TYPE::LEFT, w, mouse);
+                } else if (direction == _NET_WM_MOVERESIZE_MOVE) {
+                    if (hypriso->on_drag_start_requested) {
+                        for (auto hw : hyprwindows) {
+                            if (hw->w == w) {
+                                hypriso->on_drag_start_requested(hw->id);
+                                break;
+                            }
+                        }
+                    }
+                } else if (_NET_WM_MOVERESIZE_CANCEL) {
+                    if (hypriso->on_drag_or_resize_cancel_requested) {
+                        hypriso->on_drag_or_resize_cancel_requested();
+                    }
+                }
+            }
+        } else if (e->type == HYPRATOMS["WM_CHANGE_STATE"]) { // visibility change
+            int type = e->data.data32[0];
+            if (auto w = winref_from_x11(e->window)) {
+                if (type == 3) { // iconify
+                    hypriso->set_hidden(w, true);
+                } else if (type == 1) { // show
+                    hypriso->set_hidden(w, false);
+                }
+            }
+        }
+
+        /*
+		if (get_atom_name(conn, e->type) == "WM_PROTOCOLS") {
+            xcb_atom_t protocol = e->data.data32[0]; // first element usually
+            xcb_get_atom_name_cookie_t proto_cookie = xcb_get_atom_name(conn, protocol);
+            xcb_get_atom_name_reply_t* proto_reply = xcb_get_atom_name_reply(conn, proto_cookie, nullptr);
+            if (proto_reply) {
+                int len = xcb_get_atom_name_name_length(proto_reply);
+                char* name = xcb_get_atom_name_name(proto_reply);
+                std::string proto_name(name, len);
+                //n(f("Protocol: {}", proto_name));
+                free(proto_reply);
+            }
+		}
+		*/
+    }
+}
+
+void detect_x11_move_resize_requests() {
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "handleClientMessage");
+        if (!METHODS.empty()) {
+            g_pOnClientMessageHook = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_onClientMessage);
+            g_pOnClientMessageHook->hook();
+        } else {
+            notify("Couldn't hook handleClientMessage");
+        }
+    }
 }
 
 inline CFunctionHook* g_pRenderWindowHook = nullptr;
@@ -1204,7 +1323,7 @@ void HyprIso::create_hooks() {
     fix_window_corner_rendering();
     disable_default_alt_tab_behaviour();
     detect_csd_request_change();
-    detect_move_resize_requests();    
+    detect_x11_move_resize_requests();    
     overwrite_min();
     hook_render_functions();
     interleave_floating_and_tiled_windows();

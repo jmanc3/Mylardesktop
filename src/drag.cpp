@@ -111,9 +111,12 @@ void drag::snap_window(int snap_mon, int cid, int pos) {
         // perform snap
         *snapped = true; 
         *datum<Bounds>(c, "pre_snap_bounds") = bounds_client(cid);
+        *datum<int>(c, "snap_type") = pos;
 
         auto p = snap_position_to_bounds(snap_mon, (SnapPosition) pos);
-        p.shrink(1);
+        if (pos != (int) SnapPosition::MAX) {
+            p.shrink(1 * scale(snap_mon));
+        }
         hypriso->move_resize(cid, p.x, p.y + titlebar_h, p.w, p.h - titlebar_h, false);
         hypriso->should_round(cid, false);
     }
