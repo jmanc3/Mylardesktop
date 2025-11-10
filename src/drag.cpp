@@ -14,7 +14,7 @@ struct DraggingData {
 DraggingData *data = nullptr;
 
 void drag::begin(int cid) {
-    //notify("begin");
+    //notify(fz("wants no decorations {}", hypriso->requested_client_side_decorations(cid)));
     data = new DraggingData;
     data->cid = cid;
     data->mouse_start = mouse();
@@ -117,7 +117,8 @@ void drag::snap_window(int snap_mon, int cid, int pos) {
         if (pos != (int) SnapPosition::MAX) {
             p.shrink(1 * scale(snap_mon));
         }
-        hypriso->move_resize(cid, p.x, p.y + titlebar_h, p.w, p.h - titlebar_h, false);
+        float scalar = hypriso->has_decorations(cid); // if it has a titlebar
+        hypriso->move_resize(cid, p.x, p.y + titlebar_h * scalar, p.w, p.h - titlebar_h * scalar, false);
         hypriso->should_round(cid, false);
     }
     hypriso->damage_entire(snap_mon);

@@ -393,11 +393,13 @@ void titlebar::on_window_open(int id) {
 #endif
      if (hypriso->wants_titlebar(id)) {
         hypriso->reserve_titlebar(id, titlebar_h);
-
+        
         if (auto c = get_cid_container(id)) {
             create_titlebar(actual_root, c);
             *datum<float>(c, "titlebar_alpha") = 1.0;
         }
+    } else {
+        hypriso->set_corner_rendering_mask_for_window(id, 0);
     }
 }
 

@@ -264,16 +264,109 @@ static void float_target(PHLWINDOW PWINDOW) {
     return;
 }
 
+struct MotifHints {
+    uint32_t flags;
+    uint32_t functions;
+    uint32_t decorations;
+    int32_t  input_mode;
+    uint32_t status;
+};
+
+constexpr uint32_t MWM_HINTS_DECORATIONS = 1 << 1;
+
+/// Returns true if the window explicitly requests no decorations (titlebar/border).
+bool x11WindowWantsNoDecorations(xcb_connection_t* conn, xcb_window_t win) {
+    if (!conn || !win)
+        return false;
+
+    // Atom for _MOTIF_WM_HINTS
+    const char motifName[] = "_MOTIF_WM_HINTS";
+    xcb_intern_atom_cookie_t cookie = xcb_intern_atom(conn, 0,
+                                                      sizeof(motifName) - 1,
+                                                      motifName);
+    xcb_intern_atom_reply_t* reply = xcb_intern_atom_reply(conn, cookie, nullptr);
+    if (!reply)
+        return false;
+
+    xcb_atom_t motifAtom = reply->atom;
+    free(reply);
+
+    // Get the window property
+    xcb_get_property_cookie_t propCookie =
+        xcb_get_property(conn, 0, win, motifAtom,
+                         XCB_GET_PROPERTY_TYPE_ANY, 0, 5);
+
+    xcb_get_property_reply_t* propReply =
+        xcb_get_property_reply(conn, propCookie, nullptr);
+
+    if (!propReply || xcb_get_property_value_length(propReply) < sizeof(MotifHints)) {
+        free(propReply);
+        return false;
+    }
+
+    MotifHints hints{};
+    memcpy(&hints, xcb_get_property_value(propReply), sizeof(hints));
+    free(propReply);
+
+    // The client requests no decorations if:
+    //  - The "decorations" field is specified
+    //  - The decorations value is 0
+    if (hints.flags & MWM_HINTS_DECORATIONS) {
+        return hints.decorations == 0;
+    }
+
+    return false;
+}
+
+bool HyprIso::requested_client_side_decorations(int cid) {
+    for (auto hw : hyprwindows) {
+        if (hw->id != cid)
+            continue;
+        auto w = hw->w;
+        /*
+        for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
+            if (w->m_xdgSurface && s->m_surf == w->m_xdgSurface) {
+                //notify(std::to_string((int) s->m_mostRecentlyRequested));
+                if (s->m_mostRecentlyRequested == ORG_KDE_KWIN_SERVER_DECORATION_MODE_CLIENT) {
+                    notify("1");
+                    return true;
+                }
+            }
+        }
+        for (const auto &[a, b] : NProtocols::xdgDecoration->m_decorations) {
+            if (w->m_xdgSurface && w->m_xdgSurface->m_toplevel && w->m_xdgSurface->m_toplevel->m_resource && b->m_resource == w->m_xdgSurface->m_toplevel->m_resource) {
+                if (b->mostRecentlyRequested == ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE) {
+                    return true;
+                    notify("2");
+                    
+                }
+            }
+        }*/
+
+        if (w->m_isX11 && w->m_xwaylandSurface) {
+            auto win = w->m_xwaylandSurface->m_xID;
+            if (g_pXWayland && g_pXWayland->m_wm) {
+                auto connection = g_pXWayland->m_wm->getConnection();
+                
+                if (x11WindowWantsNoDecorations(connection, win)) {
+                    return true;
+                }
+            }
+        }
+    }
+    
+    return false;
+}
+
 void on_open_window(PHLWINDOW w) {
     for (auto m : g_pCompositor->m_monitors) {
         on_open_monitor(m);
     }
-   if (auto surface = w->m_xdgSurface) {
+    if (auto surface = w->m_xdgSurface) {
         if (auto toplevel = surface->m_toplevel.lock()) {
             auto resource = toplevel->m_resource;
             if (resource) {
                 resource->setMove([](CXdgToplevel*, wl_resource*, uint32_t) {
-                    notify("move requested");
                     if (hypriso->on_drag_start_requested) {
                         if (auto w = get_window_from_mouse()) {
                             for (auto hw : hyprwindows) {
@@ -311,7 +404,7 @@ void on_open_window(PHLWINDOW w) {
                                         type = RESIZE_TYPE::BOTTOM_RIGHT;
                                     }
                                     int id = 0;
-                                    for (auto hw : hyprwindows) 
+                                    for (auto hw : hyprwindows)
                                         if (hw->w == w)
                                             id = hw->id;
                                     hypriso->on_resize_start_requested(id, type);
@@ -322,33 +415,8 @@ void on_open_window(PHLWINDOW w) {
                 });
             }
         }
-   }
-    
-    // Validate that we care about the window
-    //if (w->m_X11DoesntWantBorders)
-        //return;
-
-    /*
-    for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
-        if (w->m_xdgSurface && s->m_surf == w->m_xdgSurface) {
-            notify(std::to_string((int) s->m_mostRecentlyRequested));
-            if (s->m_mostRecentlyRequested == ORG_KDE_KWIN_SERVER_DECORATION_MODE_CLIENT) {
-               return;
-            }
-        }
     }
 
-    for (const auto &[a, b] : NProtocols::xdgDecoration->m_decorations) {
-        if (w->m_xdgSurface && w->m_xdgSurface->m_toplevel && w->m_xdgSurface->m_toplevel->m_resource && b->m_resource == w->m_xdgSurface->m_toplevel->m_resource) {
-            if (b->mostRecentlyRequested == ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE) {
-                return;
-            }
-        }
-    }
-    */
-
-    // Or csd client side requested
-    
     auto hw = new HyprWindow;
     hw->id = unique_id++;
     hw->w = w;
@@ -1534,15 +1602,17 @@ bool HyprIso::wants_titlebar(int id) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    
-   for (auto hyprwindow : hyprwindows) {
+    for (auto hyprwindow : hyprwindows) {
         if (hyprwindow->id == id) {
             if (hyprwindow->w->m_X11DoesntWantBorders) {
                 return false;
             }
         }
-   }
-      
+    }
+    
+    if (requested_client_side_decorations(id))
+        return false;  
+
     return true;
 }
 
