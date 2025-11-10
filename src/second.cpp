@@ -663,6 +663,7 @@ void second::layout_containers() {
         }
         if (c->custom_type == (int) TYPE::CLIENT_RESIZE) {
             auto id = *datum<int>(c, "cid");
+            c->exists = hypriso->is_mapped(id) && !hypriso->is_hidden(id);
             for (int i = actual_root->children.size() - 1; i >= 0; i--) {
                 auto child = actual_root->children[i];
                 auto cid = *datum<int>(child, "cid");
