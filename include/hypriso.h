@@ -235,6 +235,8 @@ struct HyprIso {
 
     void send_key(uint32_t key);
 
+    bool being_animated(int cid);
+
     Bounds floating_offset(int id);
     Bounds workspace_offset(int id);
 

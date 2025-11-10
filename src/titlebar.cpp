@@ -291,7 +291,12 @@ void create_titlebar(Container *root, Container *parent) {
             if (!hypriso->has_focus(cid))
                 titlebar_color = color_titlebar_unfocused();
             titlebar_color.a *= a;
-            rect(c->real_bounds, titlebar_color, 12, hypriso->get_rounding(cid), 2.0f);
+
+            auto bounds = c->real_bounds;
+            bool being_animated = hypriso->being_animated(cid);
+            if (being_animated || (drag::dragging() && drag::drag_window() == cid))
+                bounds.h += 1 * s;
+            rect(bounds, titlebar_color, 12, hypriso->get_rounding(cid), 2.0f);
         }
     };
     titlebar_parent->receive_events_even_if_obstructed_by_one = true;

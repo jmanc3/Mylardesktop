@@ -4676,4 +4676,11 @@ Bounds bounds_reserved_monitor(int id) {
     return {0, 0, 0, 0};
 }
 
-
+bool HyprIso::being_animated(int cid) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == cid) {
+            return hw->w->m_realPosition->isBeingAnimated() || hw->w->m_realSize->isBeingAnimated() ;
+        }
+    }
+    return false;
+}
