@@ -707,6 +707,22 @@ void second::layout_containers() {
     }
 }
 
+bool double_clicked(Container *c, std::string needle) {
+    long *data = get_data<long>(c->uuid, needle);
+    if (!data) {
+        data = datum<long>(c, needle);
+        *data = 0;
+    }
+    long current = get_current_time_in_ms();
+    long last_time = *data;
+    if (current - last_time < 500) {
+        *data = current + 200; // block next double click for 700 ms
+        return true; 
+    }
+    *data = current;
+    return false;
+}
+
 #include <fstream>
 #include <string>
 #include <mutex>

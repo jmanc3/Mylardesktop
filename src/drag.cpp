@@ -105,6 +105,14 @@ void drag::snap_window(int snap_mon, int cid, int pos) {
         // perform unsnap
         *snapped = false; 
         auto p = *datum<Bounds>(c, "pre_snap_bounds");
+        auto mon = get_monitor(cid);
+        auto bounds = bounds_reserved_monitor(mon);
+        p.x = bounds.x + bounds.w * .5 - p.w * .5; 
+        if (p.x < bounds.x)
+            p.x = bounds.x;
+        p.y = bounds.y + bounds.h * .5 - p.h * .5; 
+        if (p.y < bounds.y)
+            p.y = bounds.y;
         hypriso->move_resize(cid, p.x, p.y, p.w, p.h);
         hypriso->should_round(cid, true);
     } else {

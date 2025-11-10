@@ -315,7 +315,24 @@ void create_titlebar(Container *root, Container *parent) {
         hypriso->bring_to_front(cid);        
     };
     titlebar->when_mouse_up = consume_event;
-    titlebar->when_clicked = titlebar->when_mouse_down;
+    titlebar->minimum_x_distance_to_move_before_drag_begins = 3;
+    titlebar->minimum_y_distance_to_move_before_drag_begins = 3;
+    titlebar->when_clicked = paint {
+       c->when_mouse_down(root, c);
+       if (double_clicked(c, "max")) {
+           auto client = first_above_of(c, TYPE::CLIENT);
+           auto cid = *datum<int>(client, "cid");
+           // todo should actually transition from non max snap, to max and then unsnap?
+           if (*datum<bool>(client, "snapped")) {
+               drag::snap_window(get_monitor(cid), cid, (int) SnapPosition::NONE);
+               notify("unsnap");
+           } else {
+               drag::snap_window(get_monitor(cid), cid, (int) SnapPosition::MAX);
+               notify("snap");
+           }
+       }
+    };
+    titlebar->when_drag_end_is_click = false;
     titlebar->when_drag_start = paint {
         //notify("title drag start");
         auto client = first_above_of(c, TYPE::CLIENT);

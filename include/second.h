@@ -294,6 +294,7 @@ Container *get_rendering_root();
 SnapPosition opposite_snap_position(SnapPosition pos);
 Bounds snap_position_to_bounds(int mon, SnapPosition pos);
 SnapPosition mouse_to_snap_position(int mon, int x, int y);
+bool double_clicked(Container *c, std::string needle);
 
 namespace second {    
     void begin();
