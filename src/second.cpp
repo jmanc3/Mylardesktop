@@ -285,7 +285,6 @@ SnapPosition opposite_snap_position(SnapPosition pos) {
     return pos;
 }
 
-
 static void on_window_open(int id) {    
     // We make the client on the first monitor we fine, because we move the container later based on actual monitor location
     {
@@ -302,7 +301,9 @@ static void on_window_open(int id) {
                 return;
             if (!(drag::dragging() && cid == drag::drag_window()))
                 return;
-            
+            if (current_rendering_monitor() != get_monitor(cid))
+                return;
+
             renderfix
 
             auto m = mouse();

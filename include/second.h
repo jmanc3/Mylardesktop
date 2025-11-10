@@ -237,8 +237,10 @@ static Container *get_cid_container(int id) {
     ZoneScoped;
 #endif
     for (auto child : actual_root->children) {
-        if (*datum<int>(child, "cid") == id && child->custom_type == (int) TYPE::CLIENT) {
-            return child;
+        if (child->custom_type == (int) TYPE::CLIENT) {
+            if (*datum<int>(child, "cid") == id) {
+                return child;
+            }
         }
     }
     return nullptr;
@@ -288,6 +290,10 @@ static void render_fix(Container *root, Container *c) {
 void log(const std::string& msg);
 
 Container *get_rendering_root();
+
+SnapPosition opposite_snap_position(SnapPosition pos);
+Bounds snap_position_to_bounds(int mon, SnapPosition pos);
+SnapPosition mouse_to_snap_position(int mon, int x, int y);
 
 namespace second {    
     void begin();

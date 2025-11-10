@@ -363,9 +363,14 @@ void create_titlebar(Container *root, Container *parent) {
     max->when_clicked = paint {
         auto client = first_above_of(c, TYPE::CLIENT);
         assert(client);
-        auto snapped = datum<bool>(client, "snapped");
-        *snapped = !*snapped;
         int cid = *datum<int>(client, "cid");
+        auto snapped = *datum<bool>(client, "snapped");
+        auto rid = get_monitor(cid);
+        if (snapped) {
+            drag::snap_window(rid, cid, (int) SnapPosition::NONE);
+        } else {
+            drag::snap_window(rid, cid, (int) SnapPosition::MAX);
+        }
         hypriso->bring_to_front(cid);
     };
     auto close = titlebar_parent->child(FILL_SPACE, FILL_SPACE);

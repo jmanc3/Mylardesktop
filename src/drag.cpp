@@ -18,7 +18,53 @@ void drag::begin(int cid) {
     data = new DraggingData;
     data->cid = cid;
     data->mouse_start = mouse();
-    data->bounds_start = bounds_client(cid);
+    defer(data->bounds_start = bounds_client(cid));
+    auto c = get_cid_container(cid);
+    auto client_snapped = *datum<bool>(c, "snapped");
+    
+    if (client_snapped) {
+        drag::snap_window(0, cid, (int) SnapPosition::NONE);
+
+
+        /*
+        auto b = data->bounds_start;
+        auto MOUSECOORDS = data->mouse_start;
+        auto mb = bounds_monitor(get_monitor(cid));
+        auto client_pre_snap_bounds = *datum<Bounds>(c, "pre_snap_bounds");
+        
+        float perc = (MOUSECOORDS.x - b.x) / b.w;
+        bool window_left_side = b.x < mb.x + b.w * .5;
+        bool click_left_side = perc <= .5;
+        float size_from_left = b.w * perc;
+        float size_from_right = b.w - size_from_left;
+        bool window_smaller_after = b.w > client_pre_snap_bounds.w;
+        float x = MOUSECOORDS.x - (perc * (client_pre_snap_bounds.w)); // perc based relocation
+        // keep window fully on screen
+        if (!window_smaller_after) {
+            if (click_left_side) {
+                if (window_left_side) {
+                    x = MOUSECOORDS.x - size_from_left;
+                } else {
+                    x = MOUSECOORDS.x - client_pre_snap_bounds.w + size_from_right;
+                }
+            } else {
+                if (window_left_side) {
+                    x = b.x;
+                } else {
+                    x = MOUSECOORDS.x - client_pre_snap_bounds.w + size_from_right;
+                }
+            }
+        } else {
+            // if offset larger than resulting window use percentage
+        }
+
+        hypriso->move_resize(cid, 
+            x, 
+            b.y, 
+            client_pre_snap_bounds.w, 
+            client_pre_snap_bounds.h);
+        */
+    }
 }
 
 void drag::motion(int cid) {
@@ -34,10 +80,44 @@ void drag::motion(int cid) {
     hypriso->damage_entire(get_monitor(cid));
 }
 
+void drag::snap_window(int snap_mon, int cid, int pos) {
+    if (snap_mon == -1)
+        return;
+    auto c = get_cid_container(cid);
+    if (!c) return;
+
+    auto snapped = datum<bool>(c, "snapped");
+    
+    if (!(*snapped) && pos == (int) SnapPosition::NONE) // no need to unsnap
+        return;
+
+    if (*snapped) {
+        // perform unsnap
+        *snapped = false; 
+        auto p = *datum<Bounds>(c, "pre_snap_bounds");
+        hypriso->move_resize(cid, p.x, p.y, p.w, p.h);
+        hypriso->should_round(cid, true);
+    } else {
+        // perform snap
+        *snapped = true; 
+        *datum<Bounds>(c, "pre_snap_bounds") = bounds_client(cid);
+
+        auto p = snap_position_to_bounds(snap_mon, (SnapPosition) pos);
+        hypriso->move_resize(cid, p.x, p.y + titlebar_h, p.w, p.h - titlebar_h);
+        hypriso->should_round(cid, false);
+    }
+    hypriso->damage_entire(snap_mon);
+}
+
 void drag::end(int cid) {
     //notify("end");
     delete data;
     data = nullptr;
+
+    int mon = hypriso->monitor_from_cursor();
+    auto m = mouse();
+    auto pos = mouse_to_snap_position(mon, m.x, m.y);
+    snap_window(mon, cid, (int) pos);
 }
 
 bool drag::dragging() {
