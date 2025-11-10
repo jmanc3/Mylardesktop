@@ -296,6 +296,13 @@ static void on_window_open(int id) {
             if (!root) return;
             auto [rid, s, stage, active_id] = roots_info(actual_root, root);
             auto cid = *datum<int>(c, "cid"); 
+            
+            if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
+                if (*datum<bool>(c, "snapped")) {
+                    renderfix
+                    border(c->real_bounds, {.5, .5, .5, .8}, 1);
+                }
+            }
 
             if (!(active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW))
                 return;

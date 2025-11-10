@@ -18,12 +18,22 @@ void drag::begin(int cid) {
     data = new DraggingData;
     data->cid = cid;
     data->mouse_start = mouse();
-    defer(data->bounds_start = bounds_client(cid));
     auto c = get_cid_container(cid);
     auto client_snapped = *datum<bool>(c, "snapped");
-    
     if (client_snapped) {
+        data->bounds_start = bounds_client(cid);
+        
         drag::snap_window(0, cid, (int) SnapPosition::NONE);
+        
+        auto client_pre_snap_bounds = *datum<Bounds>(c, "pre_snap_bounds");
+        data->bounds_start.w = client_pre_snap_bounds.w;
+        data->bounds_start.h = client_pre_snap_bounds.h;
+    } else {
+        data->bounds_start = bounds_client(cid);
+    }
+
+    if (client_snapped) {
+        //drag::snap_window(0, cid, (int) SnapPosition::NONE);
 
 
         /*
@@ -103,6 +113,7 @@ void drag::snap_window(int snap_mon, int cid, int pos) {
         *datum<Bounds>(c, "pre_snap_bounds") = bounds_client(cid);
 
         auto p = snap_position_to_bounds(snap_mon, (SnapPosition) pos);
+        p.shrink(1);
         hypriso->move_resize(cid, p.x, p.y + titlebar_h, p.w, p.h - titlebar_h, false);
         hypriso->should_round(cid, false);
     }
