@@ -195,18 +195,125 @@ static bool on_key_press(int id, int key, int state, bool update_mods) {
     return false;
 }
 
+SnapPosition mouse_to_snap_position(int mon, int x, int y) {
+    Bounds pos = bounds_reserved_monitor(mon);
+
+    const float edgeThresh = 20.0;
+    const float sideThreshX = pos.w * 0.05f;
+    const float sideThreshY = pos.h * 0.05f;
+    const float rightEdge = pos.x + pos.w;
+    const float bottomEdge = pos.y + pos.h;
+    bool on_top_edge = y < pos.y + edgeThresh;
+    bool on_bottom_edge = y > bottomEdge - edgeThresh;
+    bool on_left_edge = x < pos.x + edgeThresh;
+    bool on_right_edge = x > rightEdge - edgeThresh;
+    bool on_left_side = x < pos.x + sideThreshX;
+    bool on_right_side = x > rightEdge - sideThreshX;
+    bool on_top_side = y < pos.y + sideThreshY;
+    bool on_bottom_side = y > bottomEdge - sideThreshY;
+
+    if ((on_top_edge && on_left_side) || (on_left_edge && on_top_side)) {
+        return SnapPosition::TOP_LEFT;
+    } else if ((on_top_edge && on_right_side) || (on_right_edge && on_top_side)) {
+        return SnapPosition::TOP_RIGHT;
+    } else if ((on_bottom_edge && on_left_side) || (on_left_edge && on_bottom_side)) {
+        return SnapPosition::BOTTOM_LEFT;
+    } else if ((on_bottom_edge && on_right_side) || (on_right_edge && on_bottom_side)) {
+        return SnapPosition::BOTTOM_RIGHT;
+    } else if (on_top_edge) {
+        return SnapPosition::MAX;
+    } else if (on_left_edge) {
+        return SnapPosition::LEFT;
+    } else if (on_right_edge) {
+        return SnapPosition::RIGHT;
+    } else if (on_bottom_edge) {
+        return SnapPosition::MAX;
+    } else {
+        return SnapPosition::NONE;
+    }
+
+    return SnapPosition::NONE;
+}
+
+Bounds snap_position_to_bounds(int mon, SnapPosition pos) {
+    Bounds screen = bounds_reserved_monitor(mon);
+
+    float x = screen.x;
+    float y = screen.y;
+    float w = screen.w;
+    float h = screen.h;
+
+    Bounds out = {x, y, w, h};
+
+    if (pos == SnapPosition::MAX) {
+        return {x, y, w + 2, h};
+    } else if (pos == SnapPosition::LEFT) {
+        return {x, y, w * .5, h};
+    } else if (pos == SnapPosition::RIGHT) {
+        return {x + w * .5, y, w * .5, h};
+    } else if (pos == SnapPosition::TOP_LEFT) {
+        return {x, y, w * .5, h * .5};
+    } else if (pos == SnapPosition::TOP_RIGHT) {
+        return {x + w * .5, y, w * .5, h * .5};
+    } else if (pos == SnapPosition::BOTTOM_LEFT) {
+        return {x, y + h * .5, w * .5, h * .5};
+    } else if (pos == SnapPosition::BOTTOM_RIGHT) {
+        return {x + w * .5, y + h * .5, w * .5, h * .5};
+    }
+
+    return out;
+}
+
+SnapPosition opposite_snap_position(SnapPosition pos) {
+    if (pos == SnapPosition::NONE) {
+        return SnapPosition::MAX;
+    } else if (pos == SnapPosition::MAX) {
+        return SnapPosition::NONE;
+    } else if (pos == SnapPosition::LEFT) {
+        return SnapPosition::RIGHT;
+    } else if (pos == SnapPosition::RIGHT) {
+        return SnapPosition::LEFT;
+    } else if (pos == SnapPosition::TOP_LEFT) {
+        return SnapPosition::BOTTOM_LEFT;
+    } else if (pos == SnapPosition::TOP_RIGHT) {
+        return SnapPosition::BOTTOM_RIGHT;
+    } else if (pos == SnapPosition::BOTTOM_LEFT) {
+        return SnapPosition::TOP_LEFT;
+    } else if (pos == SnapPosition::BOTTOM_RIGHT) {
+        return SnapPosition::TOP_RIGHT;
+    }
+    return pos;
+}
+
+
 static void on_window_open(int id) {    
     // We make the client on the first monitor we fine, because we move the container later based on actual monitor location
     {
         auto m = actual_root; 
         auto c = m->child(FILL_SPACE, FILL_SPACE);
         c->custom_type = (int) TYPE::CLIENT;
-        c->when_paint = paint {
-            auto [rid, s, stage, active_id] = from_root(root);
-            auto cid = *datum<int>(c, "cid");
-            //nz(fz("{} {} {} {} {}", rid, s, stage, active_id, cid));
-            if (cid == active_id && stage == (int) STAGE::RENDER_PRE_WINDOW) {
-                //border(c->real_bounds, {1, 0, 1, 1}, 5);
+        c->when_paint = [](Container *actual_root, Container *c) {
+            auto root = get_rendering_root();
+            if (!root) return;
+            auto [rid, s, stage, active_id] = roots_info(actual_root, root);
+            auto cid = *datum<int>(c, "cid"); 
+
+            if (!(active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW))
+                return;
+            if (!(drag::dragging() && cid == drag::drag_window()))
+                return;
+            
+            renderfix
+
+            auto m = mouse();
+            SnapPosition pos = mouse_to_snap_position(rid, m.x, m.y);
+            if (pos != SnapPosition::NONE) {
+                Bounds b = snap_position_to_bounds(rid, pos); 
+                b.shrink(10);
+                b.x -= root->real_bounds.x;
+                b.y -= root->real_bounds.y;
+                b.scale(s);
+                rect(b, {1, 1, 1, .3}, 0, 0, 2.0f, false, 0.0);
             }
         };
         
