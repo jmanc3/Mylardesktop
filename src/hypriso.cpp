@@ -62,6 +62,7 @@
 #include <hyprland/src/managers/HookSystemManager.hpp>
 #include <hyprland/src/managers/PointerManager.hpp>
 #include <hyprland/src/managers/LayoutManager.hpp>
+#include <hyprland/src/managers/cursor/CursorShapeOverrideController.hpp>
 #include <hyprland/src/SharedDefs.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
@@ -1178,9 +1179,7 @@ void on_layer_close(PHLLS l) {
 void HyprIso::create_callbacks() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
-#endif
-    detect_csd_request_change();
-    
+#endif    
     for (auto m : g_pCompositor->m_monitors) {
         on_open_monitor(m);
     }
@@ -1465,12 +1464,13 @@ void HyprIso::create_hooks() {
     ZoneScoped;
 #endif
     //return;
+    detect_csd_request_change();
     fix_window_corner_rendering();
     disable_default_alt_tab_behaviour();
     detect_x11_move_resize_requests();    
     overwrite_min();
     hook_render_functions();
-    interleave_floating_and_tiled_windows();
+    //interleave_floating_and_tiled_windows();
     hook_dock_change();
     hook_monitor_arrange();
 }
@@ -2385,7 +2385,9 @@ void setCursorImageUntilUnset(std::string cursor) {
         return; 
     }
     hypriso->last_cursor_set = cursor;
-    g_pInputManager->setCursorImageUntilUnset(cursor);
+    // pre 52
+    //g_pInputManager->setCursorImageUntilUnset(cursor);
+    Cursor::overrideController->setOverride(cursor, Cursor::CURSOR_OVERRIDE_SPECIAL_ACTION);
 }
 
 void unsetCursorImage() {
@@ -2395,7 +2397,9 @@ void unsetCursorImage() {
     if (hypriso->last_cursor_set == "none")
         return;
     hypriso->last_cursor_set = "none";
-    g_pInputManager->unsetCursorImage();
+    Cursor::overrideController->unsetOverride(Cursor::CURSOR_OVERRIDE_SPECIAL_ACTION);
+    // pre 52
+    //g_pInputManager->unsetCursorImage();
 }
 
 int get_monitor(int client) {
@@ -3619,8 +3623,8 @@ void HyprIso::move_to_workspace(int id, int workspace) {
     if (!PWINDOW.get())
         return;        
     std::string args = std::to_string(workspace);
-    
-    const auto& [WORKSPACEID, workspaceName] = getWorkspaceIDNameFromString(args);
+
+    const auto& [WORKSPACEID, workspaceName, isAuto] = getWorkspaceIDNameFromString(args);
     if (WORKSPACEID == WORKSPACE_INVALID) {
         Debug::log(LOG, "Invalid workspace in moveActiveToWorkspace");
         return;
@@ -3920,6 +3924,7 @@ PHLWINDOW vectorToWindowUnified(const Vector2D& pos, uint8_t properties, PHLWIND
 
 
 void mouseMoveUnified(uint32_t time, bool refocus, bool mouse, std::optional<Vector2D> overridePos) {
+    assert(false && "Update to latest version 52");
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
@@ -4234,10 +4239,10 @@ void mouseMoveUnified(uint32_t time, bool refocus, bool mouse, std::optional<Vec
             }
 
             // TODO: maybe wrap?
-            if (g_pInputManager->m_clickBehavior == CLICKMODE_KILL)
-                g_pInputManager->setCursorImageOverride("crosshair");
-            else
-                g_pInputManager->setCursorImageOverride("left_ptr");
+            //if (g_pInputManager->m_clickBehavior == CLICKMODE_KILL)
+                //g_pInputManager->setCursorImageOverride("crosshair");
+            //else
+                //g_pInputManager->setCursorImageOverride("left_ptr");
 
             g_pInputManager->m_emptyFocusCursorSet = true;
         }
@@ -4287,10 +4292,10 @@ void mouseMoveUnified(uint32_t time, bool refocus, bool mouse, std::optional<Vec
 
     if (pFoundWindow && foundSurface == pFoundWindow->m_wlSurface->resource() && !g_pInputManager->m_cursorImageOverridden) {
         const auto BOX = pFoundWindow->getWindowMainSurfaceBox();
-        if (VECNOTINRECT(mouseCoords, BOX.x, BOX.y, BOX.x + BOX.width, BOX.y + BOX.height))
-            g_pInputManager->setCursorImageOverride("left_ptr");
-        else
-            g_pInputManager->restoreCursorIconToApp();
+        //if (VECNOTINRECT(mouseCoords, BOX.x, BOX.y, BOX.x + BOX.width, BOX.y + BOX.height))
+            //g_pInputManager->setCursorImageOverride("left_ptr");
+        //else
+            //g_pInputManager->restoreCursorIconToApp();
     }
 
     if (pFoundWindow) {
