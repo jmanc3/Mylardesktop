@@ -115,7 +115,7 @@ void drag::snap_window(int snap_mon, int cid, int pos) {
 
         auto p = snap_position_to_bounds(snap_mon, (SnapPosition) pos);
         if (pos != (int) SnapPosition::MAX) {
-            p.shrink(1 * scale(snap_mon));
+            //p.shrink(1 * scale(snap_mon));
         }
         float scalar = hypriso->has_decorations(cid); // if it has a titlebar
         hypriso->move_resize(cid, p.x, p.y + titlebar_h * scalar, p.w, p.h - titlebar_h * scalar, false);

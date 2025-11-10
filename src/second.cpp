@@ -301,7 +301,9 @@ static void on_window_open(int id) {
             if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
                 if (*datum<bool>(c, "snapped") && (*datum<int>(c, "snap_type") != (int) SnapPosition::MAX)) {
                     renderfix
-                    border(c->real_bounds, {.5, .5, .5, .8}, 1);
+                    auto b = c->real_bounds;
+                    b.shrink(1);
+                    border(b, {.5, .5, .5, .8}, 1);
                 }
             }
 
