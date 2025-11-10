@@ -28,7 +28,7 @@
 std::unordered_map<std::string, Datas> datas;
 
 std::vector<Container *> actual_monitors; // actually just root of all
-Container *actual_root = new Container; 
+Container *actual_root = new Container;
 
 static void any_container_closed(Container *c) {
     remove_data(c->uuid); 
@@ -515,12 +515,16 @@ static void on_config_reload() {
 
 }
 
+static void create_actual_root() {
+    *datum<long>(actual_root, "drag_end_time") = 0;
+}
+
 void second::begin() {
 //#ifdef TRACY_ENABLE
     //tracy::StartupProfiler();
 //#endif
-    
     on_any_container_close = any_container_closed;
+    create_actual_root();
     
     hypriso->create_config_variables();
         

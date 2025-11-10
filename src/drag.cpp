@@ -103,10 +103,25 @@ void drag::snap_window(int snap_mon, int cid, int pos) {
         *datum<Bounds>(c, "pre_snap_bounds") = bounds_client(cid);
 
         auto p = snap_position_to_bounds(snap_mon, (SnapPosition) pos);
-        hypriso->move_resize(cid, p.x, p.y + titlebar_h, p.w, p.h - titlebar_h);
+        hypriso->move_resize(cid, p.x, p.y + titlebar_h, p.w, p.h - titlebar_h, false);
         hypriso->should_round(cid, false);
     }
     hypriso->damage_entire(snap_mon);
+
+    // This sends
+    later(new int(0), 10, [](Timer *t) {
+        t->keep_running = true;
+        int *times = (int *) t->data; 
+        *times = (*times) + 1;
+        if (*times > 20) {
+            t->keep_running = false;
+            delete (int *) t->data;
+        }
+        if (hypriso->on_mouse_move) {
+            auto m = mouse();
+            hypriso->on_mouse_move(0, m.x, m.y);
+        }
+    });
 }
 
 void drag::end(int cid) {
@@ -118,6 +133,7 @@ void drag::end(int cid) {
     auto m = mouse();
     auto pos = mouse_to_snap_position(mon, m.x, m.y);
     snap_window(mon, cid, (int) pos);
+    *datum<long>(actual_root, "drag_end_time") = get_current_time_in_ms();
 }
 
 bool drag::dragging() {

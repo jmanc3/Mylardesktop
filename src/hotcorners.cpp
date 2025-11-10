@@ -3,6 +3,8 @@
 
 #include "second.h"
 #include "alt_tab.h"
+#include "drag.h"
+#include "resizing.h"
 #include <linux/input-event-codes.h>
 
 void do_alt_tab() {
@@ -30,6 +32,7 @@ void do_overview() {
 void do_spotify_toggle() {
     static long last_time = 0;
     auto current = get_current_time_in_ms();
+    auto drag_end_time = *datum<long>(actual_root, "drag_end_time");
     if (current - last_time > 200) {
         // focus spotify
         bool found = false;
@@ -57,6 +60,12 @@ void do_spotify_toggle() {
 }
 
 void monitor_hotspot(Container *m, int x, int y) {
+    if (drag::dragging() || resizing::resizing())
+        return;
+    auto current = get_current_time_in_ms();
+    auto drag_end_time = *datum<long>(actual_root, "drag_end_time");
+    if (current - drag_end_time < 400)
+        return;        
     int x_off = x - m->real_bounds.x;
     float y_off = (y - m->real_bounds.y);
     if (x_off < 1) {
