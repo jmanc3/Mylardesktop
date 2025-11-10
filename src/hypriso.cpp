@@ -323,12 +323,15 @@ bool HyprIso::requested_client_side_decorations(int cid) {
         if (hw->id != cid)
             continue;
         auto w = hw->w;
-        /*
-        for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
+            //for (auto hw : hyprwindows) {
+        //for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
+            //if (s->m_surf == hw->w->m_xdgSurface) {
+ 
+        /*for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
             if (w->m_xdgSurface && s->m_surf == w->m_xdgSurface) {
                 //notify(std::to_string((int) s->m_mostRecentlyRequested));
                 if (s->m_mostRecentlyRequested == ORG_KDE_KWIN_SERVER_DECORATION_MODE_CLIENT) {
-                    notify("1");
+                    notify(fz("1 {}", class_name(hw->id)));
                     return true;
                 }
             }
@@ -338,10 +341,10 @@ bool HyprIso::requested_client_side_decorations(int cid) {
                 if (b->mostRecentlyRequested == ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE) {
                     return true;
                     notify("2");
-                    
                 }
             }
-        }*/
+        }
+        */
 
         if (w->m_isX11 && w->m_xwaylandSurface) {
             auto win = w->m_xwaylandSurface->m_xID;
@@ -519,6 +522,7 @@ void hook_OnReadProp(void* thisptr, SP<CXWaylandSurface> XSURF, uint32_t atom, x
  
     (*(origOnReadProp)g_pOnReadProp->m_original)(thisptr, XSURF, atom, reply);
 
+    /*
     const auto* value    = sc<const char*>(xcb_get_property_value(reply));
 
     auto handleMotifs = [&]() {
@@ -572,6 +576,7 @@ void hook_OnReadProp(void* thisptr, SP<CXWaylandSurface> XSURF, uint32_t atom, x
     };
     if (atom == HYPRATOMS["_MOTIF_WM_HINTS"])
         handleMotifs();
+    */
 }
 
 static wl_event_source *source = nullptr;
@@ -679,9 +684,65 @@ uint32_t hook_OnKDECSD(void* thisptr) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    recheck_csd_for_all_wayland_windows();
-    return (*(origOnKDECSD)g_pOnKDECSD->m_original)(thisptr);
+    notify(fz("hook"));
+
+    auto ptr = (CServerDecorationKDE *) thisptr;
+    for (auto hw : hyprwindows) {
+        for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
+            if (s->m_surf == hw->w->m_xdgSurface) {
+                notify(fz("hook_OnKDECSD {}", hypriso->class_name(hw->id)));
+                break;
+            }
+        }
+    } 
+    //ptr->m_resource
+    //recheck_csd_for_all_wayland_windows();
+    //
+    return ORG_KDE_KWIN_SERVER_DECORATION_MANAGER_MODE_CLIENT;
 }
+
+inline CFunctionHook* g_pOnKDERequestCSD = nullptr;
+typedef uint32_t (*origOnKDERequestCSD)(void*, uint32_t mode);
+uint32_t hook_OnKDERequestCSD(void* thisptr, uint32_t mode) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    notify("ehllo");
+    notify(fz("mode {}", mode));
+    //recheck_csd_for_all_wayland_windows();
+    for (auto hw : hyprwindows) {
+        for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
+            if (s->m_surf == hw->w->m_xdgSurface) {
+                notify(fz("hook_OnKDERequestCSD {} {}", hypriso->class_name(hw->id), mode));
+                break;
+            }
+        }
+    } 
+    
+    return ORG_KDE_KWIN_SERVER_DECORATION_MANAGER_MODE_CLIENT;
+}
+
+inline CFunctionHook* g_pOnKDEReleaseCSD = nullptr;
+typedef uint32_t (*origOnKDEReleaseCSD)(void*);
+uint32_t hook_OnKDEReleaseCSD(void* thisptr) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    notify(fz("released"));
+
+    //recheck_csd_for_all_wayland_windows();
+    for (auto hw : hyprwindows) {
+        for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
+            if (s->m_surf == hw->w->m_xdgSurface) {
+                notify(fz("hook_OnKDEReleaseCSD {}", hypriso->class_name(hw->id)));
+                break;
+            }
+        }
+    } 
+    return ORG_KDE_KWIN_SERVER_DECORATION_MANAGER_MODE_CLIENT;
+}
+
+
 
 inline CFunctionHook* g_pOnXDGCSD = nullptr;
 typedef zxdgToplevelDecorationV1Mode (*origOnXDGCSD)(void*);
@@ -697,6 +758,7 @@ void detect_csd_request_change() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
+    notify("detect");
     // hook xdg and kde csd request mode, then set timeout for 25 ms, 5 times which checks and updates csd for current windows based on most recent requests
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "kdeDefaultModeCSD");
@@ -704,10 +766,23 @@ void detect_csd_request_change() {
         g_pOnKDECSD->hook();
     }
     {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "kdeModeOnRequestCSD");
+        notify(METHODS[0].demangled);
+        g_pOnKDERequestCSD = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_OnKDERequestCSD);
+        g_pOnKDERequestCSD->hook();
+    }
+    {
+        static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "kdeModeOnReleaseCSD");
+        g_pOnKDEReleaseCSD = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_OnKDEReleaseCSD);
+        g_pOnKDEReleaseCSD->hook();
+    }
+    
+    
+    /*{
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "xdgDefaultModeCSD");
         g_pOnXDGCSD = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_OnXDGCSD);
         g_pOnXDGCSD->hook();
-    }
+    }*/
 
     // hook props change xwayland function, parse motifs, set or remove decorations as needed
     {
@@ -1104,6 +1179,8 @@ void HyprIso::create_callbacks() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
+    detect_csd_request_change();
+    
     for (auto m : g_pCompositor->m_monitors) {
         on_open_monitor(m);
     }
@@ -1390,7 +1467,6 @@ void HyprIso::create_hooks() {
     //return;
     fix_window_corner_rendering();
     disable_default_alt_tab_behaviour();
-    detect_csd_request_change();
     detect_x11_move_resize_requests();    
     overwrite_min();
     hook_render_functions();
@@ -1427,7 +1503,7 @@ void HyprIso::end() {
     g_pHyprRenderer->m_renderPass.removeAllOfType("CBorderPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CTexPassElement");
     g_pHyprRenderer->m_renderPass.removeAllOfType("CAnyPassElement");
-    remove_request_listeners();
+    remove_request_listeners(); 
 }
 
 CBox tocbox(Bounds b) {
