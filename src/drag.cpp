@@ -4,6 +4,7 @@
 #include "defer.h"
 
 #include <string>
+#include <cmath>
 
 struct DraggingData {
     int cid = -1;
@@ -22,29 +23,21 @@ void drag::begin(int cid) {
     if (*datum<bool>(c, "drag_from_titlebar")) {
         data->mouse_start = *datum<Bounds>(c, "initial_click_position");
     }
-    auto client_snapped = *datum<bool>(c, "snapped");
-    if (client_snapped) {
+    auto client_snapped = datum<bool>(c, "snapped");
+    if (*client_snapped) {
         data->bounds_start = bounds_client(cid);
-        
-        drag::snap_window(0, cid, (int) SnapPosition::NONE);
-        
+
+        *client_snapped = false;
+        hypriso->should_round(cid, true);
+
         auto client_pre_snap_bounds = *datum<Bounds>(c, "pre_snap_bounds");
-        data->bounds_start.w = client_pre_snap_bounds.w;
-        data->bounds_start.h = client_pre_snap_bounds.h;
-    } else {
-        data->bounds_start = bounds_client(cid);
-    }
+        //data->bounds_start.w = client_pre_snap_bounds.w;
+        //data->bounds_start.h = client_pre_snap_bounds.h;
 
-    if (client_snapped) {
-        //drag::snap_window(0, cid, (int) SnapPosition::NONE);
-
-
-        /*
         auto b = data->bounds_start;
         auto MOUSECOORDS = data->mouse_start;
         auto mb = bounds_monitor(get_monitor(cid));
-        auto client_pre_snap_bounds = *datum<Bounds>(c, "pre_snap_bounds");
-        
+
         float perc = (MOUSECOORDS.x - b.x) / b.w;
         bool window_left_side = b.x < mb.x + b.w * .5;
         bool click_left_side = perc <= .5;
@@ -52,6 +45,7 @@ void drag::begin(int cid) {
         float size_from_right = b.w - size_from_left;
         bool window_smaller_after = b.w > client_pre_snap_bounds.w;
         float x = MOUSECOORDS.x - (perc * (client_pre_snap_bounds.w)); // perc based relocation
+        log(fz("{} {} {} {} {} {} {}", perc, window_left_side, click_left_side, size_from_left, size_from_right, window_smaller_after, x));
         // keep window fully on screen
         if (!window_smaller_after) {
             if (click_left_side) {
@@ -76,7 +70,10 @@ void drag::begin(int cid) {
             b.y, 
             client_pre_snap_bounds.w, 
             client_pre_snap_bounds.h);
-        */
+        
+        data->bounds_start = bounds_client(cid);
+    } else {
+        data->bounds_start = bounds_client(cid);
     }
 }
 
