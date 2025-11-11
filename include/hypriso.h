@@ -254,6 +254,7 @@ struct HyprIso {
 
     bool is_mapped(int id);
     bool is_hidden(int id);
+    bool resizable(int id);
     
     void floatit(int id);
 

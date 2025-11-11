@@ -94,6 +94,9 @@ typedef void (*tRenderWorkspaceWindowsFullscreen)(void *, PHLMONITOR, PHLWORKSPA
 struct HyprWindow {
     int id;  
     PHLWINDOW w;
+    
+    bool checked_resizable = false;
+    bool resizable = true;
 
     bool is_hidden = false; // used in show/hide desktop
     bool was_hidden = false; // used in show/hide desktop
@@ -273,26 +276,38 @@ struct MotifHints {
     uint32_t status;
 };
 
+// Motif flags
+constexpr uint32_t MWM_HINTS_FUNCTIONS   = 1 << 0;
+constexpr uint32_t MWM_FUNC_ALL      = 1 << 0; // enable all functions
+constexpr uint32_t MWM_FUNC_RESIZE   = 1 << 1; // allow user to resize window
+constexpr uint32_t MWM_FUNC_MOVE     = 1 << 2;
+constexpr uint32_t MWM_FUNC_MINIMIZE = 1 << 3;
+constexpr uint32_t MWM_FUNC_MAXIMIZE = 1 << 4;
+constexpr uint32_t MWM_FUNC_CLOSE    = 1 << 5;
 constexpr uint32_t MWM_HINTS_DECORATIONS = 1 << 1;
 
-/// Returns true if the window explicitly requests no decorations (titlebar/border).
-bool x11WindowWantsNoDecorations(xcb_connection_t* conn, xcb_window_t win) {
+// Returns motif hints if they exist, otherwise std::nullopt
+std::optional<MotifHints> getMotifHints(xcb_connection_t* conn, xcb_window_t win)
+{
     if (!conn || !win)
-        return false;
+        return std::nullopt;
 
-    // Atom for _MOTIF_WM_HINTS
     const char motifName[] = "_MOTIF_WM_HINTS";
-    xcb_intern_atom_cookie_t cookie = xcb_intern_atom(conn, 0,
-                                                      sizeof(motifName) - 1,
-                                                      motifName);
-    xcb_intern_atom_reply_t* reply = xcb_intern_atom_reply(conn, cookie, nullptr);
+
+    // Resolve atom
+    xcb_intern_atom_cookie_t cookie =
+        xcb_intern_atom(conn, 0, sizeof(motifName) - 1, motifName);
+
+    xcb_intern_atom_reply_t* reply =
+        xcb_intern_atom_reply(conn, cookie, nullptr);
+
     if (!reply)
-        return false;
+        return std::nullopt;
 
     xcb_atom_t motifAtom = reply->atom;
     free(reply);
 
-    // Get the window property
+    // Request up to 5 longs (sizeof(MotifHints))
     xcb_get_property_cookie_t propCookie =
         xcb_get_property(conn, 0, win, motifAtom,
                          XCB_GET_PROPERTY_TYPE_ANY, 0, 5);
@@ -302,21 +317,14 @@ bool x11WindowWantsNoDecorations(xcb_connection_t* conn, xcb_window_t win) {
 
     if (!propReply || xcb_get_property_value_length(propReply) < sizeof(MotifHints)) {
         free(propReply);
-        return false;
+        return std::nullopt;
     }
 
     MotifHints hints{};
     memcpy(&hints, xcb_get_property_value(propReply), sizeof(hints));
     free(propReply);
 
-    // The client requests no decorations if:
-    //  - The "decorations" field is specified
-    //  - The decorations value is 0
-    if (hints.flags & MWM_HINTS_DECORATIONS) {
-        return hints.decorations == 0;
-    }
-
-    return false;
+    return hints; // full structure
 }
 
 bool HyprIso::requested_client_side_decorations(int cid) {
@@ -351,9 +359,15 @@ bool HyprIso::requested_client_side_decorations(int cid) {
             auto win = w->m_xwaylandSurface->m_xID;
             if (g_pXWayland && g_pXWayland->m_wm) {
                 auto connection = g_pXWayland->m_wm->getConnection();
-                
-                if (x11WindowWantsNoDecorations(connection, win)) {
-                    return true;
+
+                auto hintsOpt = getMotifHints(connection, win);
+                if (hintsOpt) {
+                    auto& h = *hintsOpt;
+                    bool wantsNoDecorations =
+                        (h.flags & MWM_HINTS_DECORATIONS) && (h.decorations == 0);
+                    if (wantsNoDecorations) {
+                        return true;
+                    }
                 }
             }
         }
@@ -2457,6 +2471,37 @@ bool HyprIso::is_mapped(int id) {
         }
     }
     return false; 
+}
+
+bool x11MotifDisallowsResize(const MotifHints& h) {
+    if (!(h.flags & MWM_HINTS_FUNCTIONS))
+    if (h.functions & MWM_FUNC_ALL)
+        return false;
+    return !(h.functions & MWM_FUNC_RESIZE);
+}
+
+bool HyprIso::resizable(int id) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            if (!hw->checked_resizable) {
+                hw->checked_resizable = true;
+                if (hw->w->m_isX11 && hw->w->m_xwaylandSurface) {
+                    auto win = hw->w->m_xwaylandSurface->m_xID;
+                    if (g_pXWayland && g_pXWayland->m_wm) {
+                        auto connection = g_pXWayland->m_wm->getConnection();
+
+                        auto hintsOpt = getMotifHints(connection, win);
+                        if (hintsOpt) {
+                            auto& h = *hintsOpt;
+                            hw->resizable = !x11MotifDisallowsResize(h);
+                        }
+                    }
+                }            
+            }
+            return hw->resizable;
+        }
+    }
+    return true;
 }
 
 bool HyprIso::is_hidden(int id) {
