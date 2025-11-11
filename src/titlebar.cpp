@@ -325,10 +325,8 @@ void create_titlebar(Container *root, Container *parent) {
            // todo should actually transition from non max snap, to max and then unsnap?
            if (*datum<bool>(client, "snapped")) {
                drag::snap_window(get_monitor(cid), cid, (int) SnapPosition::NONE);
-               notify("unsnap");
            } else {
                drag::snap_window(get_monitor(cid), cid, (int) SnapPosition::MAX);
-               notify("snap");
            }
        }
     };

@@ -15,6 +15,7 @@
 #include "alt_tab.h"
 #include "drag.h"
 #include "resizing.h"
+#include "client/test.h"
 
 #ifdef TRACY_ENABLE
 //#include "../tracy/public/client/TracyProfiler.hpp"
@@ -600,10 +601,16 @@ void second::begin() {
     } else {
         icon_cache_load();
     }
+
+    std::thread t([] {
+        start_dock();
+    });
+    t.detach();
 }
 
 void second::end() {
     hypriso->end();    
+    stop_dock();
 
 //#ifdef TRACY_ENABLE
     //tracy::ShutdownProfiler();
@@ -756,7 +763,7 @@ bool double_clicked(Container *c, std::string needle) {
 #include <mutex>
 
 void log(const std::string& msg) {
-    return;
+    //return;
     static bool firstCall = true;
     static std::ofstream ofs;
     static std::mutex writeMutex;

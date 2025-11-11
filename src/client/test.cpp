@@ -1,4 +1,7 @@
 // wl_input.c
+
+#include "second.h"
+
 #include <cairo-deprecated.h>
 #include <cstddef>
 #include <wayland-client-core.h>
@@ -248,8 +251,13 @@ void on_window_render(wl_window *win) {
     win->root->real_bounds = Bounds(0, 0, win->width, win->height);
     ::layout(win->root, win->root, win->root->real_bounds);
     
-    if (win->root)
+    if (win->root) {
+        cairo_save(win->cr);
+        cairo_set_operator(win->cr, CAIRO_OPERATOR_CLEAR);
+        cairo_paint(win->cr);
+        cairo_restore(win->cr);
         paint_outline(win->root, win->root);
+    }
     
     wl_surface_attach(win->surface, win->buffer, 0, 0);
     wl_surface_damage_buffer(win->surface, 0, 0, INT32_MAX, INT32_MAX);
@@ -602,7 +610,7 @@ static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer,
     auto ctx = (wl_context *) data;
     for (auto w : ctx->windows) {
         if (w->has_pointer_focus) {
-            printf("pointer: motion at %.2f, %.2f for %s\n", dx, dy, w->title.data());
+            log(fz("pointer: motion at {}, {} for %s\n", dx, dy, w->title.data()));
             Event event(sx, sy);
             w->cur_x = sx;
             w->cur_y = sy;
@@ -624,7 +632,8 @@ static void pointer_handle_button(void *data, struct wl_pointer *wl_pointer,
     for (auto w : ctx->windows) {
         if (w->has_pointer_focus) {
             printf("pointer: handle button\n");
-            Event event(w->cur_x, w->cur_y, button, state);
+            Event event(w->cur_x, w->cur_y);
+            //layout(event, event, 0);
             mouse_event(w->root, event);
             if (w->on_render)
                 w->on_render(w);
@@ -972,7 +981,33 @@ void wl_context_destroy(struct wl_context *ctx) {
 
 int wake_pipe[2];
 
+void fill_dock_root(wl_window *dock) {
+    auto root = dock->root;
+    root->type = ::hbox;
+    for (int i = 0; i < 6; i++) {
+        auto c = root->child(100, FILL_SPACE);
+        c->when_paint = [](Container *root, Container *c) {
+            auto dock = (wl_window *) root->user_data;
+            auto cr = dock->cr;
+            cairo_set_source_rgba(cr, 1, 0, 1, .4); 
+            cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
+            cairo_stroke(cr);
+
+            if (c->state.mouse_hovering) {
+                cairo_set_source_rgba(cr, 1, 1, 1, 1); 
+                cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
+                cairo_fill(cr);
+            } else if (c->state.mouse_pressing) {
+                cairo_set_source_rgba(cr, 0, 0, 0, 1); 
+                cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
+                cairo_fill(cr); 
+            }
+        };
+    }
+}
+
 int open_dock() {
+    return 0;
     pipe2(wake_pipe, O_CLOEXEC | O_NONBLOCK);
     
     struct wl_context *ctx = wl_context_create();
@@ -994,7 +1029,7 @@ int open_dock() {
     */
     
     //auto dock = wl_layer_window_create(ctx, 500, 500, ZWLR_LAYER_SHELL_V1_LAYER_TOP, "quickshell:dock", false);
-    auto dock = wl_layer_window_create(ctx, 0, 48, ZWLR_LAYER_SHELL_V1_LAYER_TOP, "quickshell:dock");
+    auto dock = wl_layer_window_create(ctx, 0, 40, ZWLR_LAYER_SHELL_V1_LAYER_TOP, "quickshell:dock");
     
     dock->root->user_data = dock;
     dock->root->when_paint = [](Container *root, Container *c) {
@@ -1006,6 +1041,8 @@ int open_dock() {
         cairo_fill(cr);
         //notify("here");
     };
+
+    fill_dock_root(dock);
     
     dock->on_render(dock);
 
@@ -1163,8 +1200,10 @@ void wake_display_loop() {
 }
 
 void stop_dock() {
-    running = false;
-    wake_display_loop();    
+    if (running) {
+        running = false;
+        wake_display_loop();    
+    }
 }
 
 /*int main() {
