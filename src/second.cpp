@@ -286,47 +286,50 @@ SnapPosition opposite_snap_position(SnapPosition pos) {
     return pos;
 }
 
+void paint_snap_preview(Container *actual_root, Container *c) {
+    auto root = get_rendering_root();
+    if (!root)
+        return;
+    auto [rid, s, stage, active_id] = roots_info(actual_root, root);
+    auto cid = *datum<int>(c, "cid");
+
+    if (active_id == cid && stage == (int)STAGE::RENDER_POST_WINDOW) {
+        if (*datum<bool>(c, "snapped") && (*datum<int>(c, "snap_type") != (int)SnapPosition::MAX)) {
+            renderfix auto b = c->real_bounds;
+            b.shrink(1);
+            border(b, {.5, .5, .5, .8}, 1);
+        }
+    }
+
+    if (!(active_id == cid && stage == (int)STAGE::RENDER_PRE_WINDOW))
+        return;
+    if (!(drag::dragging() && cid == drag::drag_window()))
+        return;
+    auto cursor_mon = hypriso->monitor_from_cursor();
+    if (rid != cursor_mon)
+        return;
+
+    renderfix
+
+    auto m = mouse();
+    SnapPosition pos = mouse_to_snap_position(cursor_mon, m.x, m.y);
+    if (pos != SnapPosition::NONE) {
+        Bounds b = snap_position_to_bounds(rid, pos);
+        b.shrink(10);
+        b.x -= root->real_bounds.x;
+        b.y -= root->real_bounds.y;
+        b.scale(s);
+        rect(b, {1, 1, 1, .3}, 0, 0, 2.0f, false, 0.0);
+    }
+}
+
 static void on_window_open(int id) {    
     // We make the client on the first monitor we fine, because we move the container later based on actual monitor location
     {
         auto m = actual_root; 
         auto c = m->child(FILL_SPACE, FILL_SPACE);
         c->custom_type = (int) TYPE::CLIENT;
-        c->when_paint = [](Container *actual_root, Container *c) {
-            auto root = get_rendering_root();
-            if (!root) return;
-            auto [rid, s, stage, active_id] = roots_info(actual_root, root);
-            auto cid = *datum<int>(c, "cid"); 
-            
-            if (active_id == cid && stage == (int) STAGE::RENDER_POST_WINDOW) {
-                if (*datum<bool>(c, "snapped") && (*datum<int>(c, "snap_type") != (int) SnapPosition::MAX)) {
-                    renderfix
-                    auto b = c->real_bounds;
-                    b.shrink(1);
-                    border(b, {.5, .5, .5, .8}, 1);
-                }
-            }
-
-            if (!(active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW))
-                return;
-            if (!(drag::dragging() && cid == drag::drag_window()))
-                return;
-            if (current_rendering_monitor() != get_monitor(cid))
-                return;
-
-            renderfix
-
-            auto m = mouse();
-            SnapPosition pos = mouse_to_snap_position(rid, m.x, m.y);
-            if (pos != SnapPosition::NONE) {
-                Bounds b = snap_position_to_bounds(rid, pos); 
-                b.shrink(10);
-                b.x -= root->real_bounds.x;
-                b.y -= root->real_bounds.y;
-                b.scale(s);
-                rect(b, {1, 1, 1, .3}, 0, 0, 2.0f, false, 0.0);
-            }
-        };
+        c->when_paint = paint_snap_preview;
         
         *datum<int>(c, "cid") = id; 
         *datum<bool>(c, "snapped") = false; 
@@ -389,8 +392,6 @@ static void on_layer_closed(int id) {
 
 static void on_layer_change() {
     // move snapped windows
-    notify("layer change");
-
     later_immediate([](Timer *) {
         for (auto c : actual_root->children) {
             if (c->custom_type == (int) TYPE::CLIENT) {
