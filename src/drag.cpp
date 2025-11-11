@@ -87,7 +87,10 @@ void drag::motion(int cid) {
     new_bounds.x += diff_x;
     new_bounds.y += diff_y;
     hypriso->move_resize(cid, new_bounds);
-    hypriso->damage_entire(get_monitor(cid));
+    for (auto m : actual_monitors) {
+        auto rid = *datum<int>(m, "cid");
+        hypriso->damage_entire(rid);
+    }
 }
 
 void drag::snap_window(int snap_mon, int cid, int pos) {
