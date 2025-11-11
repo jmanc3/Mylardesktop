@@ -560,9 +560,9 @@ static void create_actual_root() {
 }
 
 void second::begin() {
-//#ifdef TRACY_ENABLE
-    //tracy::StartupProfiler();
-//#endif
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
     on_any_container_close = any_container_closed;
     create_actual_root();
     
@@ -609,6 +609,10 @@ void second::begin() {
 }
 
 void second::end() {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
     hypriso->end();    
     stop_dock();
 
