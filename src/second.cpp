@@ -389,6 +389,24 @@ static void on_layer_closed(int id) {
 
 static void on_layer_change() {
     // move snapped windows
+    notify("layer change");
+
+    later_immediate([](Timer *) {
+        for (auto c : actual_root->children) {
+            if (c->custom_type == (int) TYPE::CLIENT) {
+                auto snapped = *datum<bool>(c, "snapped");
+                auto snap_type = *datum<int>(c, "snap_type");
+                if (snapped) {
+                    int cid = *datum<int>(c, "cid");
+                    auto p = snap_position_to_bounds(get_monitor(cid), (SnapPosition) snap_type);
+                    float scalar = hypriso->has_decorations(cid); // if it has a titlebar
+                    hypriso->move_resize(cid, p.x, p.y + titlebar_h * scalar, p.w, p.h - titlebar_h * scalar, false);
+                    hypriso->should_round(cid, false);
+                }
+            }
+        }        
+    });
+
 }
 
 static void test_container(Container *m) {
