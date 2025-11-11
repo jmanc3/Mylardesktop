@@ -612,6 +612,16 @@ void second::end() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
+    for (auto c : actual_root->children) {
+        if (c->custom_type == (int) TYPE::CLIENT) {
+            if (*datum<bool>(c, "snapped")) {
+                auto cid = *datum<int>(c, "cid");
+                //drag::snap_window(get_monitor(cid), cid, (int) SnapPosition::NONE);
+                auto b = *datum<Bounds>(c, "pre_snap_bounds");
+                hypriso->move_resize(cid, b);
+            }
+        }
+    }
  
     hypriso->end();    
     stop_dock();
