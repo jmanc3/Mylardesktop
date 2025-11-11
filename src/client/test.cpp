@@ -611,9 +611,9 @@ static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer,
     for (auto w : ctx->windows) {
         if (w->has_pointer_focus) {
             log(fz("pointer: motion at {}, {} for %s\n", dx, dy, w->title.data()));
-            Event event(sx, sy);
-            w->cur_x = sx;
-            w->cur_y = sy;
+            Event event(dx, dy);
+            w->cur_x = dx;
+            w->cur_y = dy;
             move_event(w->root, event);
             if (w->on_render)
                 w->on_render(w);
@@ -631,10 +631,24 @@ static void pointer_handle_button(void *data, struct wl_pointer *wl_pointer,
     auto ctx = (wl_context *) data;
     for (auto w : ctx->windows) {
         if (w->has_pointer_focus) {
-            printf("pointer: handle button\n");
-            Event event(w->cur_x, w->cur_y);
+            log(fz("pointer: handle button {} {} {} {}", w->cur_x, w->cur_y, button, state));
+            Event event(w->cur_x, w->cur_y, button, state);
             //layout(event, event, 0);
+            std::vector<bool> before;
+            for (auto c : w->root->children) {
+                before.push_back(c->state.mouse_pressing);
+            }
             mouse_event(w->root, event);
+            std::vector<bool> after;
+            for (auto c : w->root->children) {
+                after.push_back(c->state.mouse_pressing);
+            }
+            if (before.size() == after.size()) {
+                
+            } else {
+                log("diff");
+            }
+
             if (w->on_render)
                 w->on_render(w);
         }
@@ -986,18 +1000,24 @@ void fill_dock_root(wl_window *dock) {
     root->type = ::hbox;
     for (int i = 0; i < 6; i++) {
         auto c = root->child(100, FILL_SPACE);
+        c->when_clicked = paint {
+            notify("clicked");
+        };
         c->when_paint = [](Container *root, Container *c) {
             auto dock = (wl_window *) root->user_data;
             auto cr = dock->cr;
             cairo_set_source_rgba(cr, 1, 0, 1, .4); 
             cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
             cairo_stroke(cr);
+            log(fz("{} {} {} {}", c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h));
 
-            if (c->state.mouse_hovering) {
+            if (c->state.mouse_pressing) {
+                log("hovering");
                 cairo_set_source_rgba(cr, 1, 1, 1, 1); 
                 cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
                 cairo_fill(cr);
-            } else if (c->state.mouse_pressing) {
+            } else if (c->state.mouse_hovering) {
+                log("pressing");
                 cairo_set_source_rgba(cr, 0, 0, 0, 1); 
                 cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
                 cairo_fill(cr); 
