@@ -323,7 +323,7 @@ void create_titlebar(Container *root, Container *parent) {
     titlebar->when_clicked = paint {
         if (c->state.mouse_button_pressed == BTN_RIGHT) {
             auto m = mouse();
-            popup::open(m.x, m.y);
+            popup::open(m.x - 1, m.y - 1);
             c->when_mouse_down(root, c);
             return;
         }

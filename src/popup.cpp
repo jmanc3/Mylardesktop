@@ -34,6 +34,11 @@ void popup::open(int x, int y) {
             }
         }
     };
+
+    if (hypriso->on_mouse_move) {
+        auto m = mouse();
+        hypriso->on_mouse_move(0, m.x, m.y);
+    }
 }
 
 
