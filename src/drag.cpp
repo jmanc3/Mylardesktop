@@ -19,6 +19,9 @@ void drag::begin(int cid) {
     data->cid = cid;
     data->mouse_start = mouse();
     auto c = get_cid_container(cid);
+    if (*datum<bool>(c, "drag_from_titlebar")) {
+        data->mouse_start = *datum<Bounds>(c, "initial_click_position");
+    }
     auto client_snapped = *datum<bool>(c, "snapped");
     if (client_snapped) {
         data->bounds_start = bounds_client(cid);
@@ -160,6 +163,10 @@ void drag::end(int cid) {
     auto pos = mouse_to_snap_position(mon, m.x, m.y);
     snap_window(mon, cid, (int) pos);
     *datum<long>(actual_root, "drag_end_time") = get_current_time_in_ms();
+
+    if (auto c = get_cid_container(cid)) {
+        *datum<bool>(c, "drag_from_titlebar") = false;
+    }
 }
 
 bool drag::dragging() {

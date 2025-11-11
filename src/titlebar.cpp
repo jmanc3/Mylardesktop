@@ -313,6 +313,7 @@ void create_titlebar(Container *root, Container *parent) {
         auto cid = *datum<int>(client, "cid");
         consume_event(root, c);
         hypriso->bring_to_front(cid);        
+        *datum<Bounds>(client, "initial_click_position") = mouse();
     };
     titlebar->when_mouse_up = consume_event;
     titlebar->minimum_x_distance_to_move_before_drag_begins = 3;
@@ -335,6 +336,9 @@ void create_titlebar(Container *root, Container *parent) {
         //notify("title drag start");
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");
+        if (auto c = get_cid_container(cid)) {
+            *datum<bool>(client, "drag_from_titlebar") = true;
+        }
         drag::begin(cid);
         root->consumed_event = true;
         hypriso->bring_to_front(cid);
@@ -360,7 +364,6 @@ void create_titlebar(Container *root, Container *parent) {
     min->when_mouse_down = consume_event;
     min->when_mouse_up = consume_event;
     min->when_clicked = paint {
-         notify("here");
          auto client = first_above_of(c, TYPE::CLIENT);
          hypriso->set_hidden(*datum<int>(client, "cid"), true);
     };
