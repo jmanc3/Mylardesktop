@@ -83,6 +83,21 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
     auto mou = mouse();
     x = mou.x;
     y = mou.y;
+    auto pierced = pierced_containers(actual_root, x, y);
+    for (int i = actual_root->children.size() - 1; i >= 0; i--) {
+       auto child = actual_root->children[i];
+       if (child->custom_type == (int) TYPE::OUR_POPUP) {
+           bool was_pierced = false;
+           for (auto p : pierced)
+               if (p == child)
+                   was_pierced = true;
+           if (!was_pierced) {
+               delete child;
+               actual_root->children.erase(actual_root->children.begin() + i);
+           }
+       }
+    }
+
 
     bool consumed = false;
     if (drag::dragging() && !state) {
@@ -727,6 +742,14 @@ void second::layout_containers() {
             }
             *datum<bool>(c, "touched") = true;
         }
+        
+        if (c->custom_type == (int) TYPE::OUR_POPUP) {
+            c->parent->children.insert(c->parent->children.begin(), c);
+            if (c->pre_layout) {
+                c->pre_layout(actual_root, c, c->parent->real_bounds);
+            }
+            *datum<bool>(c, "touched") = true;
+        }
 
         if (c->custom_type == (int) TYPE::LAYER) {
             log("TODO: layer needs to be positioned based on above or below, and level in that stack");
@@ -829,4 +852,19 @@ void consume_event(Container *actual_root, Container *c) {
 #endif
     actual_root->consumed_event = true;
     request_damage(actual_root, c);
+}
+
+void consume_everything(Container *c) {
+    c->when_mouse_down = consume_event;
+    c->when_mouse_up = consume_event;
+    c->when_scrolled = [](Container* root, Container* c, int scroll_x, int scroll_y) {
+        consume_event(root, c); 
+    };
+    c->when_fine_scrolled = [](Container* root, Container* c, int scroll_x, int scroll_y, bool came_from_touchpad) {
+        consume_event(root, c); 
+    };
+    c->when_clicked = consume_event;
+    c->when_mouse_enters_container = consume_event;
+    c->when_mouse_leaves_container = consume_event;
+    c->when_mouse_motion = consume_event;
 }

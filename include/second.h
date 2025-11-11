@@ -74,6 +74,7 @@ enum struct TYPE : uint8_t {
     WORKSPACE_SWITCHER,
     WORKSPACE_THUMB,
     TEST,
+    OUR_POPUP,
 };
 
 extern std::vector<Container *> actual_monitors;
@@ -295,6 +296,7 @@ SnapPosition opposite_snap_position(SnapPosition pos);
 Bounds snap_position_to_bounds(int mon, SnapPosition pos);
 SnapPosition mouse_to_snap_position(int mon, int x, int y);
 bool double_clicked(Container *c, std::string needle);
+void consume_everything(Container *c);
 
 namespace second {    
     void begin();

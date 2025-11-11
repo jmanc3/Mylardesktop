@@ -6,10 +6,12 @@
 #include "drag.h"
 #include "icons.h"
 #include "defer.h"
+#include "popup.h"
 
 #include <assert.h>
 #include <unistd.h>
 #include <math.h>
+#include <linux/input-event-codes.h>
 
 #ifdef TRACY_ENABLE
 #include "tracy/Tracy.hpp"
@@ -319,20 +321,29 @@ void create_titlebar(Container *root, Container *parent) {
     titlebar->minimum_x_distance_to_move_before_drag_begins = 3;
     titlebar->minimum_y_distance_to_move_before_drag_begins = 3;
     titlebar->when_clicked = paint {
-       c->when_mouse_down(root, c);
-       if (double_clicked(c, "max")) {
-           auto client = first_above_of(c, TYPE::CLIENT);
-           auto cid = *datum<int>(client, "cid");
-           // todo should actually transition from non max snap, to max and then unsnap?
-           if (*datum<bool>(client, "snapped")) {
-               drag::snap_window(get_monitor(cid), cid, (int) SnapPosition::NONE);
-           } else {
-               drag::snap_window(get_monitor(cid), cid, (int) SnapPosition::MAX);
-           }
+        if (c->state.mouse_button_pressed == BTN_RIGHT) {
+            auto m = mouse();
+            popup::open(m.x, m.y);
+            c->when_mouse_down(root, c);
+            return;
+        }
+
+        c->when_mouse_down(root, c);
+        if (double_clicked(c, "max")) {
+            auto client = first_above_of(c, TYPE::CLIENT);
+            auto cid = *datum<int>(client, "cid");
+            // todo should actually transition from non max snap, to max and then unsnap?
+            if (*datum<bool>(client, "snapped")) {
+                drag::snap_window(get_monitor(cid), cid, (int)SnapPosition::NONE);
+            } else {
+                drag::snap_window(get_monitor(cid), cid, (int)SnapPosition::MAX);
+            }
        }
     };
     titlebar->when_drag_end_is_click = false;
     titlebar->when_drag_start = paint {
+        if (c->state.mouse_button_pressed != BTN_LEFT)
+            return;
         //notify("title drag start");
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");
