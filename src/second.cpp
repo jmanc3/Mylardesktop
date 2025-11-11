@@ -727,15 +727,24 @@ void second::layout_containers() {
 }
 
 bool double_clicked(Container *c, std::string needle) {
-    long *data = get_data<long>(c->uuid, needle);
+    auto n = needle + "_double_click_check";
+    long *data = get_data<long>(c->uuid, n);
     if (!data) {
-        data = datum<long>(c, needle);
+        data = datum<long>(c, n);
         *data = 0;
     }
+    long *activation = get_data<long>(c->uuid, n + "_activation");
+    if (!activation) {
+        activation = datum<long>(c, n + "_activation");
+        *activation = 0;
+    }
+    
     long current = get_current_time_in_ms();
     long last_time = *data;
-    if (current - last_time < 500) {
-        *data = current + 200; // block next double click for 700 ms
+    long last_activation = *activation;
+    if (current - last_time < 500 && current - last_activation > 600) {
+        data = datum<long>(c, n);
+        *activation = current;
         return true; 
     }
     *data = current;
