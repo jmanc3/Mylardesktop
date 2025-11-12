@@ -719,6 +719,8 @@ void second::layout_containers() {
     for (auto c : actual_root->children) {
         auto cid = *datum<int>(c, "cid");
         c->exists = hypriso->is_mapped(cid) && !hypriso->is_hidden(cid);
+        c->exists = c->exists && (hypriso->get_workspace(cid) == hypriso->get_active_workspace(hypriso->monitor_from_cursor())); 
+        
         if (c->exists) {
             auto b = bounds_client(cid);
             auto fo = hypriso->floating_offset(cid);
