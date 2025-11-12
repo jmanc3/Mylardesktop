@@ -8,6 +8,8 @@
 #include "defer.h"
 #include "popup.h"
 
+#include "process.hpp"
+
 #include <assert.h>
 #include <unistd.h>
 #include <math.h>

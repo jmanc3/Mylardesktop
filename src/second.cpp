@@ -17,6 +17,8 @@
 #include "resizing.h"
 #include "client/test.h"
 
+#include "process.hpp"
+
 #ifdef TRACY_ENABLE
 //#include "../tracy/public/client/TracyProfiler.hpp"
 #include "tracy/Tracy.hpp"
@@ -578,6 +580,34 @@ void second::begin() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
+
+/*
+    std::thread volume_updates([]() {
+        TinyProcessLib::Process process1a("pactl subscribe", "", [](const char* bytes, size_t n) { 
+            notify(std::string(bytes, n)); 
+        });        
+    });
+    volume_updates.detach();
+
+    std::thread battery_updates([]() {
+        TinyProcessLib::Process process1a("upower --monitor", "", [](const char* bytes, size_t n) { 
+            notify(std::string(bytes, n)); 
+        });        
+    });
+    battery_updates.detach();
+
+  auto process4 = make_shared<Process>("sleep 4");
+  thread thread4([process4]() {
+    auto exit_status = process4->get_exit_status();
+    cout << "Example 4 process returned: " << exit_status << " (" << (exit_status == 0 ? "success" : "failure") << ")" << endl;
+  });
+  thread4.detach();
+  this_thread::sleep_for(chrono::seconds(2));
+  process4->kill();
+  this_thread::sleep_for(chrono::seconds(2));
+*/
+    
+
     on_any_container_close = any_container_closed;
     create_actual_root();
     
@@ -802,7 +832,7 @@ bool double_clicked(Container *c, std::string needle) {
 #include <mutex>
 
 void log(const std::string& msg) {
-    //return;
+    return;
     static bool firstCall = true;
     static std::ofstream ofs;
     static std::mutex writeMutex;
