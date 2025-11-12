@@ -15,3 +15,6 @@ events
 *.so
 tracy/
 cbuild/
+screens
+.gitignore
+
