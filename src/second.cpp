@@ -33,6 +33,8 @@ std::unordered_map<std::string, Datas> datas;
 std::vector<Container *> actual_monitors; // actually just root of all
 Container *actual_root = new Container;
 
+void draw_text(std::string text, int x, int y);
+
 static void any_container_closed(Container *c) {
     remove_data(c->uuid); 
 }
@@ -312,11 +314,32 @@ void paint_snap_preview(Container *actual_root, Container *c) {
     auto cid = *datum<int>(c, "cid");
 
     if (active_id == cid && stage == (int)STAGE::RENDER_POST_WINDOW) {
+        renderfix 
         if (*datum<bool>(c, "snapped") && (*datum<int>(c, "snap_type") != (int)SnapPosition::MAX)) {
-            renderfix auto b = c->real_bounds;
+            auto b = c->real_bounds;
             b.shrink(1);
             border(b, {.5, .5, .5, .8}, 1);
         }
+        //rect({root->real_bounds.x, hypriso->pass_info(cid).cby, root->real_bounds.w, 1}, {1, 0, 0, 1});
+
+#ifdef DEBUGTITLEBAR
+        auto cb = bounds_client(cid);
+        auto i = hypriso->pass_info(cid);
+        draw_text(fz("{} {}, {} {} {} {} {} {} {} {} {} {}", 
+        cb.x * s,
+        cb.y * s,
+    i.pos_x,
+    i.pos_y,
+    i.local_pos_x,
+    i.local_pos_y,
+    i.w,
+    i.h,
+    i.cbx,
+    i.cby,
+    i.cbw,
+    i.cbh
+        ), c->real_bounds.x, c->real_bounds.y);
+#endif
     }
 
     if (!(active_id == cid && stage == (int)STAGE::RENDER_PRE_WINDOW))
@@ -348,7 +371,13 @@ static void on_window_open(int id) {
         auto c = m->child(FILL_SPACE, FILL_SPACE);
         c->custom_type = (int) TYPE::CLIENT;
         c->when_paint = paint_snap_preview;
-        
+        c->handles_pierced = [](Container* c, int x, int y) {
+            auto cid = *datum<int>(c, "cid");
+            bool inside = bounds_contains(c->real_bounds, x, y);
+            bool on_workspace = (hypriso->get_workspace(cid) == hypriso->get_active_workspace(hypriso->monitor_from_cursor())); 
+            return inside && on_workspace;
+        };
+
         *datum<int>(c, "cid") = id; 
         *datum<bool>(c, "snapped") = false; 
     }
@@ -497,17 +526,18 @@ static void on_draw_decos(std::string name, int monitor, int id, float a) {
     titlebar::on_draw_decos(name, monitor, id, a);
 }
 
-static void draw_text(std::string text, int x, int y) {
-    return;
+void draw_text(std::string text, int x, int y) {
+    //return;
+    float size = 20;
     TextureInfo first_info;
     {
-        first_info = gen_text_texture("Monospace", text, 40, {0, 0, 0, 1});
+        first_info = gen_text_texture("Monospace", text, size, {0, 0, 0, 1});
         rect(Bounds(x, y, (double) first_info.w, (double) first_info.h), {1, 0, 1, 1});
         draw_texture(first_info, x + 3, y + 4);
         free_text_texture(first_info.id);
     }
     {
-        auto info = gen_text_texture("Monospace", text, 40, {1, 1, 1, 1});
+        auto info = gen_text_texture("Monospace", text, size, {1, 1, 1, 1});
         draw_texture(info, x, y);
         free_text_texture(info.id);
     }
@@ -719,7 +749,6 @@ void second::layout_containers() {
     for (auto c : actual_root->children) {
         auto cid = *datum<int>(c, "cid");
         c->exists = hypriso->is_mapped(cid) && !hypriso->is_hidden(cid);
-        c->exists = c->exists && (hypriso->get_workspace(cid) == hypriso->get_active_workspace(hypriso->monitor_from_cursor())); 
         
         if (c->exists) {
             auto b = bounds_client(cid);

@@ -282,10 +282,18 @@ static void render_fix(Container *root, Container *c) {
     
     // Then we also need to scale our raw unscaled coordianates, to scaled ones (scaled by the current scale set by the monitor)
     c->real_bounds.scale(scale(rendering_monitor));
-    c->real_bounds.x = std::round(c->real_bounds.x);
-    c->real_bounds.y = std::round(c->real_bounds.y);
-    c->real_bounds.w = std::round(c->real_bounds.w);
-    c->real_bounds.h = std::round(c->real_bounds.h);
+    float under_x = c->real_bounds.x - std::floor(c->real_bounds.x);
+    float over_x = std::ceil(c->real_bounds.w) - c->real_bounds.w;
+    float extra_x = under_x + over_x; 
+    
+    float under_y = c->real_bounds.y - std::floor(c->real_bounds.y);
+    float over_y = std::ceil(c->real_bounds.h) - c->real_bounds.h;
+    float extra_y = under_y + over_y; 
+ 
+    c->real_bounds.x = c->real_bounds.x;
+    c->real_bounds.y = c->real_bounds.y;
+    c->real_bounds.w = c->real_bounds.w;
+    c->real_bounds.h = c->real_bounds.h;
 }
 
 void log(const std::string& msg);

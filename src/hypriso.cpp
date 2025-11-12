@@ -94,6 +94,8 @@ typedef void (*tRenderWorkspaceWindowsFullscreen)(void *, PHLMONITOR, PHLWORKSPA
 struct HyprWindow {
     int id;  
     PHLWINDOW w;
+
+    SurfacePassInfo pass_info;
     
     bool checked_resizable = false;
     bool resizable = true;
@@ -488,6 +490,16 @@ void on_close_monitor(PHLMONITOR m) {
         hyprmonitors.erase(hyprmonitors.begin() + target_index);
     }
 }
+SurfacePassInfo HyprIso::pass_info(int cid) {
+    for (auto h : hyprwindows) {
+        if (h->id == cid) {
+            return h->pass_info;
+        }
+    }
+        
+    return SurfacePassInfo();
+}
+    
 
 inline CFunctionHook* g_pOnSurfacePassDraw = nullptr;
 typedef void (*origSurfacePassDraw)(CSurfacePassElement *, const CRegion& damage);
@@ -497,12 +509,30 @@ void hook_onSurfacePassDraw(void* thisptr, const CRegion& damage) {
 #endif
  
     auto  spe = (CSurfacePassElement *) thisptr;
+    SurfacePassInfo i;
+    i.pos_x = spe->m_data.pos.x;
+    i.pos_y = spe->m_data.pos.y;
+    i.local_pos_x = spe->m_data.localPos.y;
+    i.local_pos_y = spe->m_data.localPos.y;
+    i.w = spe->m_data.w;
+    i.h = spe->m_data.h;
+    auto bb = spe->getTexBox();
+    bb.scale(spe->m_data.pMonitor->m_scale);
+    bb.round();
+    i.cbx = bb.x;
+    i.cby = bb.y;
+    i.cbw = bb.w;
+    i.cbh = bb.h;
+    
     auto window = spe->m_data.pWindow;
     //notify("alo");
     int cornermask = 0;
-    for (auto hw: hyprwindows)
-        if (hw->w == window)
+    for (auto hw: hyprwindows) {
+        if (hw->w == window) {
             cornermask = hw->cornermask;
+            hw->pass_info = i;
+        }
+    }
     set_rounding(cornermask); // only top rounding
     (*(origSurfacePassDraw)g_pOnSurfacePassDraw->m_original)(spe, damage);
     set_rounding(0);

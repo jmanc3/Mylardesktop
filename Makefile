@@ -1,3 +1,5 @@
+#MORE_DEBUG_FLAGS := -DDEBUGTITLEBAR
+
 PLUGIN_NAME = mylar-desktop
 MAKEFLAGS += -j16
 
@@ -15,9 +17,8 @@ INCLUDE_FLAGS := -I./include
 # --- Common compiler flags ---
 COMMON_FLAGS := -std=c++2b -fPIC --no-gnu-unique $(INCLUDE_FLAGS) $(PKG_FLAGS)
 	
-
 # --- Build type flags ---
-DEBUG_FLAGS := -g -O0
+DEBUG_FLAGS := -g -O0 $(MORE_DEBUG_FLAGS)
 RELEASE_FLAGS := -O3 -DNDEBUG
 
 # --- Output ---

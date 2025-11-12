@@ -82,10 +82,10 @@ void titlebar_pre_layout(Container* root, Container* self, const Bounds& bounds)
     auto rid = *datum<int>(root, "cid");
     auto cid = *datum<int>(self, "cid");
     auto s = scale(rid);
-    self->wanted_bounds.h = std::ceil(titlebar_h); 
-    self->children[1]->wanted_bounds.w = titlebar_h * titlebar_button_ratio();
-    self->children[2]->wanted_bounds.w = titlebar_h * titlebar_button_ratio();
-    self->children[3]->wanted_bounds.w = titlebar_h * titlebar_button_ratio();
+    self->wanted_bounds.h = titlebar_h + std::floor(s * s); 
+    self->children[1]->wanted_bounds.w = std::round(titlebar_h * titlebar_button_ratio());
+    self->children[2]->wanted_bounds.w = std::round(titlebar_h * titlebar_button_ratio());
+    self->children[3]->wanted_bounds.w = std::round(titlebar_h * titlebar_button_ratio());
 }
 
 TextureInfo *get_cached_texture(Container *root_with_scale, Container *container_texture_saved_on, std::string needle, std::string font, std::string text, RGBA color, int wanted_h) {
@@ -301,8 +301,8 @@ void create_titlebar(Container *root, Container *parent) {
 
             auto bounds = c->real_bounds;
             bool being_animated = hypriso->being_animated(cid);
-            if (being_animated || (drag::dragging() && drag::drag_window() == cid))
-                bounds.h += 1 * s;
+            //if (being_animated || (drag::dragging() && drag::drag_window() == cid))
+                //bounds.h += 1 * s;
             rect(bounds, titlebar_color, 12, hypriso->get_rounding(cid), 2.0f);
         }
     };

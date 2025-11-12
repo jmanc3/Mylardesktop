@@ -17,6 +17,19 @@
 
 static int titlebar_h = 28;
 
+struct SurfacePassInfo {
+    double pos_x;
+    double pos_y;
+    double local_pos_x;
+    double local_pos_y;
+    double w;
+    double h;
+    double cbx;
+    double cby;
+    double cbw;
+    double cbh;
+};
+
 enum struct STAGE : uint8_t {
     RENDER_PRE = eRenderStage::RENDER_PRE,        /* Before binding the gl context */
     RENDER_BEGIN = eRenderStage::RENDER_BEGIN,          /* Just when the rendering begins, nothing has been rendered yet. Damage, current render data in opengl valid. */
@@ -288,6 +301,8 @@ struct HyprIso {
     void hide_desktop();
     void move_to_workspace(int id, int workspace);
     void move_to_workspace(int workspace);
+
+    SurfacePassInfo pass_info(int cid);
 
     std::vector<int> get_workspaces(int monitor);
     int get_active_workspace(int monitor);
