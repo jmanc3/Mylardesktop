@@ -11,6 +11,9 @@
 #include "process.hpp"
 
 #include <assert.h>
+#include <chrono>
+#include <cstdint>
+#include <ranges>
 #include <unistd.h>
 #include <math.h>
 #include <linux/input-event-codes.h>
@@ -500,4 +503,5 @@ void titlebar::on_activated(int id) {
         request_damage(actual_root, c);
     }
 }
+
 

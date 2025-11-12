@@ -1052,6 +1052,8 @@ Container::~Container() {
             delete child;
         }
     }
+    if (this->on_closed)
+       this->on_closed(this);
     if (on_any_container_close) {
         on_any_container_close(this);
     }

@@ -901,4 +901,7 @@ void consume_everything(Container *c) {
     c->when_mouse_enters_container = consume_event;
     c->when_mouse_leaves_container = consume_event;
     c->when_mouse_motion = consume_event;
+    c->on_closed = [](Container *c) {
+        consume_event(actual_root, c);
+    };
 }

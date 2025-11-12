@@ -301,6 +301,9 @@ struct Container {
     bool  automatically_paint_children = true;
 
     void* user_data = nullptr;
+    
+    // Called when client needs to repaint itself
+    void (*on_closed)(Container* self) = nullptr;
 
     // Called when client needs to repaint itself
     void (*when_paint)(Container* root, Container* self) = nullptr;
