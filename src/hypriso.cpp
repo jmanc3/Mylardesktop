@@ -2474,9 +2474,15 @@ bool HyprIso::is_mapped(int id) {
 }
 
 bool x11MotifDisallowsResize(const MotifHints& h) {
+    // If no function hints are provided, assume resizing is allowed
     if (!(h.flags & MWM_HINTS_FUNCTIONS))
+        return false;
+
+    // If all functions are allowed, resizing is allowed
     if (h.functions & MWM_FUNC_ALL)
         return false;
+
+    // Otherwise, check explicitly
     return !(h.functions & MWM_FUNC_RESIZE);
 }
 
