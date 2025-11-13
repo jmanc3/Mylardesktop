@@ -93,6 +93,8 @@ void drag::motion(int cid) {
     }
 }
 
+// TODO: multi-monitor broken
+// I don't think it's mon, it's workspace that we have to worry about
 void drag::snap_window(int snap_mon, int cid, int pos) {
     if (snap_mon == -1)
         return;

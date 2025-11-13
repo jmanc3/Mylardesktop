@@ -953,6 +953,19 @@ Bounds Bounds::scale(double amount) {
     return *this;
 }
 
+Bounds Bounds::round() {
+    double roundedX = std::round(x);
+    double roundedY = std::round(y);
+    double newW     = x + w - roundedX;
+    double newH     = y + h - roundedY;
+
+    x = roundedX;
+    y = roundedY;
+    w = std::round(newW);
+    h = std::round(newH);
+    return *this;
+}
+
 std::string get_uuid() {
     std::random_device              rd;
     std::mt19937                    gen(rd());

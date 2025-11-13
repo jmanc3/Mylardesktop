@@ -42,6 +42,8 @@ struct Bounds {
 
     Bounds scale(double amount);
     
+    Bounds round();
+    
     double right() const { return x + w; }
     double bottom() const { return y + h; }
     bool empty() const { return w <= 0 || h <= 0; }

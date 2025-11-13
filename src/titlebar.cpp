@@ -82,7 +82,7 @@ void titlebar_pre_layout(Container* root, Container* self, const Bounds& bounds)
     auto rid = *datum<int>(root, "cid");
     auto cid = *datum<int>(self, "cid");
     auto s = scale(rid);
-    self->wanted_bounds.h = titlebar_h + std::floor(s * s); 
+    self->wanted_bounds.h = titlebar_h; 
     self->children[1]->wanted_bounds.w = std::round(titlebar_h * titlebar_button_ratio());
     self->children[2]->wanted_bounds.w = std::round(titlebar_h * titlebar_button_ratio());
     self->children[3]->wanted_bounds.w = std::round(titlebar_h * titlebar_button_ratio());
@@ -197,6 +197,7 @@ void paint_titlebar(Container *actual_root, Container *c) {
     auto cid = *datum<int>(client, "cid");
 
     if (active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW) {
+        {
         renderfix
         auto a = *datum<float>(client, "titlebar_alpha");
 
@@ -267,7 +268,18 @@ void paint_titlebar(Container *actual_root, Container *c) {
                 }
             }
         }
+        }
+
     }
+    /*
+    auto bb = bounds_client(cid);
+    bb.y -= titlebar_h;
+    bb.h = titlebar_h;
+    bb.scale(s);
+    //bb.w = 30;
+    */
+    //auto i = hypriso->pass_info(cid);
+    //rect({i.cbx, i.cby - std::round(titlebar_h * s), i.cbw, std::round(titlebar_h * s)}, {1, 0, 0, 1});
 }
 
 void create_titlebar(Container *root, Container *parent) {
@@ -291,6 +303,12 @@ void create_titlebar(Container *root, Container *parent) {
 
         if (active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW) {
             renderfix
+            /*auto box = hypriso->getTexBox(cid);
+            box.h = titlebar_h;
+            box.y -= titlebar_h;
+            c->real_bounds = box;
+            c->real_bounds.scale(s);
+            c->real_bounds.round();*/
 
             auto a = *datum<float>(client, "titlebar_alpha");
             
@@ -301,8 +319,8 @@ void create_titlebar(Container *root, Container *parent) {
 
             auto bounds = c->real_bounds;
             bool being_animated = hypriso->being_animated(cid);
-            //if (being_animated || (drag::dragging() && drag::drag_window() == cid))
-                //bounds.h += 1 * s;
+            if (being_animated || (drag::dragging() && drag::drag_window() == cid))
+                bounds.h += 1 * s;
             rect(bounds, titlebar_color, 12, hypriso->get_rounding(cid), 2.0f);
         }
     };
@@ -339,9 +357,9 @@ void create_titlebar(Container *root, Container *parent) {
             auto cid = *datum<int>(client, "cid");
             // todo should actually transition from non max snap, to max and then unsnap?
             if (*datum<bool>(client, "snapped")) {
-                drag::snap_window(get_monitor(cid), cid, (int)SnapPosition::NONE);
+                drag::snap_window(hypriso->monitor_from_cursor(), cid, (int)SnapPosition::NONE);
             } else {
-                drag::snap_window(get_monitor(cid), cid, (int)SnapPosition::MAX);
+                drag::snap_window(hypriso->monitor_from_cursor(), cid, (int)SnapPosition::MAX);
             }
        }
     };
@@ -406,9 +424,9 @@ void create_titlebar(Container *root, Container *parent) {
         auto snapped = *datum<bool>(client, "snapped");
         auto rid = get_monitor(cid);
         if (snapped) {
-            drag::snap_window(rid, cid, (int) SnapPosition::NONE);
+            drag::snap_window(hypriso->monitor_from_cursor(), cid, (int) SnapPosition::NONE);
         } else {
-            drag::snap_window(rid, cid, (int) SnapPosition::MAX);
+            drag::snap_window(hypriso->monitor_from_cursor(), cid, (int) SnapPosition::MAX);
         }
         hypriso->bring_to_front(cid);
     };

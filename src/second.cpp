@@ -325,7 +325,10 @@ void paint_snap_preview(Container *actual_root, Container *c) {
 #ifdef DEBUGTITLEBAR
         auto cb = bounds_client(cid);
         auto i = hypriso->pass_info(cid);
-        draw_text(fz("{} {}, {} {} {} {} {} {} {} {} {} {}", 
+        auto box = hypriso->getTexBox(cid);
+        box.scale(s);
+        box.round();
+        draw_text(fz("{} {}, {} {} {} {} {} {} {} {} {} {}, {} {} - {} {}", 
         cb.x * s,
         cb.y * s,
     i.pos_x,
@@ -337,7 +340,7 @@ void paint_snap_preview(Container *actual_root, Container *c) {
     i.cbx,
     i.cby,
     i.cbw,
-    i.cbh
+    i.cbh, box.x, box.y, box.w, box.h
         ), c->real_bounds.x, c->real_bounds.y);
 #endif
     }
@@ -752,16 +755,21 @@ void second::layout_containers() {
         
         if (c->exists) {
             auto b = bounds_client(cid);
+
             auto fo = hypriso->floating_offset(cid);
             auto so = hypriso->workspace_offset(cid);
             if (hypriso->has_decorations(cid)) {
-                c->real_bounds = Bounds(b.x + fo.x + so.x,
-                                        //b.x,
-                                        b.y - titlebar_h + fo.y + so.y,
-                                        //b.y - titlebar_h,
-                                        b.w, b.h + titlebar_h);
+                //auto boxxy = hypriso->getTexBox(cid);
+                //boxxy.scale();
+                //boxxy.round();
+                //auto b = boxxy;
+                //c->real_bounds = Bounds(b.x, b.y - titlebar_h, b.w, b.h + titlebar_h);
+
+                c->real_bounds = Bounds(b.x + fo.x + so.x, b.y - titlebar_h + fo.y + so.y, b.w, b.h + titlebar_h);
             } else {
+                //auto b = boxxy;
                 c->real_bounds = Bounds(b.x + fo.x + so.x, b.y + fo.y + so.y, b.w, b.h);
+                
             }
             ::layout(actual_root, c, c->real_bounds);
         }

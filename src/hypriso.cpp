@@ -499,7 +499,122 @@ SurfacePassInfo HyprIso::pass_info(int cid) {
         
     return SurfacePassInfo();
 }
+
+CSurfacePassElement::SRenderData collect_mdata(PHLWINDOW w) {
+    //CSurfacePassElement::SRenderData renderdata;
+    // m_data.pMonitor probably render mon
+    //auto current = g_pHyprOpenGL->m_renderData.currentWindow;
+    //
+    auto pWindow = w;
+    auto pMonitor = g_pHyprOpenGL->m_renderData.pMonitor;
+    if (!pMonitor) {
+        pMonitor = w->m_monitor;
+    }
+    const auto PWORKSPACE = pWindow->m_workspace;
+    const auto REALPOS = pWindow->m_realPosition->value() + (pWindow->m_pinned ? Vector2D{} : PWORKSPACE->m_renderOffset->value());
     
+    static auto time = Time::steadyNow();
+    CSurfacePassElement::SRenderData renderdata = {pMonitor, time};
+    CBox textureBox = {REALPOS.x, REALPOS.y, std::max(pWindow->m_realSize->value().x, 5.0), std::max(pWindow->m_realSize->value().y, 5.0)};
+
+    renderdata.w = textureBox.w;
+    renderdata.h = textureBox.h;
+    // m_data.w,h
+    renderdata.pWindow = w; // m_data.pWindow
+
+    renderdata.surface = pWindow->m_wlSurface->resource(); // m_data.surface
+    // m_data.mainSurface
+    renderdata.pos.x = textureBox.x; // m_data.pos.x,y
+    renderdata.pos.y = textureBox.y;
+    renderdata.pos.x += pWindow->m_floatingOffset.x;
+    renderdata.pos.y += pWindow->m_floatingOffset.y;
+    renderdata.surfaceCounter = 0;
+    pWindow->m_wlSurface->resource()->breadthfirst(
+        [&renderdata, &pWindow](SP<CWLSurfaceResource> s, const Vector2D& offset, void* data) {
+            // m_data.localPos
+            renderdata.localPos = offset;
+            renderdata.texture = s->m_current.texture;
+            renderdata.surface = s;
+            renderdata.mainSurface = s == pWindow->m_wlSurface->resource();
+            renderdata.surfaceCounter++;
+            //notify(std::to_string(renderdata.surfaceCounter));
+        },
+        nullptr);
+
+    // m_data.squishOversized left default
+    return renderdata;
+}
+
+Bounds tobounds(CBox box);
+
+Bounds HyprIso::getTexBox(int id) {
+    PHLWINDOW w;
+    bool found = false;
+    for (auto h : hyprwindows) {
+        if (h->id == id) {
+            w = h->w;
+            found = true;
+            break;
+        }
+    }
+
+    if (!found)
+        return {};
+    auto m_data = collect_mdata(w); 
+    const double outputX = -m_data.pMonitor->m_position.x, outputY = -m_data.pMonitor->m_position.y;
+
+    const auto   INTERACTIVERESIZEINPROGRESS = m_data.pWindow && g_pInputManager->m_currentlyDraggedWindow && g_pInputManager->m_dragMode == MBIND_RESIZE;
+    auto         PSURFACE                    = CWLSurface::fromResource(m_data.surface);
+
+    CBox         windowBox;
+    if (m_data.surface && m_data.mainSurface) {
+        windowBox = {sc<int>(outputX) + m_data.pos.x + m_data.localPos.x, sc<int>(outputY) + m_data.pos.y + m_data.localPos.y, m_data.w, m_data.h};
+
+        // however, if surface buffer w / h < box, we need to adjust them
+        const auto PWINDOW = PSURFACE ? PSURFACE->getWindow() : nullptr;
+
+        // center the surface if it's smaller than the viewport we assign it
+        if (PSURFACE && !PSURFACE->m_fillIgnoreSmall && PSURFACE->small() /* guarantees PWINDOW */) {
+            const auto CORRECT  = PSURFACE->correctSmallVec();
+            const auto SIZE     = PSURFACE->getViewporterCorrectedSize();
+            const auto REPORTED = PWINDOW->getReportedSize();
+
+            if (!INTERACTIVERESIZEINPROGRESS) {
+                windowBox.translate(CORRECT);
+
+                windowBox.width  = SIZE.x * (PWINDOW->m_realSize->value().x / REPORTED.x);
+                windowBox.height = SIZE.y * (PWINDOW->m_realSize->value().y / REPORTED.y);
+            } else {
+                windowBox.width  = SIZE.x;
+                windowBox.height = SIZE.y;
+            }
+        }
+    } else { //  here we clamp to 2, these might be some tiny specks
+
+        const auto SURFSIZE = m_data.surface->m_current.size;
+
+        windowBox = {sc<int>(outputX) + m_data.pos.x + m_data.localPos.x, sc<int>(outputY) + m_data.pos.y + m_data.localPos.y, std::max(sc<float>(SURFSIZE.x), 2.F),
+                     std::max(sc<float>(SURFSIZE.y), 2.F)};
+        if (m_data.pWindow && m_data.pWindow->m_realSize->isBeingAnimated() && m_data.surface && !m_data.mainSurface && m_data.squishOversized /* subsurface */) {
+            // adjust subsurfaces to the window
+            const auto REPORTED = m_data.pWindow->getReportedSize();
+            if (REPORTED.x != 0 && REPORTED.y != 0) {
+                windowBox.width  = (windowBox.width / REPORTED.x) * m_data.pWindow->m_realSize->value().x;
+                windowBox.height = (windowBox.height / REPORTED.y) * m_data.pWindow->m_realSize->value().y;
+            }
+        }
+    }
+
+    if (m_data.squishOversized) {
+        if (m_data.localPos.x + windowBox.width > m_data.w)
+            windowBox.width = m_data.w - m_data.localPos.x;
+        if (m_data.localPos.y + windowBox.height > m_data.h)
+            windowBox.height = m_data.h - m_data.localPos.y;
+    }
+
+    return tobounds(windowBox);
+}
+
 
 inline CFunctionHook* g_pOnSurfacePassDraw = nullptr;
 typedef void (*origSurfacePassDraw)(CSurfacePassElement *, const CRegion& damage);

@@ -181,6 +181,8 @@ struct HyprIso {
     float get_varfloat(std::string target, float default_float = 1.0);
     RGBA get_varcolor(std::string target, RGBA default_color = {1.0, 0.0, 1.0, 1.0});
 
+    Bounds getTexBox(int id);
+
     void create_config_variables();
     
     // The main workhorse of the program which pumps events from hyprland to mylar
