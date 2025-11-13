@@ -33,6 +33,7 @@
 static bool META_PRESSED = false;
 static float zoom_factor = 1.0;
 static long zoom_nicely_ended_time = 0;
+static bool zoom_needs_speed_update = true;
 
 std::unordered_map<std::string, Datas> datas;
 
@@ -190,22 +191,37 @@ static bool on_scrolled(int id, int source, int axis, int direction, double delt
         if (!current_was_mouse) {
             dtdt *= .35; // slow down on touchpads
         }
+        auto before_zf = zoom_factor;
         zoom_factor -= dtdt; 
         if (zoom_factor < 1.0)
             zoom_factor = 1.0;
         if (zoom_factor > 10.0)
             zoom_factor = 10.0;
-        if (delta > 0 && zoom_factor < 1.3 && zoom_factor != 1.0) { // Recognize likely attempted to end zoom and do it cleanly for user
+        bool nicely_ended = false;
+        bool last_event = false;
+        if (before_zf > 1.0 && zoom_factor <= 1.0)
+            last_event = true;
+        bool likely = zoom_factor < 1.2; // This is good enough for touchpad but not scroll wheel
+        if (current_was_mouse && last_event) {
+            likely = true;
+        }
+
+        if (delta > 0 && likely) { // Recognize likely attempted to end zoom and do it cleanly for user
+           hypriso->overwrite_animation_speed(4.0);
            zoom_factor = 1.0; 
            zoom_nicely_ended_time = get_current_time_in_ms();
+           nicely_ended = true;
+           zoom_needs_speed_update = true;
         }
-        static bool previous_was_mouse = true;
-        if (previous_was_mouse != current_was_mouse) {
-            previous_was_mouse = current_was_mouse;
-            if (current_was_mouse) {
-                hypriso->overwrite_animation_speed(3.0);
-            } else {
-                hypriso->overwrite_animation_speed(.04);
+        if (!nicely_ended) {
+            static bool previous_was_mouse = true;
+            if (previous_was_mouse != current_was_mouse || zoom_needs_speed_update) {
+                previous_was_mouse = current_was_mouse;
+                if (current_was_mouse) {
+                    hypriso->overwrite_animation_speed(2.5);
+                } else {
+                    hypriso->overwrite_animation_speed(.04);
+                }
             }
         }
             
