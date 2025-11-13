@@ -7,6 +7,7 @@
 #include "icons.h"
 #include "defer.h"
 #include "popup.h"
+#include "resizing.h"
 
 #include "process.hpp"
 
@@ -319,7 +320,7 @@ void create_titlebar(Container *root, Container *parent) {
 
             auto bounds = c->real_bounds;
             bool being_animated = hypriso->being_animated(cid);
-            if (being_animated || (drag::dragging() && drag::drag_window() == cid))
+            if (being_animated || (drag::dragging() && drag::drag_window() == cid) || (resizing::resizing() && resizing::resizing_window() == cid))
                 bounds.h += 1 * s;
             rect(bounds, titlebar_color, 12, hypriso->get_rounding(cid), 2.0f);
         }

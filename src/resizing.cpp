@@ -153,8 +153,9 @@ void resize_client(int cid, int resize_type) {
     }
     auto fb = Bounds(pos.x, pos.y, size.w, size.h);
     hypriso->move_resize(cid, fb.x, fb.y, fb.w, fb.h);
-    fb.grow(50);
-    hypriso->damage_box(fb);   
+    for (auto m : actual_monitors) {
+        hypriso->damage_entire(*datum<int>(m, "cid"));   
+    }
 }
 
 void resizing::motion(int cid) {
