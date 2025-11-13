@@ -28,6 +28,10 @@
 #include <linux/input-event-codes.h>
 #include <thread>
 
+static bool META_PRESSED = false;
+static float zoom_factor = 1.0;
+static long zoom_nicely_ended_time = 0;
+
 std::unordered_map<std::string, Datas> datas;
 
 std::vector<Container *> actual_monitors; // actually just root of all
@@ -176,6 +180,24 @@ static bool on_scrolled(int id, int source, int axis, int direction, double delt
         }
     }
 
+    auto current = get_current_time_in_ms();
+    auto time_since = (current - zoom_nicely_ended_time);
+    if (META_PRESSED && time_since > 1000) {
+        zoom_factor -= delta * .05; 
+        if (zoom_factor < 1.0)
+            zoom_factor = 1.0;
+        if (zoom_factor > 10.0)
+            zoom_factor = 10.0;
+        if (delta > 0 && zoom_factor < 1.3 && zoom_factor != 1.0) { // Recognize likely attempted to end zoom and do it cleanly for user
+           zoom_factor = 1.0; 
+           zoom_nicely_ended_time = get_current_time_in_ms();
+        }
+        hypriso->set_zoom_factor(zoom_factor);
+        return true;
+    }
+    if (time_since < 750) // consume scrolls which are likely referring to the zoom effect and not to the window focused
+        return true;
+
     return consumed;
 }
 
@@ -187,6 +209,9 @@ static bool on_key_press(int id, int key, int state, bool update_mods) {
     static bool shift_held = false;
     if (key == KEY_LEFTSHIFT || key == KEY_RIGHTSHIFT) {
         shift_held = state;
+    }
+    if (key == KEY_LEFTMETA || key == KEY_RIGHTMETA) {
+        META_PRESSED = state;
     }
     if (alt_held) {
         if (key == KEY_TAB) {
@@ -211,7 +236,18 @@ static bool on_key_press(int id, int key, int state, bool update_mods) {
           //"rendering {}", !hypriso->no_render  
         //));
     }
-    
+
+    if (key == KEY_ESC && state == 0) {
+        if (drag::dragging()) {
+            drag::end(drag::dragging());
+        }
+        if (resizing::resizing()) {
+            resizing::end(resizing::resizing_window());
+        }
+        META_PRESSED = false;
+        zoom_factor = 1.0;
+    }
+
     return false;
 }
 
@@ -602,7 +638,9 @@ static void on_drag_or_resize_cancel_requested() {
 
 
 static void on_config_reload() {
-
+    hypriso->set_zoom_factor(zoom_factor);
+    hypriso->add_float_rule();
+    hypriso->overwrite_defaults();
 }
 
 static void create_actual_root() {

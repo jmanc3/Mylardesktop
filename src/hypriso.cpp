@@ -1629,6 +1629,7 @@ void HyprIso::create_hooks() {
     detect_x11_move_resize_requests();    
     overwrite_min();
     hook_render_functions();
+    overwrite_defaults();
     //interleave_floating_and_tiled_windows();
     hook_dock_change();
     hook_monitor_arrange();
@@ -3886,7 +3887,7 @@ void HyprIso::overwrite_defaults() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    return;
+/*
     {
         Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:blur:enabled");
         auto target = (Hyprlang::INT*)val->dataPtr();
@@ -3895,26 +3896,35 @@ void HyprIso::overwrite_defaults() {
     {
         Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:blur:size");
         auto target = (Hyprlang::INT*)val->dataPtr();
-        *target= 13;
+        *target = 6;
     }
     {
         Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:blur:passes");
         auto target = (Hyprlang::INT*)val->dataPtr();
-        *target= 3;
+        *target = 3;
     }
     {
         Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:blur:noise");
         auto target = (Hyprlang::FLOAT*)val->dataPtr();
-        *target= .04;
+        *target = .04;
     }
     {
         Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:blur:vibrancy");
         auto target = (Hyprlang::FLOAT*)val->dataPtr();
-        *target= .4696;
+        *target = .4696;
+    }
+    */
+    {
+        Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("cursor:zoom_rigid");
+        auto target = (Hyprlang::INT*)val->dataPtr();
+        *target = false;
+    }
+    {
+        Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("cursor:zoom_disable_aa");
+        auto target = (Hyprlang::INT*)val->dataPtr();
+        *target = true;
     }
 
- 
-    
     //g_pConfigManager->handleWindowRule("windowrulev2", "float, class:.*");
 }
 
