@@ -9,6 +9,7 @@
 #include "hypriso.h"
 #include "second.h"
 
+#include <bits/types/idtype_t.h>
 #include <cstring>
 
 #ifdef TRACY_ENABLE
@@ -41,6 +42,7 @@
 
 #define private public
 #include <hyprland/src/render/pass/SurfacePassElement.hpp>
+#include <hyprland/src/render/decorations/CHyprDropShadowDecoration.hpp>
 #include <hyprland/src/protocols/ServerDecorationKDE.hpp>
 #include <hyprland/src/protocols/XDGDecoration.hpp>
 #include <hyprland/src/protocols/XDGShell.hpp>
@@ -775,7 +777,8 @@ Vector2D hook_OnRMS(void* thisptr) {
     ZoneScoped;
 #endif
     //recheck_csd_for_all_wayland_windows();
-    return Vector2D(10, 10);
+    //notify("min");
+    return Vector2D(4, 4);
     //return (*(origOnRMS)g_pOnRMS->m_original)(thisptr);
 }
 
@@ -1627,6 +1630,53 @@ void hook_dock_change() {
     }
 }
 
+//void CHyprDropShadowDecoration::render(PHLMONITOR pMonitor, float const& a) {
+//const auto PWINDOW = m_window.lock();
+inline CFunctionHook* g_pOnShadowRender = nullptr;
+typedef void (*origShadowRender)(CHyprDropShadowDecoration *, PHLMONITOR pMonitor, float const& a);
+void hook_onShadowRender(void* thisptr, PHLMONITOR pMonitor, float const& a) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    auto ptr = (CHyprDropShadowDecoration *) thisptr;
+    
+    static auto PSHADOWSIZE = CConfigValue<Hyprlang::INT>("decoration:shadow:range");
+    static auto PSHADOWS = CConfigValue<Hyprlang::INT>("decoration:shadow:enabled");
+
+    int before = *PSHADOWSIZE;
+    bool before_shadows = *PSHADOWS;
+    if (auto w = ptr->m_window.lock()) {
+        bool has_focus = w == g_pCompositor->m_lastWindow;
+        if (has_focus) {
+            *PSHADOWSIZE.ptr() = (int) (before * 2.3);
+        }
+        if (hypriso->is_snapped) {
+            for (auto h : hyprwindows) {
+                if (h->w == w) {
+                    if (hypriso->is_snapped(h->id)) {
+                        *PSHADOWS.ptr() = 0;
+                    }
+                }
+            }
+        }
+    }
+    (*(origShadowRender)g_pOnShadowRender->m_original)(ptr, pMonitor, a);
+    *PSHADOWSIZE.ptr() = before;
+    *PSHADOWS.ptr() = before_shadows;
+}
+ 
+void hook_shadow_decorations() {
+    static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "render");
+    for (auto m : METHODS) {
+        if (m.signature.find("CHyprDropShadowDecoration") != std::string::npos) {
+            g_pOnShadowRender = HyprlandAPI::createFunctionHook(globals->api, m.address, (void*)&hook_onShadowRender);
+            g_pOnShadowRender->hook();
+            return;
+        }
+    }
+    
+}
+
 void HyprIso::create_hooks() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
@@ -1634,6 +1684,7 @@ void HyprIso::create_hooks() {
     //return;
     detect_csd_request_change();
     fix_window_corner_rendering();
+    hook_shadow_decorations();
     disable_default_alt_tab_behaviour();
     detect_x11_move_resize_requests();    
     overwrite_min();

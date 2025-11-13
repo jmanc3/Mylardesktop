@@ -91,6 +91,8 @@ static bool on_mouse_move(int id, float x, float y) {
 }
 
 static bool on_mouse_press(int id, int button, int state, float x, float y) {
+    second::layout_containers();
+    
     auto mou = mouse();
     x = mou.x;
     y = mou.y;
@@ -128,8 +130,6 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
         }
     }
  
-    second::layout_containers();
-    int active_mon = hypriso->monitor_from_cursor();
     {
         auto m = actual_root; 
         auto cid = *datum<int>(m, "cid");
@@ -624,6 +624,16 @@ void draw_text(std::string text, int x, int y) {
     
 }
 
+// HyprIso is asking us if the window is snapped
+static bool is_snapped(int id) {
+    for (auto c : actual_root->children) {
+        if (c->custom_type == (int) TYPE::CLIENT && *datum<int>(c, "cid") == id && *datum<bool>(c, "snapped")) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void on_render(int id, int stage) {
     if (stage == (int) STAGE::RENDER_BEGIN) {
         second::layout_containers();
@@ -731,6 +741,7 @@ void second::begin() {
     hypriso->on_scrolled = on_scrolled;
     hypriso->on_draw_decos = on_draw_decos;
     hypriso->on_render = on_render;
+    hypriso->is_snapped = is_snapped;
     hypriso->on_window_open = on_window_open;
     hypriso->on_window_closed = on_window_closed;
     hypriso->on_layer_open = on_layer_open;
