@@ -461,6 +461,13 @@ static void on_window_open(int id) {
     alt_tab::on_window_open(id);
     resizing::on_window_open(id);
     second::layout_containers();
+
+    if (hypriso->has_decorations(id)) {
+        later(50, [id](Timer *) {
+            hypriso->floatit(id);
+            //apply_restore_info(id);
+        });
+    }
 }
 
 static void on_window_closed(int id) {
