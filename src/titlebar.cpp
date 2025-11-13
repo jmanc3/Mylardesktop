@@ -166,12 +166,12 @@ void paint_button(Container *actual_root, Container *c, std::string name, std::s
             auto color = is_close ? titlebar_closed_button_bg_pressed_color() : titlebar_button_bg_pressed_color();
             color.a = a;
             clip(to_parent(root, c), s);
-            rect(b, color, mask, hypriso->get_rounding(cid), 2.0f);
+            rect(b, color, mask, hypriso->get_rounding(cid) * s, 2.0f);
         } else if (c->state.mouse_hovering) {
             auto color = is_close ? titlebar_closed_button_bg_hovered_color() : titlebar_button_bg_hovered_color();
             color.a = a;
             clip(to_parent(root, c), s);
-            rect(b, color, mask, hypriso->get_rounding(cid), 2.0f);
+            rect(b, color, mask, hypriso->get_rounding(cid) * s, 2.0f);
         }
 
         auto texture_info = focused;
@@ -304,12 +304,6 @@ void create_titlebar(Container *root, Container *parent) {
 
         if (active_id == cid && stage == (int) STAGE::RENDER_PRE_WINDOW) {
             renderfix
-            /*auto box = hypriso->getTexBox(cid);
-            box.h = titlebar_h;
-            box.y -= titlebar_h;
-            c->real_bounds = box;
-            c->real_bounds.scale(s);
-            c->real_bounds.round();*/
 
             auto a = *datum<float>(client, "titlebar_alpha");
             
@@ -322,7 +316,7 @@ void create_titlebar(Container *root, Container *parent) {
             bool being_animated = hypriso->being_animated(cid);
             if (being_animated || (drag::dragging() && drag::drag_window() == cid) || (resizing::resizing() && resizing::resizing_window() == cid))
                 bounds.h += 1 * s;
-            rect(bounds, titlebar_color, 12, hypriso->get_rounding(cid), 2.0f);
+            rect(bounds, titlebar_color, 12, hypriso->get_rounding(cid) * s, 2.0f);
         }
     };
     titlebar_parent->receive_events_even_if_obstructed_by_one = true;
