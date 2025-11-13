@@ -387,7 +387,8 @@ void paint_snap_preview(Container *actual_root, Container *c) {
         if (*datum<bool>(c, "snapped") && (*datum<int>(c, "snap_type") != (int)SnapPosition::MAX)) {
             auto b = c->real_bounds;
             b.shrink(1);
-            border(b, {.5, .5, .5, .8}, 1);
+            auto a = *datum<float>(c, "titlebar_alpha");
+            border(b, {.5, .5, .5, (float) (.8 * a)}, 1);
         }
         //rect({root->real_bounds.x, hypriso->pass_info(cid).cby, root->real_bounds.w, 1}, {1, 0, 0, 1});
 
