@@ -49,11 +49,10 @@
 #include <hyprland/src/managers/KeybindManager.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/xwayland/XWM.hpp>
+#include <hyprland/src/config/ConfigManager.hpp>
 #undef private
 
 #include <hyprland/src/xwayland/XWayland.hpp>
-
-#include <hyprland/src/config/ConfigManager.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/devices/IPointer.hpp>
 #include <hyprland/src/render/pass/TexPassElement.hpp>
@@ -231,6 +230,16 @@ PHLWINDOW get_window_from_mouse() {
 
 void on_open_monitor(PHLMONITOR m);
 void interleave_floating_and_tiled_windows();
+
+// TODO: need to see how performance intensive this is
+void HyprIso::overwrite_animation_speed(float speed) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+ 
+    //const std::string& nodeName, int enabled, float speed, const std::string& bezier, const std::string& style = ""
+    g_pConfigManager->m_animationTree.setConfigForNode("zoomFactor", true, speed, "quick", "");
+}
 
 static void float_target(PHLWINDOW PWINDOW) {
     if (!PWINDOW)

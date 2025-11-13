@@ -184,6 +184,7 @@ struct HyprIso {
     Bounds getTexBox(int id);
 
     void create_config_variables();
+    void overwrite_animation_speed(float speed);    
     
     // The main workhorse of the program which pumps events from hyprland to mylar
     void create_hooks();

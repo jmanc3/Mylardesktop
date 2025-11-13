@@ -18,6 +18,8 @@
 #include "client/test.h"
 
 #include "process.hpp"
+#include <iterator>
+#include <wayland-server-protocol.h>
 
 #ifdef TRACY_ENABLE
 //#include "../tracy/public/client/TracyProfiler.hpp"
@@ -180,10 +182,15 @@ static bool on_scrolled(int id, int source, int axis, int direction, double delt
         }
     }
 
+    bool current_was_mouse = source == WL_POINTER_AXIS_SOURCE_WHEEL;
     auto current = get_current_time_in_ms();
     auto time_since = (current - zoom_nicely_ended_time);
     if (META_PRESSED && time_since > 1000) {
-        zoom_factor -= delta * .05; 
+        auto dtdt = (delta * .05);
+        if (!current_was_mouse) {
+            dtdt *= .35; // slow down on touchpads
+        }
+        zoom_factor -= dtdt; 
         if (zoom_factor < 1.0)
             zoom_factor = 1.0;
         if (zoom_factor > 10.0)
@@ -192,10 +199,20 @@ static bool on_scrolled(int id, int source, int axis, int direction, double delt
            zoom_factor = 1.0; 
            zoom_nicely_ended_time = get_current_time_in_ms();
         }
+        static bool previous_was_mouse = true;
+        if (previous_was_mouse != current_was_mouse) {
+            previous_was_mouse = current_was_mouse;
+            if (current_was_mouse) {
+                hypriso->overwrite_animation_speed(3.0);
+            } else {
+                hypriso->overwrite_animation_speed(.04);
+            }
+        }
+            
         hypriso->set_zoom_factor(zoom_factor);
         return true;
     }
-    if (time_since < 750) // consume scrolls which are likely referring to the zoom effect and not to the window focused
+    if (time_since < 500) // consume scrolls which are likely referring to the zoom effect and not to the window focused
         return true;
 
     return consumed;
