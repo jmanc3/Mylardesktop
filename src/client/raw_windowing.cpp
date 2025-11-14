@@ -79,6 +79,8 @@ struct wl_context {
 
 struct wl_window {
     int id;
+    bool keeper_of_life = true; // While this window exists app should continue to run
+    
     struct wl_context *ctx = nullptr;
     struct wl_surface *surface = nullptr;
     struct xdg_surface *xdg_surface = nullptr;
@@ -1250,6 +1252,14 @@ void windowing::main_loop(RawApp *app) {
                 ctx->windows.erase(ctx->windows.begin() + i);
             }
         }
+
+        bool any_keepers_of_life = false;
+        for (auto w : ctx->windows) {
+            if (w->keeper_of_life) {
+                any_keepers_of_life = true;
+            }
+        }
+        ctx->running = any_keepers_of_life;  
     }
 
     // 4. Cleanup
