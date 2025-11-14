@@ -95,7 +95,6 @@ struct wl_window {
     struct wl_shm_pool *pool = nullptr;
     wl_buffer *buffer = nullptr;
 
-    //Container *root = new Container;
     std::function<void(wl_window *)> on_render = nullptr;
 
     cairo_surface_t *cairo_surface = nullptr;
@@ -356,7 +355,7 @@ struct wl_window *wl_window_create(struct wl_context *ctx,
     if (!win->configured)
         wl_display_dispatch(ctx->display); 
     
-    wl_window_resize_buffer(win, width, height); // create shm buffer
+    wl_window_resize_buffer(win, win->width, win->height); // create shm buffer
     wl_surface_attach(win->surface, win->buffer, 0, 0);
     wl_surface_commit(win->surface);
 
@@ -370,14 +369,16 @@ static void configure_layer_shell(void *data,
                         		  uint32_t width,
                             	  uint32_t height) {
     struct wl_window *win = (struct wl_window *)data;
-    zwlr_layer_surface_v1_ack_configure(surf, serial); 
-    
-    if (width == 0) width = win->width;
-    if (height == 0) height = win->height;
-    
-    wl_window_resize_buffer(win, width, height); // create shm buffer
-    wl_surface_attach(win->surface, win->buffer, 0, 0);
-    wl_surface_commit(win->surface);
+    if (win->configured) {
+        wl_window_resize_buffer(win, width, height);
+        if (win->rw->on_resize) {
+            win->rw->on_resize(win->rw, width, height);
+        }
+        if (win->on_render)
+            win->on_render(win);
+    }
+    win->configured = true;
+    zwlr_layer_surface_v1_ack_configure(surf, serial);
 }
 
 static const struct zwlr_layer_surface_v1_listener layer_shell_listener = {
@@ -415,11 +416,9 @@ struct wl_window *wl_layer_window_create(struct wl_context *ctx, int width, int 
     if (!win->configured)
         wl_display_dispatch(ctx->display); 
 
-    wl_window_resize_buffer(win, width, height); // create shm buffer
+    wl_window_resize_buffer(win, win->width, win->height); // create shm buffer
     wl_surface_attach(win->surface, win->buffer, 0, 0);
     wl_surface_commit(win->surface);
-
-    // DO NOT create shm buffer yet — wait for configure event to tell us the real size.
 
     ctx->windows.push_back(win);
     return win;
@@ -1005,8 +1004,6 @@ RawApp *windowing::open_app() {
 }
 
 RawWindow *windowing::open_window(RawApp *app, WindowType type, RawWindowSettings settings) {
-    if (settings.pos.w < 1 || settings.pos.h < 1)
-        return nullptr;
     wl_context *ctx = nullptr;
     for (auto c : apps)
         if (c->id == app->id)
@@ -1023,7 +1020,8 @@ RawWindow *windowing::open_window(RawApp *app, WindowType type, RawWindowSetting
         window->rw = rw;
         rw->cr = window->cr;
         window->id = rw->id;
-        window->on_render(window);
+        if (window->on_render)
+            window->on_render(window);
         windows.push_back(window);
     }
     if (type == WindowType::DOCK) {
@@ -1031,7 +1029,8 @@ RawWindow *windowing::open_window(RawApp *app, WindowType type, RawWindowSetting
         window->rw = rw;
         rw->cr = window->cr;
         window->id = rw->id;
-        window->on_render(window);
+        if (window->on_render)
+            window->on_render(window);
         windows.push_back(window);        
     }
 
