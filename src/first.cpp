@@ -3,7 +3,6 @@
 //#include "startup.h"
 #include "second.h"
 
-#include "client/test.h"
 #include <thread>
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
@@ -84,10 +83,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) { // When star
                                                                   
     second::begin();
     //startup::begin();
-    std::thread th([]() {
-        //start_dock();        
-    });
-    th.detach();
 
     return {"Mylardesktop", "Mylar is a smooth and beautiful wayland desktop, written on Hyprland", "jmanc3", "1.0"};
 }
@@ -95,7 +90,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) { // When star
 APICALL EXPORT void PLUGIN_EXIT() {
    //startup::end(); 
    second::end(); 
-   stop_dock();
    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
 

@@ -1,4 +1,6 @@
 // wl_input.c
+ 
+#include "client/raw_windowing.h"
 
 #include "second.h"
 
@@ -47,6 +49,8 @@ extern "C" {
 #include "../include/events.h"
 #include "../include/hypriso.h"
 
+static int unique_id = 0;
+
 bool running = true;
 
 struct wl_window;
@@ -54,6 +58,9 @@ struct wl_window;
 bool wl_window_resize_buffer(struct wl_window *win, int new_width, int new_height);
 
 struct wl_context {
+    int wake_pipe[2];
+    int id;
+    bool running = true;
     struct wl_display *display = nullptr;
     struct wl_registry *registry = nullptr;
     struct wl_compositor *compositor = nullptr;
@@ -71,6 +78,7 @@ struct wl_context {
 };
 
 struct wl_window {
+    int id;
     struct wl_context *ctx = nullptr;
     struct wl_surface *surface = nullptr;
     struct xdg_surface *xdg_surface = nullptr;
@@ -1046,8 +1054,7 @@ int open_dock() {
         cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
         cairo_fill(cr);
     };
-    */
-    
+
     //auto dock = wl_layer_window_create(ctx, 500, 500, ZWLR_LAYER_SHELL_V1_LAYER_TOP, "quickshell:dock", false);
     auto dock = wl_layer_window_create(ctx, 0, 40, ZWLR_LAYER_SHELL_V1_LAYER_TOP, "quickshell:dock");
     
@@ -1066,7 +1073,6 @@ int open_dock() {
     
     dock->on_render(dock);
 
-/*
     auto settings = wl_window_create(ctx, 800, 600, "Settings");
     settings->root->user_data = settings;
     settings->root->when_paint = [](Container *root, Container *c) {
@@ -1150,61 +1156,7 @@ int open_dock() {
             }
         }
     }
-    
 
-/*
-    int x = 0;
-    while (running) {
-        //printf("x: %d\n", x++);
-        short events = POLLIN | POLLERR;
-        if (need_flush)
-            events |= POLLOUT;
-
-        struct pollfd pfds[2] = {
-            { .fd = fd, .events = events },
-            { .fd = wake_pipe[0], .events = POLLIN },
-        };
-
-        if (poll(pfds, 2, -1) < 0)
-            break;
-
-        if (pfds[1].revents & POLLIN) {
-            char buf[64];
-            read(wake_pipe[0], buf, sizeof buf);
-            continue;
-        }
-
-        if (pfds[0].revents & POLLIN) {
-            if (wl_display_dispatch(ctx->display) < 0)
-                break;
-        }
-
-        if (pfds[0].revents & POLLOUT) {
-            if (wl_display_flush(ctx->display) == 0)
-                need_flush = false;
-        }
-
-        if (wl_display_flush(ctx->display) < 0 && errno == EAGAIN)
-            need_flush = true;
-
-
-        bool removed = false;
-        for (int i = ctx->windows.size() - 1; i >= 0; i--) {
-            auto win = ctx->windows[i];
-            if (win->marked_for_closing) {
-                removed = true;
-                wl_window_destroy(win); 
-                ctx->windows.erase(ctx->windows.begin() + i);
-                
-            }
-        }
-        if (removed)
-            wl_display_roundtrip(ctx->display);
-    }
-    */
-
-
-   
     // 4. Cleanup
     wl_context_destroy(ctx); 
 
@@ -1230,5 +1182,154 @@ void stop_dock() {
     start_dock();   
     return 0;
 }*/
+
+void windowing::add_fd(RawApp *app, int fd) {
+    
+}
+
+std::vector<wl_context *> apps;
+std::vector<wl_window *> windows;
+ 
+void windowing::main_loop(RawApp *app) {
+    wl_context *ctx = nullptr;
+    for (auto c : apps)
+        if (c->id == app->id)
+            ctx = c;
+    if (!ctx)
+        return;
+
+    bool need_flush = false;
+    int fd = wl_display_get_fd(ctx->display);
+
+    int x = 0;
+    while (ctx->running) {
+        // Dispatch any already-queued events before blocking
+        wl_display_dispatch_pending(ctx->display);
+
+        // Try to flush before waiting
+        if (wl_display_flush(ctx->display) < 0 && errno == EAGAIN)
+            need_flush = true;
+
+        short events = POLLIN | POLLERR;
+        if (need_flush)
+            events |= POLLOUT;
+
+        struct pollfd pfds[2] = {
+            { .fd = fd, .events = events },
+            { .fd = ctx->wake_pipe[0], .events = POLLIN },
+        };
+
+        if (poll(pfds, 2, -1) < 0)
+            break;
+
+        if (pfds[1].revents & POLLIN) {
+            char buf[64];
+            read(ctx->wake_pipe[0], buf, sizeof buf);
+            continue;
+        }
+
+        if (pfds[0].revents & POLLIN) {
+            if (wl_display_prepare_read(ctx->display) == 0) {
+                wl_display_read_events(ctx->display);
+                wl_display_dispatch_pending(ctx->display);
+            } else {
+                wl_display_dispatch_pending(ctx->display);
+            }
+        }
+
+        if (pfds[0].revents & POLLOUT) {
+            if (wl_display_flush(ctx->display) == 0)
+                need_flush = false;
+        }
+
+        // Now handle your app-level window cleanup
+        for (int i = ctx->windows.size() - 1; i >= 0; i--) {
+            auto win = ctx->windows[i];
+            if (win->marked_for_closing) {
+                wl_window_destroy(win);
+                ctx->windows.erase(ctx->windows.begin() + i);
+            }
+        }
+    }
+
+    // 4. Cleanup
+    wl_context_destroy(ctx);
+}
+
+RawApp *windowing::open_app() {
+    auto ra = new RawApp;
+    ra->id = unique_id++;
+    
+    struct wl_context *ctx = wl_context_create();
+    ctx->id = ra->id;
+    
+    pipe2(ctx->wake_pipe, O_CLOEXEC | O_NONBLOCK);
+
+    apps.push_back(ctx);
+    
+    return ra;
+}
+
+RawWindow *windowing::open_window(RawApp *app, WindowType type, PositioningInfo info) {
+    wl_context *ctx = nullptr;
+    for (auto c : apps)
+        if (c->id == app->id)
+            ctx = c;
+    if (!ctx)
+        return nullptr;
+    
+    auto rw = new RawWindow;
+    rw->creator = app;
+    rw->id = unique_id++;
+
+    if (type == WindowType::NORMAL) {
+        auto settings = wl_window_create(ctx, info.w, info.h, "Settings");
+        settings->id = rw->id;
+        settings->root->user_data = settings;
+        settings->root->when_paint = [](Container *root, Container *c) {
+            auto settings = (wl_window *) root->user_data;
+            auto cr = settings->cr;
+            cairo_set_source_rgba(cr, 1, 0, 1, 1); 
+            //notify(std::to_string(c->real_bounds.w));
+            cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
+            cairo_fill(cr);
+            //notify("here");
+        };
+        settings->on_render(settings);
+        windows.push_back(settings);
+    }
+
+    return rw;
+}
+
+void windowing::close_window(RawWindow *window) {
+    wl_context *ctx = nullptr;
+    for (auto c : apps)
+        if (c->id == window->creator->id)
+            ctx = c;
+    if (!ctx)
+        return;
+    wl_window *win = nullptr;
+    for (auto w : windows)
+        if (w->id == window->id)
+            win = w;
+    if (!win)
+        return;
+    win->marked_for_closing = true;
+    write(ctx->wake_pipe[1], "x", 1);
+}
+
+void windowing::close_app(RawApp *app) {
+    if (!app)
+        return;
+    wl_context *ctx = nullptr;
+    for (auto c : apps)
+        if (c->id == app->id)
+            ctx = c;
+    if (!ctx)
+        return;
+    ctx->running = false;
+    write(ctx->wake_pipe[1], "x", 1);
+}
 
 

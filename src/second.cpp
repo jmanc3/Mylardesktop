@@ -15,7 +15,7 @@
 #include "alt_tab.h"
 #include "drag.h"
 #include "resizing.h"
-#include "client/test.h"
+#include "dock.h"
 
 #include "process.hpp"
 #include <iterator>
@@ -770,10 +770,11 @@ void second::begin() {
         icon_cache_load();
     }
 
-    std::thread t([] {
+    dock::start();
+    /*std::thread t([] {
         start_dock();
     });
-    t.detach();
+    t.detach();*/
 }
 
 void second::end() {
@@ -792,7 +793,8 @@ void second::end() {
     }
  
     hypriso->end();    
-    stop_dock();
+    dock::stop();
+    //stop_dock();
 
 //#ifdef TRACY_ENABLE
     //tracy::ShutdownProfiler();
