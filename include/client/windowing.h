@@ -8,6 +8,6 @@ struct MylarWindow {
     RawWindow *raw_window = nullptr; 
 };
 
-MylarWindow *open_mylar_window(RawApp *app, WindowType type, Bounds bounds);
+MylarWindow *open_mylar_window(RawApp *app, WindowType type, RawWindowSettings settings);
 
 

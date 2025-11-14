@@ -7,6 +7,7 @@
 #include <cairo-deprecated.h>
 #include <cstddef>
 #include <wayland-client-core.h>
+#include <wayland-server-core.h>
 #define _POSIX_C_SOURCE 200809L
 #include <poll.h>    // for POLLIN, POLLOUT, POLLERR, etc.
 #include <errno.h>   // for EAGAIN, EINTR, and other errno constants
@@ -51,8 +52,6 @@ extern "C" {
 
 static int unique_id = 0;
 
-bool running = true;
-
 struct wl_window;
 
 bool wl_window_resize_buffer(struct wl_window *win, int new_width, int new_height);
@@ -60,6 +59,8 @@ bool wl_window_resize_buffer(struct wl_window *win, int new_width, int new_heigh
 struct wl_context {
     int wake_pipe[2];
     int id;
+    RawApp *ra;
+    
     bool running = true;
     struct wl_display *display = nullptr;
     struct wl_registry *registry = nullptr;
@@ -80,6 +81,8 @@ struct wl_context {
 struct wl_window {
     int id;
     bool keeper_of_life = true; // While this window exists app should continue to run
+    RawWindow *rw = nullptr;
+    bool configured = false;
     
     struct wl_context *ctx = nullptr;
     struct wl_surface *surface = nullptr;
@@ -92,7 +95,7 @@ struct wl_window {
     struct wl_shm_pool *pool = nullptr;
     wl_buffer *buffer = nullptr;
 
-    Container *root = new Container;
+    //Container *root = new Container;
     std::function<void(wl_window *)> on_render = nullptr;
 
     cairo_surface_t *cairo_surface = nullptr;
@@ -138,7 +141,7 @@ static void handle_toplevel_configure(
     if (height > 0) win->pending_height = height;
     //wl_window_resize_buffer(win, width, height);
     //wl_window_draw(win);
-    
+   
     // Usually you’d handle resize here
     printf("size reconfigured\n");
 }
@@ -146,16 +149,22 @@ static void handle_surface_configure(void *data,
 			  struct xdg_surface *xdg_surface,
 			  uint32_t serial) {
     struct wl_window *win = (struct wl_window *)data;
-    xdg_surface_ack_configure(xdg_surface, serial);
-    wl_surface_commit(win->surface);
 
     if (win->pending_width > 0 && win->pending_height > 0 &&
         (win->pending_width != win->width || win->pending_height != win->height)) {
-        wl_window_resize_buffer(win, win->pending_width, win->pending_height);
+        if (win->configured) {
+            wl_window_resize_buffer(win, win->pending_width, win->pending_height);
+            if (win->rw->on_resize) {
+                win->rw->on_resize(win->rw, win->pending_width, win->pending_height);
+            }
+            if (win->on_render)
+                win->on_render(win);
+        }
     }
-    // Now it’s legal to resize + draw
-    //wl_window_resize_buffer(win, win->pending_width, win->pending_height);
-    //wl_window_draw(win);
+
+    xdg_surface_ack_configure(xdg_surface, serial);
+    win->configured = true;
+    wl_surface_commit(win->surface);
 }
 
 static const struct xdg_surface_listener xdg_surface_listener = {
@@ -216,64 +225,15 @@ static void destroy_shm_buffer(struct wl_window *win) {
     }
 }
 
-void on_paint(struct wl_window *win) {
-    auto cr = win->cr;
-    cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
-    cairo_paint(cr);
-    
-    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-    cairo_set_source_rgba(cr, 0, 0, 0, .4);
-    //cairo_rectangle(cr, 0, 0, win->width, win->height);
-    cairo_rectangle(cr, 0, 0, win->width, win->height);
-    cairo_fill(cr);
-    
-    //cairo_set_source_rgba(cr, 0, 0, 0, 1);
-    //cairo_rectangle(cr, 10, 10, 10, 10);
-    //cairo_fill(cr);
-    
-    //cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
-    //cairo_rectangle(cr, 0, 0, 10, 100);
-    cairo_fill(cr);
- 
-    
-    cairo_fill(cr);
-/*
-    cairo_set_source_rgba(cr, 1, 1, 1, .2);
-    //cairo_rectangle(cr, 0, 0, win->width, win->height);
-    cairo_rectangle(cr, 10, 10, win->width - 20, win->height - 20);
-    cairo_fill(cr);
-    
-    cairo_set_source_rgba(cr, 0, 0, 0, 1);
-    cairo_rectangle(cr, 10, 10, 10, 10);
-    cairo_fill(cr);
-    */
-
-    // Attach new buffer immediately so compositor knows about new size
-    wl_surface_attach(win->surface, win->buffer, 0, 0);
-    wl_surface_damage_buffer(win->surface, 0, 0, INT32_MAX, INT32_MAX);
-    wl_surface_commit(win->surface);
-}
-
 void on_window_render(wl_window *win) {
-    ///*
-    //notify(std::to_string(win->width) + " " + std::to_string(win->height));
-    win->root->wanted_bounds = Bounds(0, 0, FILL_SPACE, FILL_SPACE);
-    win->root->real_bounds = Bounds(0, 0, win->width, win->height);
-    ::layout(win->root, win->root, win->root->real_bounds);
-    
-    if (win->root) {
-        cairo_save(win->cr);
-        cairo_set_operator(win->cr, CAIRO_OPERATOR_CLEAR);
-        cairo_paint(win->cr);
-        cairo_restore(win->cr);
-        paint_outline(win->root, win->root);
+    if (win->rw) {
+        if (win->rw->on_render) {
+            win->rw->on_render(win->rw, win->width, win->height);
+        }
     }
-    
     wl_surface_attach(win->surface, win->buffer, 0, 0);
     wl_surface_damage_buffer(win->surface, 0, 0, INT32_MAX, INT32_MAX);
     wl_surface_commit(win->surface);
-    //*/
-    //on_paint(win);
 }
 
 bool wl_window_resize_buffer(struct wl_window *win, int new_width, int new_height) {
@@ -328,6 +288,8 @@ bool wl_window_resize_buffer(struct wl_window *win, int new_width, int new_heigh
     }
 
     win->cr = cairo_create(win->cairo_surface);
+    if (win->rw)
+        win->rw->cr = win->cr;
 
     auto cr = win->cr;
 
@@ -391,16 +353,12 @@ struct wl_window *wl_window_create(struct wl_context *ctx,
     // 7️⃣ Single initial commit
     wl_surface_commit(win->surface);
 
-    // 8️⃣ Wait for initial configure (some compositors require this)
-    wl_display_roundtrip(ctx->display);
-
-    // create shm so that window will be mapped
-    if (!wl_window_resize_buffer(win, width, height)) {
-        fprintf(stderr, "Failed to create shm buffer\n");
-        // cleanup code
-        return nullptr;
-    }
-    wl_display_roundtrip(ctx->display);
+    if (!win->configured)
+        wl_display_dispatch(ctx->display); 
+    
+    wl_window_resize_buffer(win, width, height); // create shm buffer
+    wl_surface_attach(win->surface, win->buffer, 0, 0);
+    wl_surface_commit(win->surface);
 
     ctx->windows.push_back(win);
     return win;
@@ -454,64 +412,18 @@ struct wl_window *wl_layer_window_create(struct wl_context *ctx, int width, int 
     zwlr_layer_surface_v1_add_listener(win->layer_surface, &layer_shell_listener, win);
 
     wl_surface_commit(win->surface);
-    wl_display_roundtrip(ctx->display);
+    if (!win->configured)
+        wl_display_dispatch(ctx->display); 
+
+    wl_window_resize_buffer(win, width, height); // create shm buffer
+    wl_surface_attach(win->surface, win->buffer, 0, 0);
+    wl_surface_commit(win->surface);
 
     // DO NOT create shm buffer yet — wait for configure event to tell us the real size.
 
     ctx->windows.push_back(win);
     return win;
 }
-
-/*
-struct wl_window *wl_layer_window_create(struct wl_context *ctx, int width, int height,
-                                         zwlr_layer_shell_v1_layer layer, const char *title, bool exclusive_zone = true) {
-    struct wl_window *win = new wl_window;
-    win->title = title;
-    win->ctx = ctx;
-    win->width = width;
-    win->height = height;
-    win->title = title;
-    win->pending_width = width;
-    win->pending_height = height;
-    win->buffer = NULL;
-    win->pool = NULL;
-    win->data = NULL;
-
-    win->surface = wl_compositor_create_surface(ctx->compositor);
-    win->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
-        ctx->layer_shell, win->surface, NULL, ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM, title);
-
-    zwlr_layer_surface_v1_set_size(win->layer_surface, width, height); // width auto, height 50
-    zwlr_layer_surface_v1_set_anchor(win->layer_surface,
-        ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
-        ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
-        ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
-    zwlr_layer_surface_v1_set_keyboard_interactivity(win->layer_surface, ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_ON_DEMAND);
-    if (exclusive_zone)
-        zwlr_layer_surface_v1_set_margin(win->layer_surface, 0, 0, 10, 0); // width auto, height 50
-    if (exclusive_zone)
-        zwlr_layer_surface_v1_set_exclusive_zone(win->layer_surface, height);
-
-    zwlr_layer_surface_v1_add_listener(win->layer_surface, &layer_shell_listener, win);
-
-    wl_surface_commit(win->surface);
-
-    // create and attach a tiny shm buffer so our surface becomes mapped
-    wl_display_roundtrip(ctx->display);
-
-    // create shm so that window will be mapped
-    if (!wl_window_resize_buffer(win, width, height)) {
-        fprintf(stderr, "Failed to create shm buffer\n");
-        // cleanup code
-        return nullptr;
-    }
-    wl_display_roundtrip(ctx->display);
-
-
-    ctx->windows.push_back(win);
-    return win;
-}
-*/
 
 static struct wl_buffer *create_shm_buffer(struct wl_context *ctx, int width, int height) {
     int stride = width * 4;
@@ -588,10 +500,11 @@ static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer,
         if (w->surface == surface) {
             printf("pointer: enter at %.2f, %.2f for %s\n", dx, dy, w->title.data());
             w->has_pointer_focus = true;
-            Event event(sx, sy);
             w->cur_x = sx;
             w->cur_y = sy;
-            mouse_entered(w->root, event);
+            if (w->rw->on_mouse_enters) {
+               w->rw->on_mouse_enters(w->rw, sx, sy);
+            }
             if (w->on_render)
                 w->on_render(w);
         }
@@ -605,8 +518,9 @@ static void pointer_handle_leave(void *data, struct wl_pointer *wl_pointer,
     for (auto w : ctx->windows) {
         if (w->surface == surface) {
             w->has_pointer_focus = false;
-            Event event;
-            mouse_left(w->root, event);
+            if (w->rw->on_mouse_leaves) {
+               w->rw->on_mouse_leaves(w->rw, w->cur_x, w->cur_y);
+            }
             if (w->on_render)
                 w->on_render(w);
         }
@@ -621,10 +535,10 @@ static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer,
     for (auto w : ctx->windows) {
         if (w->has_pointer_focus) {
             log(fz("pointer: motion at {}, {} for %s\n", dx, dy, w->title.data()));
-            Event event(dx, dy);
             w->cur_x = dx;
             w->cur_y = dy;
-            move_event(w->root, event);
+            if (w->rw->on_mouse_move)
+               w->rw->on_mouse_move(w->rw, dx, dy);
             if (w->on_render)
                 w->on_render(w);
         }
@@ -642,21 +556,8 @@ static void pointer_handle_button(void *data, struct wl_pointer *wl_pointer,
     for (auto w : ctx->windows) {
         if (w->has_pointer_focus) {
             log(fz("pointer: handle button {} {} {} {}", w->cur_x, w->cur_y, button, state));
-            Event event(w->cur_x, w->cur_y, button, state);
-            //layout(event, event, 0);
-            std::vector<bool> before;
-            for (auto c : w->root->children) {
-                before.push_back(c->state.mouse_pressing);
-            }
-            mouse_event(w->root, event);
-            std::vector<bool> after;
-            for (auto c : w->root->children) {
-                after.push_back(c->state.mouse_pressing);
-            }
-            if (before.size() == after.size()) {
-                
-            } else {
-                log("diff");
+            if (w->rw->on_mouse_press) {
+                w->rw->on_mouse_press(w->rw, button, state, w->cur_x, w->cur_y);
             }
 
             if (w->on_render)
@@ -670,23 +571,15 @@ static void pointer_handle_button(void *data, struct wl_pointer *wl_pointer,
 
 static void pointer_handle_axis(void *data, struct wl_pointer *wl_pointer,
                                 uint32_t time, uint32_t axis, wl_fixed_t value) {
-    (void) wl_pointer; (void) time; (void) axis;
     double v = wl_fixed_to_double(value);
     printf("pointer: axis %u value %.2f\n", axis, v);
     auto ctx = (wl_context *) data;
     for (auto w : ctx->windows) {
         if (w->has_pointer_focus) {
             printf("pointer: handle scroll\n");
-            Event event;
-            event.x = w->cur_x;
-            event.y = w->cur_y;
-            event.scroll = true;
-            event.axis = axis;
-            //event.direction = direction;
-            event.delta = value;
-            //event.descrete = discrete;
-            //event.from_mouse = from_mouse;
-            mouse_event(w->root, event);
+            if (w->rw->on_scrolled) {
+                w->rw->on_scrolled(w->rw, 0, axis, 0, value, 0, 0);
+            }
             if (w->on_render)
                 w->on_render(w);
         }
@@ -792,6 +685,9 @@ static void keyboard_handle_enter(void *data, struct wl_keyboard *wl_keyboard,
     for (auto w : ctx->windows) {
         if (w->surface == surface) {
             w->has_keyboard_focus = true;
+            if (w->rw->on_keyboard_focus) {
+                w->rw->on_keyboard_focus(w->rw, true);
+            }
             if (w->on_render)
                 w->on_render(w);
         }
@@ -806,6 +702,9 @@ static void keyboard_handle_leave(void *data, struct wl_keyboard *wl_keyboard,
     for (auto w : ctx->windows) {
         if (w->surface == surface) {
             w->has_keyboard_focus = false;
+            if (w->rw->on_keyboard_focus) {
+                w->rw->on_keyboard_focus(w->rw, false);
+            }
             if (w->on_render)
                 w->on_render(w);
         }
@@ -914,6 +813,7 @@ static const struct wl_seat_listener seat_listener = {
 static void xdg_wm_base_ping(void *data, struct xdg_wm_base *wm_base, uint32_t serial) {
     xdg_wm_base_pong(wm_base, serial);
 }
+
 static const struct xdg_wm_base_listener wm_base_listener = {
     .ping = xdg_wm_base_ping
 };
@@ -1005,187 +905,7 @@ void wl_context_destroy(struct wl_context *ctx) {
 
 int wake_pipe[2];
 
-void fill_dock_root(wl_window *dock) {
-    auto root = dock->root;
-    root->type = ::hbox;
-    for (int i = 0; i < 6; i++) {
-        auto c = root->child(100, FILL_SPACE);
-        c->when_clicked = paint {
-            notify("clicked");
-        };
-        c->when_paint = [](Container *root, Container *c) {
-            auto dock = (wl_window *) root->user_data;
-            auto cr = dock->cr;
-            cairo_set_source_rgba(cr, 1, 0, 1, .4); 
-            cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
-            cairo_stroke(cr);
-            log(fz("{} {} {} {}", c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h));
-
-            if (c->state.mouse_pressing) {
-                log("hovering");
-                cairo_set_source_rgba(cr, 1, 1, 1, 1); 
-                cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
-                cairo_fill(cr);
-            } else if (c->state.mouse_hovering) {
-                log("pressing");
-                cairo_set_source_rgba(cr, 0, 0, 0, 1); 
-                cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
-                cairo_fill(cr); 
-            }
-        };
-    }
-}
-
-int open_dock() {
-    return 0;
-    pipe2(wake_pipe, O_CLOEXEC | O_NONBLOCK);
-    
-    struct wl_context *ctx = wl_context_create();
-    if (!ctx) {
-        fprintf(stderr, "Failed to initialize Wayland context\n");
-        return 1;
-    }
-
-/*
-    auto dock = wl_layer_window_create(ctx, 0, 48, ZWLR_LAYER_SHELL_V1_LAYER_TOP, "mylardesktop:dock");
-    dock->root->user_data = dock;
-    dock->root->when_paint = [](Container *root, Container *c) {
-        auto dock = (wl_window *) root->user_data;
-        auto cr = dock->cr;
-        cairo_set_source_rgba(cr, 1, 1, 1, 1); 
-        cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
-        cairo_fill(cr);
-    };
-
-    //auto dock = wl_layer_window_create(ctx, 500, 500, ZWLR_LAYER_SHELL_V1_LAYER_TOP, "quickshell:dock", false);
-    auto dock = wl_layer_window_create(ctx, 0, 40, ZWLR_LAYER_SHELL_V1_LAYER_TOP, "quickshell:dock");
-    
-    dock->root->user_data = dock;
-    dock->root->when_paint = [](Container *root, Container *c) {
-        auto dock = (wl_window *) root->user_data;
-        auto cr = dock->cr;
-        cairo_set_source_rgba(cr, 1, 1, 1, .4); 
-        //notify(std::to_string(c->real_bounds.w));
-        cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
-        cairo_fill(cr);
-        //notify("here");
-    };
-
-    fill_dock_root(dock);
-    
-    dock->on_render(dock);
-
-    auto settings = wl_window_create(ctx, 800, 600, "Settings");
-    settings->root->user_data = settings;
-    settings->root->when_paint = [](Container *root, Container *c) {
-        auto settings = (wl_window *) root->user_data;
-        auto cr = settings->cr;
-        cairo_set_source_rgba(cr, 1, 0, 1, 1); 
-        //notify(std::to_string(c->real_bounds.w));
-        cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
-        cairo_fill(cr);
-        //notify("here");
-    };
-    settings->on_render(settings);
-    */
-    
-    
-    //wl_window_create(ctx, 800, 600, "Onboarding");
-    
-    printf("Window created. Entering main loop.\n");
-
-    bool need_flush = false;
-    int fd = wl_display_get_fd(ctx->display);
-
-    int x = 0;
-    while (running) {
-        // Dispatch any already-queued events before blocking
-        wl_display_dispatch_pending(ctx->display);
-        
-        /*
-        // 2. REDRAW phase — right here
-        for (auto win : ctx->windows) {
-            if (win->needs_redraw) {
-                wl_window_draw(win);        // your Cairo/OpenGL draw
-                wl_surface_commit(win->surface);
-                win->needs_redraw = false;
-            }
-        }
-        */
-
-        // Try to flush before waiting
-        if (wl_display_flush(ctx->display) < 0 && errno == EAGAIN)
-            need_flush = true;
-
-        short events = POLLIN | POLLERR;
-        if (need_flush)
-            events |= POLLOUT;
-
-        struct pollfd pfds[2] = {
-            { .fd = fd, .events = events },
-            { .fd = wake_pipe[0], .events = POLLIN },
-        };
-
-        if (poll(pfds, 2, -1) < 0)
-            break;
-
-        if (pfds[1].revents & POLLIN) {
-            char buf[64];
-            read(wake_pipe[0], buf, sizeof buf);
-            continue;
-        }
-
-        if (pfds[0].revents & POLLIN) {
-            if (wl_display_prepare_read(ctx->display) == 0) {
-                wl_display_read_events(ctx->display);
-                wl_display_dispatch_pending(ctx->display);
-            } else {
-                wl_display_dispatch_pending(ctx->display);
-            }
-        }
-
-        if (pfds[0].revents & POLLOUT) {
-            if (wl_display_flush(ctx->display) == 0)
-                need_flush = false;
-        }
-
-        // Now handle your app-level window cleanup
-        for (int i = ctx->windows.size() - 1; i >= 0; i--) {
-            auto win = ctx->windows[i];
-            if (win->marked_for_closing) {
-                wl_window_destroy(win);
-                ctx->windows.erase(ctx->windows.begin() + i);
-            }
-        }
-    }
-
-    // 4. Cleanup
-    wl_context_destroy(ctx); 
-
-    return 0;
-}
-
-void start_dock() {
-    open_dock();     
-}
-
-void wake_display_loop() {
-    write(wake_pipe[1], "x", 1); // wakes poll
-}
-
-void stop_dock() {
-    if (running) {
-        running = false;
-        wake_display_loop();    
-    }
-}
-
-/*int main() {
-    start_dock();   
-    return 0;
-}*/
-
-void windowing::add_fd(RawApp *app, int fd) {
+void windowing::add_fb(RawApp *app, int fd) {
     
 }
 
@@ -1260,8 +980,11 @@ void windowing::main_loop(RawApp *app) {
             }
         }
         ctx->running = any_keepers_of_life;  
+        //notify(fz("ctx->running {}", ctx->running));
     }
 
+    //notify("app exiting");
+    
     // 4. Cleanup
     wl_context_destroy(ctx);
 }
@@ -1272,6 +995,7 @@ RawApp *windowing::open_app() {
     
     struct wl_context *ctx = wl_context_create();
     ctx->id = ra->id;
+    ctx->ra = ra;
     
     pipe2(ctx->wake_pipe, O_CLOEXEC | O_NONBLOCK);
 
@@ -1280,7 +1004,9 @@ RawApp *windowing::open_app() {
     return ra;
 }
 
-RawWindow *windowing::open_window(RawApp *app, WindowType type, PositioningInfo info) {
+RawWindow *windowing::open_window(RawApp *app, WindowType type, RawWindowSettings settings) {
+    if (settings.pos.w < 1 || settings.pos.h < 1)
+        return nullptr;
     wl_context *ctx = nullptr;
     for (auto c : apps)
         if (c->id == app->id)
@@ -1293,20 +1019,20 @@ RawWindow *windowing::open_window(RawApp *app, WindowType type, PositioningInfo 
     rw->id = unique_id++;
 
     if (type == WindowType::NORMAL) {
-        auto settings = wl_window_create(ctx, info.w, info.h, "Settings");
-        settings->id = rw->id;
-        settings->root->user_data = settings;
-        settings->root->when_paint = [](Container *root, Container *c) {
-            auto settings = (wl_window *) root->user_data;
-            auto cr = settings->cr;
-            cairo_set_source_rgba(cr, 1, 0, 1, 1); 
-            //notify(std::to_string(c->real_bounds.w));
-            cairo_rectangle(cr, c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h); 
-            cairo_fill(cr);
-            //notify("here");
-        };
-        settings->on_render(settings);
-        windows.push_back(settings);
+        auto window = wl_window_create(ctx, settings.pos.w, settings.pos.h, settings.name.c_str());
+        window->rw = rw;
+        rw->cr = window->cr;
+        window->id = rw->id;
+        window->on_render(window);
+        windows.push_back(window);
+    }
+    if (type == WindowType::DOCK) {
+        auto window = wl_layer_window_create(ctx, settings.pos.w, settings.pos.h, ZWLR_LAYER_SHELL_V1_LAYER_TOP, settings.name.c_str());
+        window->rw = rw;
+        rw->cr = window->cr;
+        window->id = rw->id;
+        window->on_render(window);
+        windows.push_back(window);        
     }
 
     return rw;

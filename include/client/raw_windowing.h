@@ -2,9 +2,25 @@
 #define windowing_h_INCLUDED
 
 #include <functional>
+#include <string>
+#include <cairo.h>
 
 struct RawApp {
     int id = -1;
+};
+
+struct PositioningInfo {
+    int x = 0;
+    int y = 0;
+    int w = 800;
+    int h = 600;
+    
+    int side = 0; // for docks
+};
+
+struct RawWindowSettings {
+    std::string name;
+    PositioningInfo pos;
 };
 
 struct RawWindow {
@@ -14,6 +30,8 @@ struct RawWindow {
     
     RawWindow *parent = nullptr;
     std::vector<RawWindow *> children;
+
+    cairo_t *cr = nullptr;
 
     std::function<bool(RawWindow *, float x, float y)> on_mouse_move = nullptr;
 
@@ -27,13 +45,11 @@ struct RawWindow {
     
     std::function<bool(RawWindow *, float x, float y)> on_mouse_leaves = nullptr;
 
-    std::function<bool(RawWindow *, float x, float y)> on_keyboard_focus = nullptr;
-    
-    std::function<bool(RawWindow *, float x, float y)> on_keyboard_focus_lost = nullptr;
+    std::function<bool(RawWindow *, bool gained)> on_keyboard_focus = nullptr;
 
-    std::function<void(RawWindow *, int stage)> on_render = nullptr;
+    std::function<void(RawWindow *, int w, int h)> on_render = nullptr;
 
-    std::function<void(RawWindow *, int stage)> on_resize = nullptr;
+    std::function<void(RawWindow *, int w, int h)> on_resize = nullptr;
 };
 
 enum struct WindowType {
@@ -42,23 +58,18 @@ enum struct WindowType {
     DOCK,
 };
 
-struct PositioningInfo {
-    int x = 0;
-    int y = 0;
-    int w = 0;
-    int h = 0;
-    
-    int side = 0; // for docks
-};
-
 namespace windowing {
     RawApp *open_app();
-    void close_app(RawApp *app);
 
-    void add_fd(RawApp *app, int fd);
+    void add_fb(RawApp *app, int fd);
+    
+    RawWindow *open_window(RawApp *app, WindowType type, RawWindowSettings settings);
+     
     void main_loop(RawApp *app);
-    RawWindow *open_window(RawApp *app, WindowType type, PositioningInfo pos);
-    void close_window(RawWindow *window);
+
+    void close_window(RawWindow *window);   
+    
+    void close_app(RawApp *app);
 };
 
 #endif // windowing_h_INCLUDED
