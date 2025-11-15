@@ -4,6 +4,7 @@
 #include "hypriso.h"
 #include <linux/input-event-codes.h>
 #include <algorithm>
+#include <wayland-server-protocol.h>
 
 #ifdef TRACY_ENABLE
 #include "tracy/Tracy.hpp"
@@ -292,6 +293,8 @@ void handle_mouse_button_press(Container* root, const Event& e) {
 
     std::vector<Container*> mouse_downed;
 
+    //notify(std::format("{} {} {} {}", e.scroll, pierced.size(), root->mouse_current_x, root->mouse_current_y));
+
     for (int i = 0; i < pierced.size(); i++) {
         auto p = pierced[i];
 
@@ -314,7 +317,7 @@ void handle_mouse_button_press(Container* root, const Event& e) {
         // Check if its a scroll event and call when_scrolled if so
         if (e.scroll) {
             if (p->when_fine_scrolled) {
-                p->when_fine_scrolled(root, p, 0, -e.delta, !e.from_mouse);
+                p->when_fine_scrolled(root, p, 0, -e.delta, e.from_mouse);
                 handle_mouse_motion(root, e.x, e.y);
             }
             continue;

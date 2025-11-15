@@ -2,6 +2,7 @@
 
 #include "second.h"
 #include "events.h"
+#include <wayland-server-protocol.h>
 
 std::vector<MylarWindow *> mylar_windows;
 
@@ -42,14 +43,14 @@ bool on_scrolled(RawWindow *rw, int source, int axis, int direction, double delt
     ::layout(m->root, m->root, m->root->real_bounds);
     Event event;
     event.x = m->root->mouse_current_x;
-    event.y = m->root->mouse_current_x;
+    event.y = m->root->mouse_current_y;
     event.scroll = true;
+    event.source = source;
     event.axis = axis;
     event.direction = direction;
-    event.delta = delta * .0001;
+    event.delta = delta;
     event.descrete = discrete;
-    event.from_mouse = mouse;
-    second::layout_containers();
+    event.from_mouse = source == WL_POINTER_AXIS_SOURCE_WHEEL;
     mouse_event(m->root, event);
     return false;
 }

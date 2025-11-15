@@ -11,6 +11,7 @@ struct Event {
     int button;
     int state;
 
+    int source = 0;
     bool scroll = false;
     int axis = 0;
     int direction = 0;

@@ -24,6 +24,15 @@ struct CachedFont {
 
 static std::vector<CachedFont *> cached_fonts;
 
+struct BatteryData : UserData {
+    float battery_level = 100;
+    float brightness_level = 100;
+};
+
+struct VolumeData : UserData {
+    float value = 100;
+};
+
 PangoLayout *
 get_cached_pango_font(cairo_t *cr, std::string name, int pixel_height, PangoWeight weight, bool italic) {
 #ifdef TRACY_ENABLE
@@ -149,9 +158,11 @@ static void paint_button_bg(Container *root, Container *c) {
 
 static void paint_battery(Container *root, Container *c) {
     auto mylar = (MylarWindow*)root->user_data;
+    auto battery_data = (BatteryData *) c->user_data;
+    
     auto cr = mylar->raw_window->cr;
     paint_button_bg(root, c);
-    draw_text(cr, c, "Battery: 100%");
+    draw_text(cr, c, fz("Battery: {}%", (int) std::round(battery_data->battery_level)));
 }
 
 static std::string get_date() {
@@ -160,7 +171,7 @@ static std::string get_date() {
     auto now = system_clock::now();
     auto t = floor<seconds>(now);
 
-    std::string s = std::format("{:%Y-%m-%d}\n{:%I:%M %p}", t, t);
+    std::string s = std::format("{:%Y-%m-%d}\n{:%I:%M:%S %p}", t, t);
 
     return s;
 }
@@ -170,11 +181,18 @@ static void fill_root(Container *root) {
     
     {
         auto volume = root->child(40, FILL_SPACE);
+        auto volume_data = new VolumeData;
+        volume->when_fine_scrolled = [](Container* root, Container* c, int scroll_x, int scroll_y, bool came_from_touchpad) {
+            notify(fz("fine scrolled {} {}", ((double) scroll_y) * .001, came_from_touchpad));
+
+        };
+        volume->user_data = volume_data;
         volume->when_paint = paint {
             auto mylar = (MylarWindow*)root->user_data;
+            auto volume_data = (VolumeData *) c->user_data;
             auto cr = mylar->raw_window->cr;
             paint_button_bg(root, c);
-            draw_text(cr, c, "Volume: 100%");
+            draw_text(cr, c, fz("Volume: {}%", (int) std::round(volume_data->value)));
         };
         volume->pre_layout = [](Container *root, Container *c, const Bounds &b) {
             auto mylar = (MylarWindow*)root->user_data;
@@ -190,6 +208,8 @@ static void fill_root(Container *root) {
 
     {
         auto battery = root->child(40, FILL_SPACE);
+        auto battery_data = new BatteryData;
+        battery->user_data = battery_data;
         battery->when_paint = paint_battery;
         battery->pre_layout = [](Container *root, Container *c, const Bounds &b) {
             auto mylar = (MylarWindow*)root->user_data;
@@ -236,9 +256,9 @@ void dock_start() {
     mylar->root->alignment = ALIGN_RIGHT;
     fill_root(mylar->root);
 
-    notify("be");
+    //notify("be");
     windowing::main_loop(dock_app);
-    notify("asdf");
+    //notify("asdf");
 }
 
 void dock::start() {
