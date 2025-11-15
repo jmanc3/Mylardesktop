@@ -1037,6 +1037,22 @@ RawWindow *windowing::open_window(RawApp *app, WindowType type, RawWindowSetting
     return rw;
 }
 
+void windowing::wake_up(RawWindow *window) {
+    wl_context *ctx = nullptr;
+    for (auto c : apps)
+        if (c->id == window->creator->id)
+            ctx = c;
+    if (!ctx)
+        return;
+    wl_window *win = nullptr;
+    for (auto w : windows)
+        if (w->id == window->id)
+            win = w;
+    if (!win)
+        return;
+    write(ctx->wake_pipe[1], "x", 1);
+}
+
 void windowing::close_window(RawWindow *window) {
     wl_context *ctx = nullptr;
     for (auto c : apps)

@@ -67,6 +67,8 @@ namespace windowing {
      
     void main_loop(RawApp *app);
 
+    void wake_up(RawWindow *window);
+
     void close_window(RawWindow *window);   
     
     void close_app(RawApp *app);
