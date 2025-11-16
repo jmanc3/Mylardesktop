@@ -30,6 +30,7 @@ static float battery_level = 100;
 static bool charging = true;
 static float volume_level = 100;
 static bool finished = false;
+static bool nightlight_on = false;
 static RawApp *dock_app = nullptr;
 static MylarWindow *mylar_window = nullptr;
 
@@ -312,6 +313,34 @@ static void set_volume(float amount) {
 
 static void fill_root(Container *root) {
     root->when_paint = paint_root;
+    
+    { 
+        auto night = root->child(40, FILL_SPACE);
+        night->when_clicked = paint {
+           if (nightlight_on)  {
+               system("killall hyprsunset");
+           } else {
+               std::thread t([]() {
+                   system("hyprsunset -t 5000");
+               });
+               t.detach();
+           }
+           nightlight_on = !nightlight_on;
+        };
+        night->when_paint = paint {
+            auto mylar = (MylarWindow*)root->user_data;
+            auto cr = mylar->raw_window->cr;
+            paint_button_bg(root, c);
+            draw_text(cr, c, fz("Nightlight: {}", nightlight_on ? "On" : "Off"), 9 * mylar->raw_window->dpi);
+        };
+        night->pre_layout = [](Container *root, Container *c, const Bounds &b) {
+            auto mylar = (MylarWindow*)root->user_data;
+            auto cr = mylar->raw_window->cr;
+            auto bounds = draw_text(cr, c, fz("Nightlight: {}", nightlight_on ? "On" : "Off"), 9 * mylar->raw_window->dpi, false);
+            c->wanted_bounds.w = bounds.w + 20;
+        };
+ 
+    }
     
     {
         auto volume = root->child(40, FILL_SPACE);
