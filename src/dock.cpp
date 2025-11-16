@@ -168,7 +168,7 @@ static void paint_battery(Container *root, Container *c) {
     
     auto cr = mylar->raw_window->cr;
     paint_button_bg(root, c);
-    draw_text(cr, c, fz("Battery: {}%", (int) std::round(battery_data->battery_level)), 10 * mylar->raw_window->dpi);
+    draw_text(cr, c, fz("Battery: {}%", (int) std::round(battery_data->battery_level)), 9 * mylar->raw_window->dpi);
 }
 
 static std::string get_date() {
@@ -260,12 +260,12 @@ static void fill_root(Container *root) {
             auto volume_data = (VolumeData *) c->user_data;
             auto cr = mylar->raw_window->cr;
             paint_button_bg(root, c);
-            draw_text(cr, c, fz("Volume: {}%", (int) std::round(volume_data->value)), 10 * mylar->raw_window->dpi);
+            draw_text(cr, c, fz("Volume: {}%", (int) std::round(volume_data->value)), 9 * mylar->raw_window->dpi);
         };
         volume->pre_layout = [](Container *root, Container *c, const Bounds &b) {
             auto mylar = (MylarWindow*)root->user_data;
             auto cr = mylar->raw_window->cr;
-            auto bounds = draw_text(cr, c, "Volume: 100%", 10 * mylar->raw_window->dpi, false);
+            auto bounds = draw_text(cr, c, "Volume: 100%", 9 * mylar->raw_window->dpi, false);
             c->wanted_bounds.w = bounds.w + 20;
         };
         volume->when_clicked = paint {
@@ -282,7 +282,7 @@ static void fill_root(Container *root) {
         battery->pre_layout = [](Container *root, Container *c, const Bounds &b) {
             auto mylar = (MylarWindow*)root->user_data;
             auto cr = mylar->raw_window->cr;
-            auto bounds = draw_text(cr, c, "Battery: 100%", 10 * mylar->raw_window->dpi, false);
+            auto bounds = draw_text(cr, c, "Battery: 100%", 9 * mylar->raw_window->dpi, false);
             c->wanted_bounds.w = bounds.w + 20;
         };
         battery->when_clicked = paint {
@@ -315,12 +315,12 @@ static void fill_root(Container *root) {
             auto brightness_data = (BrightnessData *) c->user_data;
             auto cr = mylar->raw_window->cr;
             paint_button_bg(root, c);
-            draw_text(cr, c, fz("Brightness: {}%", (int) std::round(brightness_data->value)), 10 * mylar->raw_window->dpi);
+            draw_text(cr, c, fz("Brightness: {}%", (int) std::round(brightness_data->value)), 9 * mylar->raw_window->dpi);
         };
         brightness->pre_layout = [](Container *root, Container *c, const Bounds &b) {
             auto mylar = (MylarWindow*)root->user_data;
             auto cr = mylar->raw_window->cr;
-            auto bounds = draw_text(cr, c, "Brightness: 100%", 10 * mylar->raw_window->dpi, false);
+            auto bounds = draw_text(cr, c, "Brightness: 100%", 9 * mylar->raw_window->dpi, false);
             c->wanted_bounds.w = bounds.w + 20;
         };
         brightness->when_clicked = paint {
@@ -335,12 +335,12 @@ static void fill_root(Container *root) {
             auto mylar = (MylarWindow*)root->user_data;
             auto cr = mylar->raw_window->cr;
             paint_button_bg(root, c);
-            draw_text(cr, c, get_date(), 10 * mylar->raw_window->dpi);
+            draw_text(cr, c, get_date(), 9 * mylar->raw_window->dpi);
         };
         date->pre_layout = [](Container *root, Container *c, const Bounds &b) {
             auto mylar = (MylarWindow*)root->user_data;
             auto cr = mylar->raw_window->cr;
-            auto bounds = draw_text(cr, c, get_date(), 10 * mylar->raw_window->dpi, false);
+            auto bounds = draw_text(cr, c, get_date(), 9 * mylar->raw_window->dpi, false);
             c->wanted_bounds.w = bounds.w + 20;
         };
         date->when_clicked = paint {

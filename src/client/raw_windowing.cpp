@@ -42,8 +42,9 @@ extern "C" {
 #undef namespace
 #include "xdg-shell-client-protocol.h"
 #include "xdg-output-unstable-v1-client-protocol.h"
-}
 #include "fractional-scale-v1-client-protocol.h"
+#include "wp-viewporter-client-protocol.h"
+}
 
 #include <xkbcommon/xkbcommon.h>
 
@@ -76,7 +77,8 @@ struct wl_context {
     struct wl_pointer *pointer = nullptr;
     struct xkb_context *xkb_ctx = nullptr;
     struct wp_fractional_scale_manager_v1 *fractional_scale_manager = nullptr;
-    
+    struct wp_viewporter *viewporter = nullptr;
+
     //struct wl_output *output;
     uint32_t shm_format;
 
@@ -99,6 +101,7 @@ struct wl_window {
     struct xkb_state *xkb_state = nullptr;
     struct wl_shm_pool *pool = nullptr;
     struct wp_fractional_scale_v1 *fractional_scale = nullptr;
+    wp_viewport *viewport = nullptr;
     wl_buffer *buffer = nullptr;
 
     float current_fractional_scale = 1.0; // default value
@@ -313,6 +316,9 @@ bool wl_window_resize_buffer(struct wl_window *win, int _new_width, int _new_hei
         win->on_render(win);
     }
 
+    if (win->viewport)
+        wp_viewport_set_destination(win->viewport, win->logical_width, win->logical_height);
+
     return true;
 }
 
@@ -364,6 +370,7 @@ struct wl_window *wl_window_create(struct wl_context *ctx,
     }
     win->fractional_scale = wp_fractional_scale_manager_v1_get_fractional_scale(ctx->fractional_scale_manager, win->surface);
     wp_fractional_scale_v1_add_listener(win->fractional_scale, &fractional_scale_listener, win);
+    win->viewport = wp_viewporter_get_viewport(ctx->viewporter, win->surface); 
 
     // 2️⃣ Get xdg_surface
     win->xdg_surface = xdg_wm_base_get_xdg_surface(ctx->wm_base, win->surface);
@@ -449,6 +456,7 @@ struct wl_window *wl_layer_window_create(struct wl_context *ctx, int width, int 
     
     win->fractional_scale = wp_fractional_scale_manager_v1_get_fractional_scale(ctx->fractional_scale_manager, win->surface);
     wp_fractional_scale_v1_add_listener(win->fractional_scale, &fractional_scale_listener, win);
+    win->viewport = wp_viewporter_get_viewport(ctx->viewporter, win->surface); 
 
     win->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
         ctx->layer_shell, win->surface, NULL, layer, title);
@@ -883,7 +891,6 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
     } else if (strcmp(interface, wl_seat_interface.name) == 0) {
         d->seat = (wl_seat *) wl_registry_bind(registry, id, &wl_seat_interface, 5);
         wl_seat_add_listener(d->seat, &seat_listener, d);
-        printf("here\n");
     } else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
         d->wm_base = (xdg_wm_base *) wl_registry_bind(registry, id, &xdg_wm_base_interface, 1);
         xdg_wm_base_add_listener(d->wm_base, &wm_base_listener, d);
@@ -892,8 +899,9 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
     } else if (strcmp(interface, wl_output_interface.name) == 0) {
         //d->output = (wl_output *) wl_registry_bind(registry, id, &wl_output_interface, 3);
     } else if (strcmp(interface, wp_fractional_scale_manager_v1_interface.name) == 0) {
-        notify("fractional scale manager");
         d->fractional_scale_manager = (wp_fractional_scale_manager_v1 *) wl_registry_bind(registry, id, &wp_fractional_scale_manager_v1_interface, 1);
+    } else if (strcmp(interface, wp_viewporter_interface.name) == 0) {
+        d->viewporter = (wp_viewporter*) wl_registry_bind(registry, id, &wp_viewporter_interface, 1);
     }
 }
 
@@ -1230,6 +1238,9 @@ void windowing::close_app(RawApp *app) {
             ctx = c;
     if (!ctx)
         return;
+    for (auto w : ctx->windows) {
+        windowing::close_window(w->rw); 
+    }
     ctx->running = false;
     write(ctx->wake_pipe[1], "x", 1);
 }

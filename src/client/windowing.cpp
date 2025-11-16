@@ -17,6 +17,8 @@ static MylarWindow *mylar(RawWindow *rw) {
 
 bool on_mouse_move(RawWindow *rw, float x, float y) {
     log("on_mouse_move");
+    x *= rw->dpi;
+    y *= rw->dpi;
     auto m = mylar(rw);
     if (!m) return false;
     ::layout(m->root, m->root, m->root->real_bounds);
@@ -27,6 +29,8 @@ bool on_mouse_move(RawWindow *rw, float x, float y) {
 
 bool on_mouse_press(RawWindow *rw, int button, int state, float x, float y) {
     log("on_mouse_press");
+    x *= rw->dpi;
+    y *= rw->dpi;
     auto m = mylar(rw);
     if (!m) return false;
     ::layout(m->root, m->root, m->root->real_bounds);
@@ -81,7 +85,7 @@ void on_render(RawWindow *rw, int w, int h) {
     log("on_render");
     auto m = mylar(rw);
     if (!m) return;
-    m->root->real_bounds = Bounds(0, 0, w / rw->dpi, h / rw->dpi);
+    m->root->real_bounds = Bounds(0, 0, w, h);
     m->root->wanted_bounds = m->root->real_bounds;
     ::layout(m->root, m->root, m->root->real_bounds);
     paint_root(m->root);
@@ -91,7 +95,7 @@ void on_resize(RawWindow *rw, int w, int h) {
     log("on_resize");
     auto m = mylar(rw);
     if (!m) return;
-    m->root->real_bounds = Bounds(0, 0, w / rw->dpi, h / rw->dpi);
+    m->root->real_bounds = Bounds(0, 0, w, h);
 }
 
 MylarWindow *open_mylar_window(RawApp *app, WindowType type, RawWindowSettings settings) {
