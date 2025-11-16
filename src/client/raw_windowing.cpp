@@ -43,6 +43,7 @@ extern "C" {
 #include "xdg-shell-client-protocol.h"
 #include "xdg-output-unstable-v1-client-protocol.h"
 }
+#include "fractional-scale-v1-client-protocol.h"
 
 #include <xkbcommon/xkbcommon.h>
 
@@ -60,6 +61,8 @@ struct wl_context {
     int wake_pipe[2];
     int id;
     RawApp *ra;
+
+    std::vector<PolledFunction> polled_fds;
     
     bool running = true;
     struct wl_display *display = nullptr;
@@ -72,6 +75,8 @@ struct wl_context {
     struct wl_keyboard *keyboard = nullptr;
     struct wl_pointer *pointer = nullptr;
     struct xkb_context *xkb_ctx = nullptr;
+    struct wp_fractional_scale_manager_v1 *fractional_scale_manager = nullptr;
+    
     //struct wl_output *output;
     uint32_t shm_format;
 
@@ -93,7 +98,10 @@ struct wl_window {
     struct xkb_keymap *keymap = nullptr;
     struct xkb_state *xkb_state = nullptr;
     struct wl_shm_pool *pool = nullptr;
+    struct wp_fractional_scale_v1 *fractional_scale = nullptr;
     wl_buffer *buffer = nullptr;
+
+    float current_fractional_scale = 1.0; // default value
 
     std::function<void(wl_window *)> on_render = nullptr;
 
@@ -102,7 +110,8 @@ struct wl_window {
     
     int pending_width, pending_height; // recieved from configured event
     
-    int width, height;
+    int logical_width, logical_height;
+    int scaled_w, scaled_h;
     void *data;
     size_t size;
     int stride;
@@ -144,20 +153,25 @@ static void handle_toplevel_configure(
     // Usually you’d handle resize here
     printf("size reconfigured\n");
 }
+
+static void config_surface(wl_window *win, uint32_t w, uint32_t h) {
+    wl_window_resize_buffer(win, win->pending_width, win->pending_height);
+    if (win->rw->on_resize) {
+        win->rw->on_resize(win->rw, win->scaled_w, win->scaled_h);
+    }
+    if (win->on_render)
+        win->on_render(win);
+}
+
 static void handle_surface_configure(void *data,
 			  struct xdg_surface *xdg_surface,
 			  uint32_t serial) {
     struct wl_window *win = (struct wl_window *)data;
 
     if (win->pending_width > 0 && win->pending_height > 0 &&
-        (win->pending_width != win->width || win->pending_height != win->height)) {
+        (win->pending_width != win->logical_width || win->pending_height != win->logical_height)) {
         if (win->configured) {
-            wl_window_resize_buffer(win, win->pending_width, win->pending_height);
-            if (win->rw->on_resize) {
-                win->rw->on_resize(win->rw, win->pending_width, win->pending_height);
-            }
-            if (win->on_render)
-                win->on_render(win);
+            config_surface(win, win->pending_width, win->pending_height);
         }
     }
 
@@ -217,8 +231,8 @@ static void destroy_shm_buffer(struct wl_window *win) {
     }
 
     if (win->data) {
-        const int stride = win->width * 4;
-        const int size = stride * win->height;
+        const int stride = win->scaled_w* 4;
+        const int size = stride * win->scaled_h;
         munmap(win->data, size);
         win->data = nullptr;
     }
@@ -227,7 +241,7 @@ static void destroy_shm_buffer(struct wl_window *win) {
 void on_window_render(wl_window *win) {
     if (win->rw) {
         if (win->rw->on_render) {
-            win->rw->on_render(win->rw, win->width, win->height);
+            win->rw->on_render(win->rw, win->scaled_w, win->scaled_h);
         }
     }
     wl_surface_attach(win->surface, win->buffer, 0, 0);
@@ -235,14 +249,16 @@ void on_window_render(wl_window *win) {
     wl_surface_commit(win->surface);
 }
 
-bool wl_window_resize_buffer(struct wl_window *win, int new_width, int new_height) {
+bool wl_window_resize_buffer(struct wl_window *win, int _new_width, int _new_height) {
     destroy_shm_buffer(win);
 
-    win->width = new_width;
-    win->height = new_height;
+    win->logical_width = _new_width;
+    win->logical_height = _new_height;
+    win->scaled_w = win->logical_width * win->current_fractional_scale;
+    win->scaled_h = win->logical_height * win->current_fractional_scale;
 
-    const int stride = new_width * 4;
-    const int size = stride * new_height;
+    const int stride = win->scaled_w * 4;
+    const int size = stride * win->scaled_h;
 
     int fd = create_anonymous_file(size);
     if (fd < 0) {
@@ -259,7 +275,7 @@ bool wl_window_resize_buffer(struct wl_window *win, int new_width, int new_heigh
 
     struct wl_shm_pool *pool = wl_shm_create_pool(win->ctx->shm, fd, size);
     struct wl_buffer *buffer =
-        wl_shm_pool_create_buffer(pool, 0, new_width, new_height, stride, WL_SHM_FORMAT_ARGB8888);
+        wl_shm_pool_create_buffer(pool, 0, win->scaled_w, win->scaled_h, stride, WL_SHM_FORMAT_ARGB8888);
     wl_shm_pool_destroy(pool);
     close(fd);
 
@@ -275,8 +291,8 @@ bool wl_window_resize_buffer(struct wl_window *win, int new_width, int new_heigh
     win->cairo_surface = cairo_image_surface_create_for_data(
         (unsigned char*)data,
         CAIRO_FORMAT_ARGB32,
-        new_width,
-        new_height,
+        win->scaled_w,
+        win->scaled_h,
         stride
     );
 
@@ -291,12 +307,36 @@ bool wl_window_resize_buffer(struct wl_window *win, int new_width, int new_heigh
         win->rw->cr = win->cr;
 
     auto cr = win->cr;
-
-    win->on_render = on_window_render;
-    win->on_render(win);
+    
+    if (win->rw) {
+        win->on_render = on_window_render;
+        win->on_render(win);
+    }
 
     return true;
 }
+
+static void config_layer_shell(wl_window *win, uint32_t width, uint32_t height);
+
+static void handle_fractional_scale_preferred_scale(
+    void *data,
+    wp_fractional_scale_v1 *obj,
+    uint32_t scale)
+{
+    auto win = (wl_window *) data;
+    win->current_fractional_scale = ((float) scale) / 120.0f;
+    win->rw->dpi = win->current_fractional_scale;
+    notify(fz("{}", win->current_fractional_scale));
+    if (win->layer_surface) {
+        config_layer_shell(win, win->logical_width, win->logical_height);
+    } else {
+        config_surface(win, win->logical_width, win->logical_height);
+    }
+}
+
+static const wp_fractional_scale_v1_listener fractional_scale_listener = {
+    .preferred_scale = handle_fractional_scale_preferred_scale
+};
 
 struct wl_window *wl_window_create(struct wl_context *ctx,
                                    int width, int height,
@@ -304,8 +344,10 @@ struct wl_window *wl_window_create(struct wl_context *ctx,
 {
     struct wl_window *win = new wl_window;
     win->ctx = ctx;
-    win->width = width;
-    win->height = height;
+    win->logical_width = width;
+    win->logical_height = height;
+    win->scaled_w = win->logical_width * win->current_fractional_scale;
+    win->scaled_h = win->logical_height * win->current_fractional_scale;
     win->title = title;
     win->pending_width = width;
     win->pending_height = height;
@@ -320,6 +362,8 @@ struct wl_window *wl_window_create(struct wl_context *ctx,
         delete win;
         return nullptr;
     }
+    win->fractional_scale = wp_fractional_scale_manager_v1_get_fractional_scale(ctx->fractional_scale_manager, win->surface);
+    wp_fractional_scale_v1_add_listener(win->fractional_scale, &fractional_scale_listener, win);
 
     // 2️⃣ Get xdg_surface
     win->xdg_surface = xdg_wm_base_get_xdg_surface(ctx->wm_base, win->surface);
@@ -355,12 +399,21 @@ struct wl_window *wl_window_create(struct wl_context *ctx,
     if (!win->configured)
         wl_display_dispatch(ctx->display); 
     
-    wl_window_resize_buffer(win, win->width, win->height); // create shm buffer
+    wl_window_resize_buffer(win, win->scaled_w, win->scaled_h); // create shm buffer
     wl_surface_attach(win->surface, win->buffer, 0, 0);
     wl_surface_commit(win->surface);
 
     ctx->windows.push_back(win);
     return win;
+}
+
+static void config_layer_shell(wl_window *win, uint32_t width, uint32_t height) {
+    wl_window_resize_buffer(win, width, height);
+    if (win->rw->on_resize) {
+        win->rw->on_resize(win->rw, win->scaled_w, win->scaled_h);
+    }
+    if (win->on_render)
+        win->on_render(win);    
 }
 
 static void configure_layer_shell(void *data,
@@ -370,12 +423,7 @@ static void configure_layer_shell(void *data,
                             	  uint32_t height) {
     struct wl_window *win = (struct wl_window *)data;
     if (win->configured) {
-        wl_window_resize_buffer(win, width, height);
-        if (win->rw->on_resize) {
-            win->rw->on_resize(win->rw, width, height);
-        }
-        if (win->on_render)
-            win->on_render(win);
+        config_layer_shell(win, width, height);
     }
     win->configured = true;
     zwlr_layer_surface_v1_ack_configure(surf, serial);
@@ -391,11 +439,17 @@ struct wl_window *wl_layer_window_create(struct wl_context *ctx, int width, int 
 {
     struct wl_window *win = new wl_window;
     win->ctx = ctx;
-    win->width = width;
-    win->height = height;
+    win->logical_width = width;
+    win->logical_height= height;
+    win->scaled_w = win->logical_width * win->current_fractional_scale; 
+    win->scaled_h = win->logical_height * win->current_fractional_scale; 
     win->title = title;
 
     win->surface = wl_compositor_create_surface(ctx->compositor);
+    
+    win->fractional_scale = wp_fractional_scale_manager_v1_get_fractional_scale(ctx->fractional_scale_manager, win->surface);
+    wp_fractional_scale_v1_add_listener(win->fractional_scale, &fractional_scale_listener, win);
+
     win->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
         ctx->layer_shell, win->surface, NULL, layer, title);
 
@@ -416,7 +470,7 @@ struct wl_window *wl_layer_window_create(struct wl_context *ctx, int width, int 
     if (!win->configured)
         wl_display_dispatch(ctx->display); 
 
-    wl_window_resize_buffer(win, win->width, win->height); // create shm buffer
+    wl_window_resize_buffer(win, win->scaled_w, win->scaled_h); // create shm buffer
     wl_surface_attach(win->surface, win->buffer, 0, 0);
     wl_surface_commit(win->surface);
 
@@ -837,6 +891,9 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
         d->layer_shell = (zwlr_layer_shell_v1 *) wl_registry_bind(registry, id, &zwlr_layer_shell_v1_interface, 5);
     } else if (strcmp(interface, wl_output_interface.name) == 0) {
         //d->output = (wl_output *) wl_registry_bind(registry, id, &wl_output_interface, 3);
+    } else if (strcmp(interface, wp_fractional_scale_manager_v1_interface.name) == 0) {
+        notify("fractional scale manager");
+        d->fractional_scale_manager = (wp_fractional_scale_manager_v1 *) wl_registry_bind(registry, id, &wp_fractional_scale_manager_v1_interface, 1);
     }
 }
 
@@ -903,14 +960,22 @@ void wl_context_destroy(struct wl_context *ctx) {
 }
 
 int wake_pipe[2];
-
-void windowing::add_fb(RawApp *app, int fd) {
-    
-}
-
 std::vector<wl_context *> apps;
 std::vector<wl_window *> windows;
  
+void windowing::add_fb(RawApp *app, int fd, std::function<void(PolledFunction pf)> func) {
+    wl_context *ctx = nullptr;
+    for (auto c : apps)
+        if (c->id == app->id)
+            ctx = c;
+    if (!ctx)
+        return;
+    PolledFunction pf;
+    pf.fd = fd;
+    pf.func = func;
+    ctx->polled_fds.push_back(pf);
+}
+
 void windowing::main_loop(RawApp *app) {
     wl_context *ctx = nullptr;
     for (auto c : apps)
@@ -922,7 +987,92 @@ void windowing::main_loop(RawApp *app) {
     bool need_flush = false;
     int fd = wl_display_get_fd(ctx->display);
 
+    PolledFunction wayland_pf;
+    wayland_pf.fd = fd;
+    wayland_pf.func = [ctx, &need_flush](PolledFunction pf) {
+        short re = pf.revents;
+
+        if (re & POLLIN) {
+            if (wl_display_prepare_read(ctx->display) == 0) {
+                wl_display_read_events(ctx->display);
+                wl_display_dispatch_pending(ctx->display);
+            } else {
+                wl_display_dispatch_pending(ctx->display);
+            }
+        }
+
+        if (re & POLLOUT) {
+            if (wl_display_flush(ctx->display) == 0)
+                need_flush = false;
+        }
+    };
+
+    PolledFunction wake_pf;
+    wake_pf.fd = ctx->wake_pipe[0];
+    wake_pf.func = [ctx](PolledFunction pf) {
+        if (pf.revents & POLLIN) {
+            char buf[64];
+            read(ctx->wake_pipe[0], buf, sizeof buf);
+            // wake simply interrupts the poll
+        }
+    };
+
+    ctx->polled_fds.push_back(wayland_pf);
+    ctx->polled_fds.push_back(wake_pf);
+
     int x = 0;
+
+    while (ctx->running) {
+        // Handle pre-poll Wayland events
+        wl_display_dispatch_pending(ctx->display);
+
+        if (wl_display_flush(ctx->display) < 0 && errno == EAGAIN)
+            need_flush = true;
+
+        // Build pollfds based on ctx->polled_fds
+        std::vector<struct pollfd> pfds;
+        pfds.reserve(ctx->polled_fds.size());
+
+        for (auto &p : ctx->polled_fds) {
+            short ev = POLLIN | POLLERR;
+            if (p.fd == fd && need_flush)
+                ev |= POLLOUT;
+            pfds.push_back({ p.fd, ev, 0 });
+        }
+
+        // Block
+        if (poll(pfds.data(), pfds.size(), -1) < 0)
+            break;
+
+        // Dispatch
+        for (size_t i = 0; i < ctx->polled_fds.size(); i++) {
+            auto &p = ctx->polled_fds[i];
+            p.revents = pfds[i].revents;
+
+            if (p.revents && p.func)
+                p.func(p);  // call the polled handler
+        }
+
+        // ---- Application-level window cleanup ----
+
+        for (int i = ctx->windows.size() - 1; i >= 0; i--) {
+            auto win = ctx->windows[i];
+            if (win->marked_for_closing) {
+                wl_window_destroy(win);
+                ctx->windows.erase(ctx->windows.begin() + i);
+            }
+        }
+
+        bool any_keepers = false;
+        for (auto w : ctx->windows) {
+            if (w->keeper_of_life) {
+                any_keepers = true;
+                break;
+            }
+        }
+        ctx->running = any_keepers;
+    }
+    /*
     while (ctx->running) {
         // Dispatch any already-queued events before blocking
         wl_display_dispatch_pending(ctx->display);
@@ -981,6 +1131,7 @@ void windowing::main_loop(RawApp *app) {
         ctx->running = any_keepers_of_life;  
         //notify(fz("ctx->running {}", ctx->running));
     }
+    */
 
     //notify("app exiting");
     

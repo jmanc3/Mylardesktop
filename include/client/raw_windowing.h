@@ -5,6 +5,12 @@
 #include <string>
 #include <cairo.h>
 
+struct PolledFunction {
+    int fd = 0;
+    int revents = 0;
+    std::function<void(PolledFunction f)> func = nullptr;
+};
+
 struct RawApp {
     int id = -1;
 };
@@ -25,6 +31,8 @@ struct RawWindowSettings {
 
 struct RawWindow {
     int id = -1;
+
+    float dpi = 1.0;
 
     RawApp *creator = nullptr;
     
@@ -61,7 +69,7 @@ enum struct WindowType {
 namespace windowing {
     RawApp *open_app();
 
-    void add_fb(RawApp *app, int fd);
+    void add_fb(RawApp *app, int fd, std::function<void(PolledFunction pf)> func);
     
     RawWindow *open_window(RawApp *app, WindowType type, RawWindowSettings settings);
      

@@ -81,7 +81,7 @@ void on_render(RawWindow *rw, int w, int h) {
     log("on_render");
     auto m = mylar(rw);
     if (!m) return;
-    m->root->real_bounds = Bounds(0, 0, w, h);
+    m->root->real_bounds = Bounds(0, 0, w / rw->dpi, h / rw->dpi);
     m->root->wanted_bounds = m->root->real_bounds;
     ::layout(m->root, m->root, m->root->real_bounds);
     paint_root(m->root);
@@ -91,7 +91,7 @@ void on_resize(RawWindow *rw, int w, int h) {
     log("on_resize");
     auto m = mylar(rw);
     if (!m) return;
-    m->root->real_bounds = Bounds(0, 0, w, h);
+    m->root->real_bounds = Bounds(0, 0, w / rw->dpi, h / rw->dpi);
 }
 
 MylarWindow *open_mylar_window(RawApp *app, WindowType type, RawWindowSettings settings) {
