@@ -28,6 +28,7 @@ static std::vector<CachedFont *> cached_fonts;
 
 static float battery_level = 100;
 static bool charging = true;
+static float volume_level = 100;
 static bool finished = false;
 static RawApp *dock_app = nullptr;
 static MylarWindow *mylar_window = nullptr;
@@ -37,7 +38,7 @@ struct BatteryData : UserData {
 };
 
 struct VolumeData : UserData {
-    float value = 50;
+    
 };
 
 struct BrightnessData : UserData {
@@ -254,6 +255,39 @@ static void watch_battery_level() {
     t.detach();
 }
 
+static long last_time_volume_adjusted = 0;
+
+static float get_volume_level() {
+    int value = 50;
+    auto process = std::make_shared<TinyProcessLib::Process>("pactl list sinks | grep '^[[:space:]]Volume:' | head -n $(( $SINK + 1 )) | tail -n 1 | sed -e 's,.* \\([0-9][0-9]*\\)%.*,\\1,'", "", [&value](const char *bytes, size_t n) {
+        std::string text(bytes, n);
+        try {
+            value = std::atoi(text.c_str());
+        } catch (...) {
+            
+        }
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    return value;
+}
+
+static void watch_volume_level() {
+    auto process = std::make_shared<TinyProcessLib::Process>("pactl subscribe", "", [](const char *bytes, size_t n) {
+        long current = get_current_time_in_ms();
+        if (current - last_time_volume_adjusted > 200) {
+            volume_level = get_volume_level();
+            windowing::wake_up(mylar_window->raw_window);            
+        }
+    });
+    std::thread t([process]() {
+        while (!finished) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        process->kill();
+    });
+    t.detach();
+}
+
 static void set_brightness(float amount) {
     static bool queued = false;
     static bool latest = amount;
@@ -267,23 +301,36 @@ static void set_brightness(float amount) {
     auto process = std::make_shared<TinyProcessLib::Process>(fz("brightnessctl set {}", (int) std::round(amount)));
 }
 
+static void set_volume(float amount) {
+    static bool queued = false;
+    static bool latest = amount;
+    latest = amount;
+    if (queued)
+        return;
+    auto process = std::make_shared<TinyProcessLib::Process>(fz("pactl set-sink-volume @DEFAULT_SINK@ {}%", (int) std::round(volume_level)));
+}
+
 static void fill_root(Container *root) {
     root->when_paint = paint_root;
     
     {
         auto volume = root->child(40, FILL_SPACE);
         auto volume_data = new VolumeData;
+        volume_level = get_volume_level();
+        watch_volume_level();
         volume->when_fine_scrolled = [](Container* root, Container* c, int scroll_x, int scroll_y, bool came_from_touchpad) {
             //notify(fz("fine scrolled {} {}", ((double) scroll_y) * .001, came_from_touchpad));
             auto mylar = (MylarWindow*)root->user_data;
             auto volume_data = (VolumeData *) c->user_data;
-            volume_data->value += ((double) scroll_y) * .001;
-            if (volume_data->value > 100) {
-               volume_data->value = 100;
+            volume_level += ((double) scroll_y) * .001;
+            if (volume_level > 100) {
+               volume_level = 100;
             }
-            if (volume_data->value < 0) {
-               volume_data->value = 0;
+            if (volume_level < 0) {
+               volume_level = 0;
             }
+            last_time_volume_adjusted = get_current_time_in_ms();
+            set_volume(volume_level);
         };
         volume->user_data = volume_data;
         volume->when_paint = paint {
@@ -291,12 +338,12 @@ static void fill_root(Container *root) {
             auto volume_data = (VolumeData *) c->user_data;
             auto cr = mylar->raw_window->cr;
             paint_button_bg(root, c);
-            draw_text(cr, c, fz("Volume: {}%", (int) std::round(volume_data->value)), 9 * mylar->raw_window->dpi);
+            draw_text(cr, c, fz("Volume: {}%", (int) std::round(volume_level)), 9 * mylar->raw_window->dpi);
         };
         volume->pre_layout = [](Container *root, Container *c, const Bounds &b) {
             auto mylar = (MylarWindow*)root->user_data;
             auto cr = mylar->raw_window->cr;
-            auto bounds = draw_text(cr, c, "Volume: 100%", 9 * mylar->raw_window->dpi, false);
+            auto bounds = draw_text(cr, c, fz("Volume: {}%", (int) std::round(volume_level)), 9 * mylar->raw_window->dpi, false);
             c->wanted_bounds.w = bounds.w + 20;
         };
         volume->when_clicked = paint {
