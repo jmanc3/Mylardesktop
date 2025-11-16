@@ -7,6 +7,7 @@
 #include <cairo-deprecated.h>
 #include <cstddef>
 #include <wayland-client-core.h>
+#include <wayland-client-protocol.h>
 #include <wayland-server-core.h>
 #define _POSIX_C_SOURCE 200809L
 #include <poll.h>    // for POLLIN, POLLOUT, POLLERR, etc.
@@ -1021,6 +1022,11 @@ void windowing::main_loop(RawApp *app) {
         if (pf.revents & POLLIN) {
             char buf[64];
             read(ctx->wake_pipe[0], buf, sizeof buf);
+            for (auto w : ctx->windows) {
+                if (w->on_render) {
+                    w->on_render(w);
+                }
+            }
             // wake simply interrupts the poll
         }
     };
@@ -1210,6 +1216,37 @@ void windowing::wake_up(RawWindow *window) {
     if (!win)
         return;
     write(ctx->wake_pipe[1], "x", 1);
+}
+
+void windowing::redraw(RawWindow *window) {
+    wl_context *ctx = nullptr;
+    for (auto c : apps)
+        if (c->id == window->creator->id)
+            ctx = c;
+    if (!ctx)
+        return;
+    wl_window *win = nullptr;
+    for (auto w : windows)
+        if (w->id == window->id)
+            win = w;
+    if (!win)
+        return;
+    write(ctx->wake_pipe[1], "x", 1);
+    
+    /*
+    wl_event_loop* loop = wl_display_get_event_loop(ctx->display);
+
+    wl_event_source* timer = wl_event_loop_add_timer(
+        loop,
+        [](void* data) -> int {
+            auto win = (wl_window*)data;
+            //win->on_render(win);
+            return 0; // next timeout in ms
+        },
+        win);
+
+    wl_event_source_timer_update(timer, 1);
+    */
 }
 
 void windowing::close_window(RawWindow *window) {

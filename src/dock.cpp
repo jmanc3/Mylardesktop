@@ -26,8 +26,13 @@ struct CachedFont {
 
 static std::vector<CachedFont *> cached_fonts;
 
+static float battery_level = 100;
+static bool charging = true;
+static bool finished = false;
+static RawApp *dock_app = nullptr;
+static MylarWindow *mylar_window = nullptr;
+
 struct BatteryData : UserData {
-    float battery_level = 100;
     float brightness_level = 100;
 };
 
@@ -116,10 +121,6 @@ void remove_cached_fonts(cairo_t *cr) {
     }
 }
 
-
-static RawApp *dock_app = nullptr;
-static MylarWindow *mylar_window = nullptr;
-
 static void paint_root(Container *root, Container *c) {
     auto mylar = (MylarWindow *) root->user_data;
     auto cr = mylar->raw_window->cr;
@@ -168,7 +169,8 @@ static void paint_battery(Container *root, Container *c) {
     
     auto cr = mylar->raw_window->cr;
     paint_button_bg(root, c);
-    draw_text(cr, c, fz("Battery: {}%", (int) std::round(battery_data->battery_level)), 9 * mylar->raw_window->dpi);
+    std::string charging_text = charging ? "+" : "-";
+    draw_text(cr, c, fz("Battery: {}{}%", charging_text, (int) std::round(battery_level)), 9 * mylar->raw_window->dpi);
 }
 
 static std::string get_date() {
@@ -209,6 +211,20 @@ static float get_brightness() {
     return (current / max) * 100;
 }
 
+static bool battery_charging() {
+    bool value = false;
+    auto process = std::make_shared<TinyProcessLib::Process>("upower -i /org/freedesktop/UPower/devices/DisplayDevice | grep state", "", [&value](const char *bytes, size_t n) {
+        std::string text(bytes, n);
+        if (text.find("discharging") == std::string::npos) {
+            value = true;
+        } else {
+            value = false;
+        }
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    return value;
+}
+
 static float get_battery_level() {
     int value = 50;
     auto process = std::make_shared<TinyProcessLib::Process>("upower -i /org/freedesktop/UPower/devices/DisplayDevice | grep percentage | rg --only-matching '[0-9]*' | xargs", "", [&value](const char *bytes, size_t n) {
@@ -219,8 +235,23 @@ static float get_battery_level() {
             
         }
     });
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     return value;
+}
+
+static void watch_battery_level() {
+    auto process = std::make_shared<TinyProcessLib::Process>("upower --monitor", "", [](const char *bytes, size_t n) {
+        battery_level = get_battery_level();
+        charging = battery_charging();
+        windowing::wake_up(mylar_window->raw_window);
+    });
+    std::thread t([process]() {
+        while (!finished) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        process->kill();
+    });
+    t.detach();
 }
 
 static void set_brightness(float amount) {
@@ -277,12 +308,16 @@ static void fill_root(Container *root) {
     {
         auto battery = root->child(40, FILL_SPACE);
         auto battery_data = new BatteryData;
+        battery_level = get_battery_level();
+        charging = battery_charging();
+        watch_battery_level();
         battery->user_data = battery_data;
         battery->when_paint = paint_battery;
         battery->pre_layout = [](Container *root, Container *c, const Bounds &b) {
             auto mylar = (MylarWindow*)root->user_data;
             auto cr = mylar->raw_window->cr;
-            auto bounds = draw_text(cr, c, "Battery: 100%", 9 * mylar->raw_window->dpi, false);
+            std::string charging_text = charging ? "+" : "-";
+            auto bounds = draw_text(cr, c, fz("Battery: {}{}%", charging_text, battery_level), 9 * mylar->raw_window->dpi, false);
             c->wanted_bounds.w = bounds.w + 20;
         };
         battery->when_clicked = paint {
@@ -376,6 +411,7 @@ void dock::start() {
 
 void dock::stop() {
     //return;
+    finished = true;
     windowing::close_app(dock_app);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
