@@ -104,6 +104,8 @@ struct wl_window {
     struct wp_fractional_scale_v1 *fractional_scale = nullptr;
     wp_viewport *viewport = nullptr;
     wl_buffer *buffer = nullptr;
+    bool busy = false;
+    bool dropped_frame = false;
 
     float current_fractional_scale = 1.0; // default value
 
@@ -130,9 +132,24 @@ struct wl_window {
     bool marked_for_closing = false;
 };
 
+std::vector<wl_context *> apps;
+std::vector<wl_window *> windows;
+
 static struct wl_buffer *create_shm_buffer(struct wl_context *d, int width, int height);
 
 static void buffer_release(void *data, struct wl_buffer *wl_buffer) {
+    log("buffer released and available");
+    auto win = (wl_window *) data;
+    win->busy = false;
+    if (win->dropped_frame) {
+       win->dropped_frame = false;
+       for (auto w : windows) {
+           if (w->on_render) {
+               w->on_render(w);
+           }
+       }
+    }
+    
     //notify("buffer release");
     //struct Buffer *buf = data;
     //buf->busy = false;
@@ -191,6 +208,7 @@ static void handle_surface_configure(void *data,
 
     xdg_surface_ack_configure(xdg_surface, serial);
     win->configured = true;
+    log("surface commit");
     wl_surface_commit(win->surface);
 }
 
@@ -253,6 +271,12 @@ static void destroy_shm_buffer(struct wl_window *win) {
 }
 
 void on_window_render(wl_window *win) {
+    log("on_window_render");
+    if (win->busy) {
+        win->dropped_frame  = true;
+        return;
+    }
+    
     if (win->rw) {
         if (win->rw->on_render) {
             win->rw->on_render(win->rw, win->scaled_w, win->scaled_h);
@@ -260,10 +284,16 @@ void on_window_render(wl_window *win) {
     }
     wl_surface_attach(win->surface, win->buffer, 0, 0);
     wl_surface_damage_buffer(win->surface, 0, 0, INT32_MAX, INT32_MAX);
+    log("surface commit");
     wl_surface_commit(win->surface);
+    static long start = get_current_time_in_ms();
+    long current = get_current_time_in_ms();
+    if (current - start > 200)
+        win->busy = true;
 }
 
 bool wl_window_resize_buffer(struct wl_window *win, int _new_width, int _new_height) {
+    log("wl_window_resize_buffer");
     destroy_shm_buffer(win);
 
     win->logical_width = _new_width;
@@ -414,6 +444,7 @@ struct wl_window *wl_window_create(struct wl_context *ctx,
     xdg_toplevel_set_title(win->xdg_toplevel, title ? title : "Wayland Window");
 
     // 7️⃣ Single initial commit
+    log("surface commit");
     wl_surface_commit(win->surface);
 
     if (!win->configured)
@@ -421,6 +452,7 @@ struct wl_window *wl_window_create(struct wl_context *ctx,
     
     wl_window_resize_buffer(win, win->scaled_w, win->scaled_h); // create shm buffer
     wl_surface_attach(win->surface, win->buffer, 0, 0);
+    log("surface commit");
     wl_surface_commit(win->surface);
 
     ctx->windows.push_back(win);
@@ -487,12 +519,14 @@ struct wl_window *wl_layer_window_create(struct wl_context *ctx, int width, int 
 
     zwlr_layer_surface_v1_add_listener(win->layer_surface, &layer_shell_listener, win);
 
+    log("surface commit");
     wl_surface_commit(win->surface);
     if (!win->configured)
         wl_display_dispatch(ctx->display); 
 
     wl_window_resize_buffer(win, win->scaled_w, win->scaled_h); // create shm buffer
     wl_surface_attach(win->surface, win->buffer, 0, 0);
+    log("surface commit");
     wl_surface_commit(win->surface);
 
     ctx->windows.push_back(win);
@@ -981,9 +1015,7 @@ void wl_context_destroy(struct wl_context *ctx) {
 }
 
 int wake_pipe[2];
-std::vector<wl_context *> apps;
-std::vector<wl_window *> windows;
- 
+
 void windowing::add_fb(RawApp *app, int fd, std::function<void(PolledFunction pf)> func) {
     wl_context *ctx = nullptr;
     for (auto c : apps)
