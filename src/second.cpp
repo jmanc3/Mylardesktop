@@ -16,6 +16,7 @@
 #include "drag.h"
 #include "resizing.h"
 #include "dock.h"
+#include "splash.h"
 
 #include "process.hpp"
 #include <iterator>
@@ -91,6 +92,7 @@ static bool on_mouse_move(int id, float x, float y) {
 }
 
 static bool on_mouse_press(int id, int button, int state, float x, float y) {
+    splash::input();
     second::layout_containers();
     
     auto mou = mouse();
@@ -235,6 +237,8 @@ static bool on_scrolled(int id, int source, int axis, int direction, double delt
 }
 
 static bool on_key_press(int id, int key, int state, bool update_mods) {
+    splash::input();
+    
     static bool alt_held = false;
     if (key == KEY_LEFTALT || key == KEY_RIGHTALT) {
         alt_held = state;
@@ -668,6 +672,8 @@ static void on_render(int id, int stage) {
         rect(box, {1, 0, 1, 1});
         */
     }
+
+    splash::render(id, stage);
 }
 
 static void on_drag_start_requested(int id) {
