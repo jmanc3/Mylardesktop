@@ -132,6 +132,16 @@ struct wl_window {
 
 static struct wl_buffer *create_shm_buffer(struct wl_context *d, int width, int height);
 
+static void buffer_release(void *data, struct wl_buffer *wl_buffer) {
+    //notify("buffer release");
+    //struct Buffer *buf = data;
+    //buf->busy = false;
+}
+
+static const struct wl_buffer_listener buffer_listener = {
+    .release = buffer_release,
+};
+
 static void handle_toplevel_close(void *data, struct xdg_toplevel *toplevel) {
     auto win = (wl_window *) data;
     win->marked_for_closing = true;
@@ -310,6 +320,8 @@ bool wl_window_resize_buffer(struct wl_window *win, int _new_width, int _new_hei
     if (win->rw)
         win->rw->cr = win->cr;
 
+    wl_buffer_add_listener(win->buffer, &buffer_listener, win);
+    
     auto cr = win->cr;
     
     if (win->rw) {

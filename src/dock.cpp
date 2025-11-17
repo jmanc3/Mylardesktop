@@ -273,7 +273,9 @@ static float get_volume_level() {
 static void watch_volume_level() {
     auto process = std::make_shared<TinyProcessLib::Process>("pactl subscribe", "", [](const char *bytes, size_t n) {
         long current = get_current_time_in_ms();
-        if (current - last_time_volume_adjusted > 200) {
+        std::string text(bytes, n);
+        bool contains = text.find("change") != std::string::npos;
+        if (current - last_time_volume_adjusted > 200 && contains) {
             volume_level = get_volume_level();
             windowing::wake_up(mylar_window->raw_window);            
         }
