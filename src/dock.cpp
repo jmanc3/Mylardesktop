@@ -176,12 +176,10 @@ static void paint_battery(Container *root, Container *c) {
 }
 
 static std::string get_date() {
-    using namespace std::chrono;
+    auto now = std::chrono::system_clock::now();
+    auto local = std::chrono::current_zone()->to_local(now);
 
-    auto now = system_clock::now();
-    auto t = floor<seconds>(now);
-
-    std::string s = std::format("{:%Y-%m-%d}\n{:%I:%M:%S %p}", t, t);
+    std::string s = std::format("{:%Y-%m-%d}\n{:%I:%M %p}", local, local);
 
     return s;
 }
@@ -470,7 +468,7 @@ void dock_start() {
     auto mylar = open_mylar_window(dock_app, WindowType::DOCK, settings);
     mylar_window = mylar;
     mylar->root->user_data = mylar;
-    mylar->root->alignment = ALIGN_RIGHT;
+    //mylar->root->alignment = ALIGN_RIGHT;
     fill_root(mylar->root);
 
     //notify("be");
