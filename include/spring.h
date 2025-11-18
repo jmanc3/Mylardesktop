@@ -74,4 +74,10 @@ SpringState springEvaluate(
     return result;
 }
 
+// 10
+//std::cout<<springEvaluate(0, 10, 100, 0, {100, 1}).value << std::endl;
+// 21.818
+//std::cout<<springEvaluate(10, 10, 100, 0, {100, 1}).value << std::endl;
+
+
 #endif // spring_h_INCLUDED

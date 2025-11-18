@@ -4950,3 +4950,22 @@ bool HyprIso::being_animated(int cid) {
     }
     return false;
 }
+
+bool HyprIso::is_pinned(int id) {
+   for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            return hw->w->m_pinned;
+        }
+   }
+   return false;
+}
+
+void pin(int id, bool state) {
+   for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            hw->w->m_pinned = state;
+        }
+   }
+}
+
+

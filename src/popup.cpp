@@ -19,7 +19,7 @@ void popup::close(std::string uuid) {
     });    
 }
 
-void popup::open(int x, int y) {
+void popup::open(int id, int x, int y) {
     auto p = actual_root->child(::vbox, 277, 100);
     consume_everything(p);
     p->receive_events_even_if_obstructed = true;
@@ -58,6 +58,12 @@ void popup::open(int x, int y) {
             }
         }
     };
+    one->when_clicked = paint {
+        auto id = *datum<int>(c, "cid");
+        bool state = hypriso->is_pinned(id);
+        hypriso->pin(id, !state);
+    };
+    *datum<int>(one, "cid") = id;
     auto two = p->child(FILL_SPACE, 28);
     two->when_paint = one->when_paint;
 

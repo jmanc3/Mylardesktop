@@ -38,6 +38,15 @@ void paint_tab_option(Container *actual_root, Container *c) {
     if (stage != (int) STAGE::RENDER_POST_WINDOWS)
         return;
     renderfix
+    if (*datum<bool>(c, "dragging")) {
+        auto current_m = mouse();
+        auto start_m = *datum<Bounds>(c, "drag_start");
+        auto diff_x = current_m.x - start_m.x; 
+        auto diff_y = current_m.y - start_m.y;
+        c->real_bounds.x += diff_x * s;
+        c->real_bounds.y += diff_y * s;
+        hypriso->damage_entire(rid);
+    }
 
     int real_active_index = active_index % c->parent->children.size();
     int index = 0;
@@ -75,6 +84,17 @@ void create_tab_option(int cid, Container *parent) {
             alt_tab::close(true);
         });
     };
+    c->when_drag_start = paint {
+        *datum<bool>(c, "dragging") = true;
+        *datum<Bounds>(c, "drag_start") = mouse();
+    };
+    c->when_drag = paint {
+        
+    };
+    c->when_drag_end = paint {
+        *datum<bool>(c, "dragging") = false;
+    };
+    
 }
 
 struct LayoutInfo {

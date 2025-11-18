@@ -307,6 +307,9 @@ struct HyprIso {
     void move_to_workspace(int id, int workspace);
     void move_to_workspace(int workspace);
 
+    bool is_pinned(int id);
+    void pin(int id, bool state);
+
     SurfacePassInfo pass_info(int cid);
 
     std::vector<int> get_workspaces(int monitor);

@@ -223,7 +223,7 @@ void paint_titlebar(Container *actual_root, Container *c) {
                     });
                     if (!path.empty()) {
                         log(fz("{} {} {} ",path, real_icon_h, info->cached_h));
-                        
+
                         *info = gen_texture(path, real_icon_h);
                         info->cached_h = real_icon_h;
                     }
@@ -339,17 +339,18 @@ void create_titlebar(Container *root, Container *parent) {
     titlebar->minimum_x_distance_to_move_before_drag_begins = 3;
     titlebar->minimum_y_distance_to_move_before_drag_begins = 3;
     titlebar->when_clicked = paint {
+        auto client = first_above_of(c, TYPE::CLIENT);
+        auto cid = *datum<int>(client, "cid");
+        
         if (c->state.mouse_button_pressed == BTN_RIGHT) {
             auto m = mouse();
-            popup::open(m.x - 1, m.y - 1);
+            popup::open(cid, m.x - 1, m.y - 1);
             c->when_mouse_down(root, c);
             return;
         }
 
         c->when_mouse_down(root, c);
         if (double_clicked(c, "max")) {
-            auto client = first_above_of(c, TYPE::CLIENT);
-            auto cid = *datum<int>(client, "cid");
             // todo should actually transition from non max snap, to max and then unsnap?
             if (*datum<bool>(client, "snapped")) {
                 drag::snap_window(hypriso->monitor_from_cursor(), cid, (int)SnapPosition::NONE);

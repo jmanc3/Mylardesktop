@@ -17,6 +17,7 @@
 #include "resizing.h"
 #include "dock.h"
 #include "splash.h"
+#include "snap_preview.h"
 
 #include "process.hpp"
 #include <iterator>
@@ -380,6 +381,8 @@ SnapPosition opposite_snap_position(SnapPosition pos) {
 }
 
 void paint_snap_preview(Container *actual_root, Container *c) {
+    snap_preview::draw(actual_root, c);
+    
     auto root = get_rendering_root();
     if (!root)
         return;
@@ -395,49 +398,6 @@ void paint_snap_preview(Container *actual_root, Container *c) {
             border(b, {.5, .5, .5, (float) (.8 * a)}, 1);
         }
         //rect({root->real_bounds.x, hypriso->pass_info(cid).cby, root->real_bounds.w, 1}, {1, 0, 0, 1});
-
-#ifdef DEBUGTITLEBAR
-        auto cb = bounds_client(cid);
-        auto i = hypriso->pass_info(cid);
-        auto box = hypriso->getTexBox(cid);
-        box.scale(s);
-        box.round();
-        draw_text(fz("{} {}, {} {} {} {} {} {} {} {} {} {}, {} {} - {} {}", 
-        cb.x * s,
-        cb.y * s,
-    i.pos_x,
-    i.pos_y,
-    i.local_pos_x,
-    i.local_pos_y,
-    i.w,
-    i.h,
-    i.cbx,
-    i.cby,
-    i.cbw,
-    i.cbh, box.x, box.y, box.w, box.h
-        ), c->real_bounds.x, c->real_bounds.y);
-#endif
-    }
-
-    if (!(active_id == cid && stage == (int)STAGE::RENDER_PRE_WINDOW))
-        return;
-    if (!(drag::dragging() && cid == drag::drag_window()))
-        return;
-    auto cursor_mon = hypriso->monitor_from_cursor();
-    if (rid != cursor_mon)
-        return;
-
-    renderfix
-
-    auto m = mouse();
-    SnapPosition pos = mouse_to_snap_position(cursor_mon, m.x, m.y);
-    if (pos != SnapPosition::NONE) {
-        Bounds b = snap_position_to_bounds(rid, pos);
-        b.shrink(10);
-        b.x -= root->real_bounds.x;
-        b.y -= root->real_bounds.y;
-        b.scale(s);
-        rect(b, {1, 1, 1, .3}, 0, 0, 2.0f, false, 0.0);
     }
 }
 

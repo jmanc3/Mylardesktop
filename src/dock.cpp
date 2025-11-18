@@ -470,7 +470,7 @@ void dock_start() {
     auto mylar = open_mylar_window(dock_app, WindowType::DOCK, settings);
     mylar_window = mylar;
     mylar->root->user_data = mylar;
-    //mylar->root->alignment = ALIGN_RIGHT;
+    mylar->root->alignment = ALIGN_RIGHT;
     fill_root(mylar->root);
 
     //notify("be");
