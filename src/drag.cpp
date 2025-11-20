@@ -2,6 +2,7 @@
 
 #include "second.h"
 #include "defer.h"
+#include "snap_preview.h"
 
 #include <string>
 #include <cmath>
@@ -19,6 +20,7 @@ void drag::begin(int cid) {
     data = new DraggingData;
     data->cid = cid;
     data->mouse_start = mouse();
+    snap_preview::on_drag_start(cid, data->mouse_start.x, data->mouse_start.y);
     auto c = get_cid_container(cid);
     if (*datum<bool>(c, "drag_from_titlebar")) {
         data->mouse_start = *datum<Bounds>(c, "initial_click_position");
@@ -91,6 +93,8 @@ void drag::motion(int cid) {
         auto rid = *datum<int>(m, "cid");
         hypriso->damage_entire(rid);
     }
+
+    snap_preview::on_drag(cid, mouse_current.x, mouse_current.y);
 }
 
 // TODO: multi-monitor broken
@@ -160,6 +164,7 @@ void drag::end(int cid) {
     int mon = hypriso->monitor_from_cursor();
     auto m = mouse();
     auto pos = mouse_to_snap_position(mon, m.x, m.y);
+    snap_preview::on_drag_end(cid, m.x, m.y, (int) pos);
     snap_window(mon, cid, (int) pos);
     *datum<long>(actual_root, "drag_end_time") = get_current_time_in_ms();
 

@@ -53,6 +53,7 @@ static bool on_mouse_move(int id, float x, float y) {
     auto mou = mouse();
     x = mou.x;
     y = mou.y;
+    snap_preview::on_mouse_move(x, y); 
 
     if (drag::dragging()) {
         drag::motion(drag::drag_window());
