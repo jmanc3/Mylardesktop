@@ -163,6 +163,8 @@ void snap_preview::on_drag(int cid, int x, int y) {
         if (pos == SnapPosition::NONE) {
             preview->start = preview->current;
             preview->end = client_bounds;
+            preview->velx_at_change = 50.0f;
+            preview->vely_at_change = 50.0f;
         } else {
             if (preview->previous_snap_type == SnapPosition::NONE) {
                 preview->start = client_bounds;
