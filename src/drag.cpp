@@ -89,9 +89,13 @@ void drag::motion(int cid) {
     new_bounds.x += diff_x;
     new_bounds.y += diff_y;
     hypriso->move_resize(cid, new_bounds);
-    for (auto m : actual_monitors) {
-        auto rid = *datum<int>(m, "cid");
-        //hypriso->damage_entire(rid);
+    { // damage 
+        Bounds b = bounds_full_client(cid);
+        static Bounds p = b;
+        b.grow(20);
+        hypriso->damage_box(b);
+        hypriso->damage_box(p);
+        p = b;
     }
 
     snap_preview::on_drag(cid, mouse_current.x, mouse_current.y);
