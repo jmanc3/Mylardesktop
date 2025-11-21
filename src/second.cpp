@@ -930,7 +930,7 @@ bool double_clicked(Container *c, std::string needle) {
 #include <mutex>
 
 void log(const std::string& msg) {
-    return;
+    //return;
     static bool firstCall = true;
     static std::ofstream ofs;
     static std::mutex writeMutex;

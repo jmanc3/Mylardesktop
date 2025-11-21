@@ -10,6 +10,7 @@
 static Timer* timer = nullptr;
 
 static float total_time = 210.0f;
+static float fade_time = 300.0f;
 static float pad = 10.0f;
 
 struct Pos {
@@ -34,6 +35,8 @@ struct SnapPreview {
     Bounds start;
     Bounds current;
     Bounds end;
+
+    float rounding = 0.0;
     
     long time_since_change = 0;
     float scalar = 0; // 0->1
@@ -43,6 +46,7 @@ struct SnapPreview {
     SnapPosition previous_snap_type = SnapPosition::NONE;
 
     long keep_showing_until = 0;
+    long end_drag_time = 0;
 
     int cid = -1;
 };
@@ -68,8 +72,15 @@ void calculate_current() {
 }
 
 void update_preview(Timer* t) {
+    t->keep_running = true;
     long current = get_current_time_in_ms();
     float dt = (float) ((long) (current - preview->time_since_change));
+    if (preview->end_drag_time != 0) {
+        if ((current - preview->end_drag_time) > total_time * 1.3) {
+            t->keep_running= false;
+            timer = nullptr;
+        }
+    }
     float change = std::abs(preview->velx_at_change) / 65.0f;
     if (change > 1.0)
         change = 1.0;
@@ -87,8 +98,10 @@ void update_preview(Timer* t) {
 void snap_preview::on_drag_start(int cid, int x, int y) {
     preview->cid = cid;
     preview->show = true;
+    preview->end_drag_time = 0;
     preview->previous_snap_type = SnapPosition::NONE;
     preview->circumventing = true;
+    preview->rounding = hypriso->get_rounding(cid);
     if (!timer) {
         timer = later(nullptr, 1000.0f / 165.0f, update_preview);
         timer->keep_running = true;
@@ -181,8 +194,18 @@ void snap_preview::on_drag(int cid, int x, int y) {
 void snap_preview::on_drag_end(int cid, int x, int y, int snap_type) {
     preview->show = false;
     preview->keep_showing_until = get_current_time_in_ms() + 300;
-    timer->keep_running = false;
-    timer = nullptr;
+    preview->end_drag_time = get_current_time_in_ms();
+    //if (preview->previous_snap_type != SnapPosition::NONE) {
+        if ((preview->scalar < .7 && preview->previous_snap_type == SnapPosition::MAX) || 
+            (preview->scalar < .6 && preview->previous_snap_type != SnapPosition::MAX)) {
+            preview->start = snap_position_to_bounds(hypriso->monitor_from_cursor(), preview->previous_snap_type);
+            preview->end = snap_position_to_bounds(hypriso->monitor_from_cursor(), preview->previous_snap_type);        
+        } else {
+            preview->start = preview->current;
+            preview->end = snap_position_to_bounds(hypriso->monitor_from_cursor(), preview->previous_snap_type);        
+        }
+    //}
+    preview->time_since_change = get_current_time_in_ms();
     bool snapped = snap_type != (int)SnapPosition::NONE;
 }
 
@@ -198,19 +221,31 @@ void snap_preview::draw(Container* actual_root, Container* c) {
     auto cid = *datum<int>(c, "cid");
     if (!(active_id == cid && stage == (int)STAGE::RENDER_PRE_WINDOW))
         return;
-    //if (!(drag::dragging() && cid == drag::drag_window()))
-        //return;
     renderfix
     
     auto current = get_current_time_in_ms();
     if (preview->show || (current < preview->keep_showing_until)) {
+        float fade_scalar = ((float)(current - preview->end_drag_time)) / fade_time;
+        if (fade_scalar > 1.0)
+            fade_scalar = 1.0;
+        if (preview->end_drag_time == 0)
+            fade_scalar = 0.0;
+        float fade_amount = 1.0 - fade_scalar;
+        if (preview->end_drag_time != 0) {
+            if (preview->previous_snap_type == SnapPosition::NONE) {
+                fade_amount = 1.0f;
+                auto client_bounds = bounds_client(preview->cid);
+                client_bounds.y -= titlebar_h;
+                client_bounds.h += titlebar_h;
+                preview->end = client_bounds;
+                calculate_current();
+            }
+        }
         Bounds b = preview->current;
-
-        // b.shrink(10);
         b.x -= root->real_bounds.x;
         b.y -= root->real_bounds.y;
         b.scale(s);
-        rect(b, {1, 1, 1, .3}, 0, hypriso->get_rounding(preview->cid) * s , 2.0f);
+        rect(b, {.98, .98, .98, .37f}, 0, preview->rounding * s * fade_amount, 2.0f, true, 1.0);
     }
 }
 
