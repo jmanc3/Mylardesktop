@@ -1034,19 +1034,20 @@ void drag_start(int id) {
 SnapPosition mouse_to_snap_position(int mon, int x, int y) {
     Bounds pos = bounds(m_from_id(mon));
 
-    const float edgeThresh     = 20.0;
-    const float sideThreshX    = pos.w * 0.05f;
-    const float sideThreshY    = pos.h * 0.05f;
-    const float rightEdge      = pos.x + pos.w;
-    const float bottomEdge     = pos.y + pos.h;
-    bool        on_top_edge    = y < pos.y + edgeThresh;
-    bool        on_bottom_edge = y > bottomEdge - edgeThresh;
-    bool        on_left_edge   = x < pos.x + edgeThresh;
-    bool        on_right_edge  = x > rightEdge - edgeThresh;
-    bool        on_left_side   = x < pos.x + sideThreshX;
-    bool        on_right_side  = x > rightEdge - sideThreshX;
-    bool        on_top_side    = y < pos.y + sideThreshY;
-    bool        on_bottom_side = y > bottomEdge - sideThreshY;
+    const float sideThreshX = pos.w * 0.05f;
+    const float sideThreshY = pos.h * 0.05f;
+    const float rightEdge = pos.x + pos.w;
+    const float bottomEdge = pos.y + pos.h;
+    float edgeThresh = 2.0;
+    bool on_top_edge = y < pos.y + edgeThresh;
+    bool on_bottom_edge = y > bottomEdge - edgeThresh;
+    edgeThresh = 20.0;
+    bool on_left_edge = x < pos.x + edgeThresh;
+    bool on_right_edge = x > rightEdge - edgeThresh;
+    bool on_left_side = x < pos.x + sideThreshX;
+    bool on_right_side = x > rightEdge - sideThreshX;
+    bool on_top_side = y < pos.y + sideThreshY;
+    bool on_bottom_side = y > bottomEdge - sideThreshY;
 
     if ((on_top_edge && on_left_side) || (on_left_edge && on_top_side)) {
         return SnapPosition::TOP_LEFT;

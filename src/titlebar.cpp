@@ -232,7 +232,7 @@ void paint_titlebar(Container *actual_root, Container *c) {
             if (info->id != -1)
                 icon_width = info->w;
             float focus_alpha = 1.0;
-            if (hypriso->has_focus(cid)) {
+            if (hypriso->has_focus(cid) || true) {
                 focus_alpha = color_titlebar_text_focused().a;
             } else {
                 focus_alpha = color_titlebar_text_unfocused().a;
