@@ -91,7 +91,7 @@ void drag::motion(int cid) {
     hypriso->move_resize(cid, new_bounds);
     for (auto m : actual_monitors) {
         auto rid = *datum<int>(m, "cid");
-        hypriso->damage_entire(rid);
+        //hypriso->damage_entire(rid);
     }
 
     snap_preview::on_drag(cid, mouse_current.x, mouse_current.y);

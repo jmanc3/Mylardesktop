@@ -36,6 +36,7 @@ struct SnapPreview {
 
     Bounds start;
     Bounds current;
+    Bounds previous_box; // for damage
     Bounds end;
 
     float rounding = 0.0;
@@ -94,8 +95,13 @@ void update_preview(Timer* t) {
 
     calculate_current();
 
-    for (auto m : actual_monitors)
-        hypriso->damage_entire(*datum<int>(m, "cid"));
+    auto b = preview->current;
+    auto p = preview->previous_box;
+    b.grow(20);
+    p.grow(20);
+    hypriso->damage_box(b);
+    hypriso->damage_box(p);
+    preview->previous_box = preview->current;
 }
 
 void snap_preview::on_drag_start(int cid, int x, int y) {

@@ -293,13 +293,14 @@ static bool on_key_press(int id, int key, int state, bool update_mods) {
 SnapPosition mouse_to_snap_position(int mon, int x, int y) {
     Bounds pos = bounds_reserved_monitor(mon);
 
-    const float edgeThresh = 50.0;
     const float sideThreshX = pos.w * 0.05f;
     const float sideThreshY = pos.h * 0.05f;
     const float rightEdge = pos.x + pos.w;
     const float bottomEdge = pos.y + pos.h;
+    float edgeThresh = 10.0;
     bool on_top_edge = y < pos.y + edgeThresh;
     bool on_bottom_edge = y > bottomEdge - edgeThresh;
+    edgeThresh = 50.0;
     bool on_left_edge = x < pos.x + edgeThresh;
     bool on_right_edge = x > rightEdge - edgeThresh;
     bool on_left_side = x < pos.x + sideThreshX;
