@@ -293,7 +293,7 @@ static bool on_key_press(int id, int key, int state, bool update_mods) {
 SnapPosition mouse_to_snap_position(int mon, int x, int y) {
     Bounds pos = bounds_reserved_monitor(mon);
 
-    const float edgeThresh = 20.0;
+    const float edgeThresh = 50.0;
     const float sideThreshX = pos.w * 0.05f;
     const float sideThreshY = pos.h * 0.05f;
     const float rightEdge = pos.x + pos.w;
@@ -930,7 +930,7 @@ bool double_clicked(Container *c, std::string needle) {
 #include <mutex>
 
 void log(const std::string& msg) {
-    //return;
+    return;
     static bool firstCall = true;
     static std::ofstream ofs;
     static std::mutex writeMutex;

@@ -12,6 +12,7 @@ static Timer* timer = nullptr;
 static float total_time = 210.0f;
 static float fade_time = 300.0f;
 static float pad = 10.0f;
+static float circumvent_time = 220.0f;
 
 struct Pos {
     int x;
@@ -29,8 +30,9 @@ struct SnapPreview {
 
     long start_drag_time = 0;
     SnapPosition start_snap_type = SnapPosition::NONE;
+    SnapPosition end_snap_type = SnapPosition::NONE;
     bool start_was_snapped = 0;
-    bool circumventing = true;
+    bool circumventing = false;
 
     Bounds start;
     Bounds current;
@@ -100,7 +102,6 @@ void snap_preview::on_drag_start(int cid, int x, int y) {
     preview->show = true;
     preview->end_drag_time = 0;
     preview->previous_snap_type = SnapPosition::NONE;
-    preview->circumventing = true;
     preview->rounding = hypriso->get_rounding(cid);
     if (!timer) {
         timer = later(nullptr, 1000.0f / 165.0f, update_preview);
@@ -109,6 +110,7 @@ void snap_preview::on_drag_start(int cid, int x, int y) {
     if (auto c = get_cid_container(cid)) {
         bool is_snapped = *datum<bool>(c, "snapped");
         int snap_type = *datum<int>(c, "snap_type");
+        preview->circumventing = is_snapped;
         
         preview->start_drag_time = get_current_time_in_ms();
         preview->start_was_snapped = is_snapped;
@@ -130,7 +132,7 @@ void snap_preview::on_drag(int cid, int x, int y) {
     preview->show = true;
     if (pos != preview->previous_snap_type)  {
         // fixes snap preview opening when dragging titlebar from a region that would otherwise start a preview
-        if (preview->circumventing && preview->start_was_snapped && ((current - preview->start_drag_time) < 140)) {
+        if (preview->circumventing && preview->start_was_snapped && ((current - preview->start_drag_time) < circumvent_time)) {
             preview->show = false;
             return;
         }
@@ -195,18 +197,25 @@ void snap_preview::on_drag_end(int cid, int x, int y, int snap_type) {
     preview->show = false;
     preview->keep_showing_until = get_current_time_in_ms() + 300;
     preview->end_drag_time = get_current_time_in_ms();
-    //if (preview->previous_snap_type != SnapPosition::NONE) {
-        if ((preview->scalar < .7 && preview->previous_snap_type == SnapPosition::MAX) || 
-            (preview->scalar < .6 && preview->previous_snap_type != SnapPosition::MAX)) {
-            preview->start = snap_position_to_bounds(hypriso->monitor_from_cursor(), preview->previous_snap_type);
-            preview->end = snap_position_to_bounds(hypriso->monitor_from_cursor(), preview->previous_snap_type);        
-        } else {
-            preview->start = preview->current;
-            preview->end = snap_position_to_bounds(hypriso->monitor_from_cursor(), preview->previous_snap_type);        
-        }
-    //}
-    preview->time_since_change = get_current_time_in_ms();
+    preview->end_snap_type = (SnapPosition) snap_type;
+    if ((preview->scalar < .7 && preview->previous_snap_type == SnapPosition::MAX) || 
+        (preview->scalar < .6 && preview->previous_snap_type != SnapPosition::MAX)) {
+        preview->start = snap_position_to_bounds(hypriso->monitor_from_cursor(), preview->previous_snap_type);
+        preview->end = snap_position_to_bounds(hypriso->monitor_from_cursor(), preview->previous_snap_type);
+    } else {
+        preview->start = preview->current;
+        preview->end = snap_position_to_bounds(hypriso->monitor_from_cursor(), preview->previous_snap_type);
+    }
+    
     bool snapped = snap_type != (int)SnapPosition::NONE;
+    if (preview->circumventing && snapped) {
+        //preview->end = snap_position_to_bounds(hypriso->monitor_from_cursor(), (SnapPosition) snap_type);
+        //preview->start = snap_position_to_bounds(hypriso->monitor_from_cursor(), (SnapPosition) snap_type);
+        //preview->scalar = 1.0;
+        //calculate_current();
+    }
+    
+    preview->time_since_change = get_current_time_in_ms();
 }
 
 // c is a ::CLIENT
@@ -215,9 +224,6 @@ void snap_preview::draw(Container* actual_root, Container* c) {
     if (!root)
         return;
     auto [rid, s, stage, active_id] = roots_info(actual_root, root);
-    auto cursor_mon = hypriso->monitor_from_cursor();
-    if (rid != cursor_mon)
-        return;
     auto cid = *datum<int>(c, "cid");
     if (!(active_id == cid && stage == (int)STAGE::RENDER_PRE_WINDOW))
         return;
@@ -242,6 +248,9 @@ void snap_preview::draw(Container* actual_root, Container* c) {
             }
         }
         Bounds b = preview->current;
+        if (preview->circumventing && preview->end_drag_time != 0 && preview->end_snap_type != SnapPosition::NONE) {
+            b = snap_position_to_bounds(hypriso->monitor_from_cursor(), preview->end_snap_type);
+        }
         b.x -= root->real_bounds.x;
         b.y -= root->real_bounds.y;
         b.scale(s);
