@@ -9,7 +9,7 @@
 
 static Timer* timer = nullptr;
 
-static float total_time = 210.0f;
+static float total_time = 160.0f;
 static float fade_time = 300.0f;
 static float pad = 10.0f;
 static float circumvent_time = 220.0f;
@@ -39,6 +39,7 @@ struct SnapPreview {
     Bounds end;
 
     float rounding = 0.0;
+    RGBA color = {0, 0, 0, 1};
     
     long time_since_change = 0;
     float scalar = 0; // 0->1
@@ -103,6 +104,8 @@ void snap_preview::on_drag_start(int cid, int x, int y) {
     preview->end_drag_time = 0;
     preview->previous_snap_type = SnapPosition::NONE;
     preview->rounding = hypriso->get_rounding(cid);
+    preview->color = hypriso->get_shadow_color(cid);
+    
     if (!timer) {
         timer = later(nullptr, 1000.0f / 165.0f, update_preview);
         timer->keep_running = true;
@@ -218,6 +221,44 @@ void snap_preview::on_drag_end(int cid, int x, int y, int snap_type) {
     preview->time_since_change = get_current_time_in_ms();
 }
 
+#undef	MAX
+#define MAX(a, b)  (((a) > (b)) ? (a) : (b))
+
+#undef	MIN
+#define MIN(a, b)  (((a) < (b)) ? (a) : (b))
+
+bool overlaps(double ax, double ay, double aw, double ah,
+              double bx, double by, double bw, double bh) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    if (ax > (bx + bw) || bx > (ax + aw))
+        return false;
+    return !(ay > (by + bh) || by > (ay + ah));
+}
+
+double calculate_overlap_percentage(double ax, double ay, double aw, double ah,
+                                    double bx, double by, double bw, double bh) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    double result = 0.0;
+    //trivial cases
+    if (!overlaps(ax, ay, aw, ah, bx, by, bw, bh)) return 0.0;
+    if (ax == bx && ay == by && aw == bw && ah == bh) return 100.0;
+    
+    //# overlap between A and B
+    double SA = aw * ah;
+    double SB = bw * bh;
+    double SI = MAX(0, MIN(ax + aw, bx + bw) - MAX(ax, bx)) *
+                MAX(0, MIN(ay + ah, by + bh) - MAX(ay, by));
+    double SU = SA + SB - SI;
+    result = SI / SU; //ratio
+    result *= 100.0; //percentage
+    return result;
+}
+
+
 // c is a ::CLIENT
 void snap_preview::draw(Container* actual_root, Container* c) {
     auto root = get_rendering_root();
@@ -225,6 +266,13 @@ void snap_preview::draw(Container* actual_root, Container* c) {
         return;
     auto [rid, s, stage, active_id] = roots_info(actual_root, root);
     auto cid = *datum<int>(c, "cid");
+    /*if (!(active_id == cid && stage == (int)STAGE::RENDER_POST_WINDOW)) {
+        if (cid == drag::drag_window()) {
+            renderfix
+            render_drop_shadow(rid, 1.0, {0, 0, 0, 1}, 10, 2.0f, {100, 100, 300, 300});
+        }
+    }*/
+
     if (!(active_id == cid && stage == (int)STAGE::RENDER_PRE_WINDOW))
         return;
     renderfix
@@ -249,12 +297,22 @@ void snap_preview::draw(Container* actual_root, Container* c) {
         }
         Bounds b = preview->current;
         if (preview->circumventing && preview->end_drag_time != 0 && preview->end_snap_type != SnapPosition::NONE) {
+            fade_amount = 0.0;
             b = snap_position_to_bounds(hypriso->monitor_from_cursor(), preview->end_snap_type);
         }
+        auto cb = bounds_client(cid);
+        auto r = calculate_overlap_percentage(b.x, b.y, b.w, b.h, cb.x, cb.y, cb.w, cb.h); 
+        
         b.x -= root->real_bounds.x;
         b.y -= root->real_bounds.y;
         b.scale(s);
-        rect(b, {.98, .98, .98, .37f}, 0, preview->rounding * s * fade_amount, 2.0f, true, 1.0);
+        b.round();
+        if (preview->previous_snap_type != SnapPosition::NONE || (preview->previous_snap_type == SnapPosition::NONE && preview->scalar < .8)) {
+            render_drop_shadow(rid, 1.0, {0, 0, 0, .02f * fade_amount}, preview->rounding * fade_amount, 2.0f, b);
+        }
+        rect(b, {.98, .98, .98, .37f}, 0, std::round(preview->rounding * s * fade_amount), 2.0f, true, 1.0);
+        b.shrink(1);
+        border(b, {0.6, 0.6, 0.6, 0.2f}, 1.0f, 0, std::round(preview->rounding * s * fade_amount), 2.0f, false, 1.0);
     }
 }
 

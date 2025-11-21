@@ -237,6 +237,7 @@ struct HyprIso {
     void reserve_titlebar(int id, int size);
 
     float get_rounding(int id);
+    RGBA get_shadow_color(int id);
 
     std::string class_name(int id);
     std::string title_name(int id);
@@ -328,6 +329,7 @@ extern HyprIso *hypriso;
 void rect(Bounds box, RGBA color, int conrnermask = 0, float round = 0.0, float roundingPower = 2.0, bool blur = true, float blurA = 1.0);
 void border(Bounds box, RGBA color, float size, int cornermask = 0, float round = 0.0, float roundingPower = 2.0, bool blur = true, float blurA = 1.0);
 void shadow(Bounds box, RGBA color, float rounding, float roundingPower, float size);
+void render_drop_shadow(int mon, float const& a, RGBA m_realShadowColor, float ROUNDINGBASE, float ROUNDINGPOWER, Bounds fullBox);
 
 static long get_current_time_in_ms() {
 #ifdef TRACY_ENABLE

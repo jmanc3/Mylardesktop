@@ -52,6 +52,7 @@
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/xwayland/XWM.hpp>
 #include <hyprland/src/config/ConfigManager.hpp>
+#include <hyprland/src/render/OpenGL.hpp>
 #undef private
 
 #include <hyprland/src/xwayland/XWayland.hpp>
@@ -66,7 +67,6 @@
 #include <hyprland/src/managers/cursor/CursorShapeOverrideController.hpp>
 #include <hyprland/src/SharedDefs.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
-#include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/decorations/DecorationPositioner.hpp>
 #include <hyprland/src/render/decorations/IHyprWindowDecoration.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
@@ -1247,6 +1247,18 @@ float HyprIso::get_rounding(int id) {
         if (hw->id == id)
             return hw->w->rounding();
     return 0;
+}
+
+RGBA HyprIso::get_shadow_color(int id) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    for (auto hw: hyprwindows)
+        if (hw->id == id) {
+            auto c = hw->w->m_realShadowColor->value();
+            return RGBA(c.r, c.g, c.b, c.a);
+        }
+    return {0, 0, 0, 1};
 }
 
 void HyprIso::floatit(int id) {
@@ -4968,4 +4980,106 @@ void pin(int id, bool state) {
    }
 }
 
+void updateWindow(CHyprDropShadowDecoration *ds, PHLWINDOW pWindow) {
+    const auto PWINDOW = ds->m_window.lock();
+
+    ds->m_lastWindowPos  = PWINDOW->m_realPosition->value();
+    ds->m_lastWindowSize = PWINDOW->m_realSize->value();
+
+    ds->m_lastWindowBox          = {ds->m_lastWindowPos.x, ds->m_lastWindowPos.y, ds->m_lastWindowSize.x, ds->m_lastWindowSize.y};
+    ds->m_lastWindowBoxWithDecos = g_pDecorationPositioner->getBoxWithIncludedDecos(pWindow);
+}
+
+void drawShadowInternal(const CBox& box, int round, float roundingPower, int range, CHyprColor color, float a) {
+    static auto PSHADOWSHARP = CConfigValue<Hyprlang::INT>("decoration:shadow:sharp");
+
+    if (box.w < 1 || box.h < 1)
+        return;
+
+    g_pHyprOpenGL->blend(true);
+
+    color.a *= a;
+
+    if (*PSHADOWSHARP)
+        g_pHyprOpenGL->renderRect(box, color, {.round = round, .roundingPower = roundingPower});
+    else
+        g_pHyprOpenGL->renderRoundedShadow(box, round, roundingPower, range, color, 1.F);
+}
+
+void render_drop_shadow(int mon, float const& a, RGBA b, float ROUNDINGBASE, float ROUNDINGPOWER, Bounds fullB) {
+    CBox fullBox = tocbox(fullB);
+    AnyPass::AnyData anydata([mon, a, b, ROUNDINGBASE, ROUNDINGPOWER, fullBox](AnyPass* pass) {
+        PHLMONITOR pMonitor;
+        for (auto hm : hyprmonitors) {
+            if (hm->id == mon) {
+                pMonitor = hm->m;
+            }
+        }
+        if (!pMonitor)
+            return;
+        CHyprColor m_realShadowColor = CHyprColor(b.r, b.g, b.b, b.a);
+        if (hyprwindows.empty())
+            return;
+        PHLWINDOW fake_window = hyprwindows[0]->w;
+        static auto PSHADOWSIZE = CConfigValue<Hyprlang::INT>("decoration:shadow:range");
+        static auto PSHADOWSCALE = CConfigValue<Hyprlang::FLOAT>("decoration:shadow:scale");
+        const auto ROUNDING = ROUNDINGBASE;
+        const float SHADOWSCALE = std::clamp(*PSHADOWSCALE, 0.f, 1.f);
+        auto allBox = fullBox;
+        allBox.expand(*PSHADOWSIZE * pMonitor->m_scale);
+        allBox.round();
+        
+        if (fullBox.width < 1 || fullBox.height < 1)
+            return; // don't draw invisible shadows
+
+        g_pHyprOpenGL->scissor(nullptr);
+        auto before_window = g_pHyprOpenGL->m_renderData.currentWindow;
+        g_pHyprOpenGL->m_renderData.currentWindow = fake_window;
+
+        // we'll take the liberty of using this as it should not be used rn
+        CFramebuffer& alphaFB = g_pHyprOpenGL->m_renderData.pCurrentMonData->mirrorFB;
+        CFramebuffer& alphaSwapFB = g_pHyprOpenGL->m_renderData.pCurrentMonData->mirrorSwapFB;
+        auto* LASTFB = g_pHyprOpenGL->m_renderData.currentFB;
+
+        CRegion saveDamage = g_pHyprOpenGL->m_renderData.damage;
+
+        g_pHyprOpenGL->m_renderData.damage = allBox;
+        g_pHyprOpenGL->m_renderData.damage.subtract(fullBox.copy().expand(-ROUNDING * pMonitor->m_scale)).intersect(saveDamage);
+        g_pHyprOpenGL->m_renderData.renderModif.applyToRegion(g_pHyprOpenGL->m_renderData.damage);
+
+        alphaFB.bind();
+
+        // build the matte
+        // 10-bit formats have dogshit alpha channels, so we have to use the matte to its fullest.
+        // first, clear region of interest with black (fully transparent)
+        g_pHyprOpenGL->renderRect(allBox, CHyprColor(0, 0, 0, 1), {.round = 0});
+
+        // render white shadow with the alpha of the shadow color (otherwise we clear with alpha later and shit it to 2 bit)
+        drawShadowInternal(allBox, ROUNDING * pMonitor->m_scale, ROUNDINGPOWER, *PSHADOWSIZE * pMonitor->m_scale, CHyprColor(1, 1, 1, m_realShadowColor.a), a);
+
+        // render black window box ("clip")
+        int some = (ROUNDING + 1 /* This fixes small pixel gaps. */) * pMonitor->m_scale;
+        g_pHyprOpenGL->renderRect(fullBox, CHyprColor(0, 0, 0, 1.0), {.round = some, .roundingPower = ROUNDINGPOWER});
+
+        alphaSwapFB.bind();
+
+        // alpha swap just has the shadow color. It will be the "texture" to render.
+        g_pHyprOpenGL->renderRect(allBox, m_realShadowColor.stripA(), {.round = 0});
+
+        LASTFB->bind();
+
+        CBox monbox = {0, 0, pMonitor->m_transformedSize.x, pMonitor->m_transformedSize.y};
+
+        g_pHyprOpenGL->pushMonitorTransformEnabled(true);
+        g_pHyprOpenGL->setRenderModifEnabled(false);
+        g_pHyprOpenGL->renderTextureMatte(alphaSwapFB.getTexture(), monbox, alphaFB);
+        g_pHyprOpenGL->setRenderModifEnabled(true);
+        g_pHyprOpenGL->popMonitorTransformEnabled();
+
+        g_pHyprOpenGL->m_renderData.damage = saveDamage;
+
+        g_pHyprOpenGL->m_renderData.currentWindow = before_window;
+    });
+    g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
+}
 
