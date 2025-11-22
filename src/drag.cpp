@@ -77,6 +77,7 @@ void drag::begin(int cid) {
     } else {
         data->bounds_start = bounds_client(cid);
     }
+    drag::motion(cid);
 }
 
 void drag::motion(int cid) {
