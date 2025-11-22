@@ -43,7 +43,7 @@ struct SnapPreview {
     RGBA color = {0, 0, 0, 1};
     
     long time_since_change = 0;
-    float scalar = 0; // 0->1
+    float scalar = 0.0; // 0->1
     float velx_at_change = 0;
     float vely_at_change = 0;
 
@@ -308,19 +308,20 @@ void snap_preview::draw(Container* actual_root, Container* c) {
             fade_amount = 0.0;
             b = snap_position_to_bounds(hypriso->monitor_from_cursor(), preview->end_snap_type);
         }
-        auto cb = bounds_client(cid);
-        auto r = calculate_overlap_percentage(b.x, b.y, b.w, b.h, cb.x, cb.y, cb.w, cb.h); 
-        
-        b.x -= root->real_bounds.x;
-        b.y -= root->real_bounds.y;
-        b.scale(s);
-        b.round();
-        if (preview->previous_snap_type != SnapPosition::NONE || (preview->previous_snap_type == SnapPosition::NONE && preview->scalar < .8)) {
-            render_drop_shadow(rid, 1.0, {0, 0, 0, .02f * fade_amount}, preview->rounding * fade_amount, 2.0f, b);
+        auto cb = bounds_client(preview->cid);
+        auto r = calculate_overlap_percentage(b.x, b.y, b.w, b.h, cb.x, cb.y, cb.w, cb.h);
+        if (r < 93) {
+            b.x -= root->real_bounds.x;
+            b.y -= root->real_bounds.y;
+            b.scale(s);
+            b.round();
+            if (preview->previous_snap_type != SnapPosition::NONE || (preview->previous_snap_type == SnapPosition::NONE && preview->scalar < .8)) {
+                render_drop_shadow(rid, 1.0, {0, 0, 0, .02f * fade_amount}, preview->rounding * fade_amount, 2.0f, b);
+            }
+            rect(b, {.98, .98, .98, .20f}, 0, std::round(preview->rounding * s * fade_amount), 2.0f, true, 1.0);
+            b.shrink(1);
+            border(b, {0.6, 0.6, 0.6, 0.2f}, 1.0f, 0, std::round(preview->rounding * s * fade_amount), 2.0f, false, 1.0);
         }
-        rect(b, {.98, .98, .98, .20f}, 0, std::round(preview->rounding * s * fade_amount), 2.0f, true, 1.0);
-        b.shrink(1);
-        border(b, {0.6, 0.6, 0.6, 0.2f}, 1.0f, 0, std::round(preview->rounding * s * fade_amount), 2.0f, false, 1.0);
     }
 }
 
