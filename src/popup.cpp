@@ -74,3 +74,7 @@ void popup::open(int id, int x, int y) {
 }
 
 
+void popup::open(std::vector<PopOption> root, int x, int y) {
+    
+}
+

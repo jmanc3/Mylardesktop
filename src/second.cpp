@@ -21,6 +21,8 @@
 
 #include "process.hpp"
 #include <iterator>
+#include <filesystem>
+#include <fstream>
 #include <wayland-server-protocol.h>
 
 #ifdef TRACY_ENABLE
@@ -43,6 +45,21 @@ std::vector<Container *> actual_monitors; // actually just root of all
 Container *actual_root = new Container;
 
 void draw_text(std::string text, int x, int y);
+
+struct WindowRestoreLocation {
+    Bounds box; // all values are 0-1 and supposed to be scaled to monitor
+
+    Bounds actual_size_on_monitor(Bounds m) {
+        Bounds b = {box.x * m.w, box.y * m.h, box.w * m.w, box.h * m.h};
+        if (b.w < 5)
+            b.w = 5;
+        if (b.h < 5)
+            b.h = 5;
+        return b;
+    }
+};
+
+static std::unordered_map<std::string, WindowRestoreLocation> restore_infos;
 
 static void any_container_closed(Container *c) {
     remove_data(c->uuid); 
@@ -403,6 +420,50 @@ void paint_snap_preview(Container *actual_root, Container *c) {
     }
 }
 
+void fit_on_screen(int id)  {
+    
+}
+
+void apply_restore_info(int id) {
+    //auto tc = c_from_id(id);
+    auto monitor = get_monitor(id);
+    auto cname = hypriso->class_name(id);
+    for (auto [class_n, info] : restore_infos) {
+        if (cname == class_n) {
+            // Skip restore info if class name is same as parent class name (dialogs)
+            int parent = hypriso->parent(id);
+            if (parent != -1) {
+                auto pname = hypriso->class_name(parent);
+                if (pname == cname) {
+                    continue;
+                }
+            }
+            
+            auto b = bounds_client(id);
+            auto m = bounds_monitor(monitor);
+            auto s = scale(monitor);
+            auto b2 = bounds_reserved_monitor(monitor);
+            b.w = b2.w * info.box.w;
+            b.h = b2.h * info.box.h;
+            if (b.w >= b2.w - 60 * s) {
+                b.w = b2.w - 60 * s;
+            }
+            bool fix = false;
+            if (b.h >= b2.h - 60 * s) {
+                b.h = b2.h - 60 * s;
+                fix = true;
+            }
+            b.x = b2.x + b2.w * .5 - b.w * .5;
+            b.y = b2.y + b2.h * .5 - b.h * .5;
+            if (fix)
+                b.y += (titlebar_h * s) * .5;
+
+            hypriso->move_resize(id, b.x, b.y, b.w, b.h);
+        }
+    }
+    fit_on_screen(id);
+}
+
 static void on_window_open(int id) {    
     // We make the client on the first monitor we fine, because we move the container later based on actual monitor location
     {
@@ -423,6 +484,8 @@ static void on_window_open(int id) {
     
     hypriso->set_corner_rendering_mask_for_window(id, 3);
     
+    apply_restore_info(id); 
+   
     titlebar::on_window_open(id);
     alt_tab::on_window_open(id);
     resizing::on_window_open(id);
@@ -666,38 +729,92 @@ static void create_actual_root() {
     *datum<long>(actual_root, "drag_end_time") = 0;
 }
 
+void load_restore_infos() {
+    restore_infos.clear();
+
+    // Resolve $HOME
+    const char* home = std::getenv("HOME");
+    if (!home) {
+        throw std::runtime_error("HOME environment variable not set");
+    }
+
+    // Target path
+    std::filesystem::path filepath = std::filesystem::path(home) / ".config/mylar/restore.txt";
+
+    std::ifstream in(filepath);
+    if (!in) {
+        // No file — silently return
+        return;
+    }
+
+    std::string line;
+    while (std::getline(in, line)) {
+        std::istringstream iss(line);
+        std::string class_name;
+        Bounds info;
+
+        // Parse strictly: skip if the line is malformed
+        if (!(iss >> class_name >> info.x >> info.y >> info.w >> info.h)) {
+            continue; // bad line — skip
+        }
+
+        WindowRestoreLocation restore;
+        restore.box = info;
+        restore_infos[class_name] = restore;
+    }
+}
+
+void save_restore_infos() {
+    // Resolve $HOME
+    const char* home = std::getenv("HOME");
+    if (!home) {
+        throw std::runtime_error("HOME environment variable not set");
+    }
+
+    // Target path
+    std::filesystem::path filepath = std::filesystem::path(home) / ".config/mylar/restore.txt";
+
+    // Ensure parent directories exist
+    std::filesystem::create_directories(filepath.parent_path());
+
+    // Write file (overwrite mode)
+    std::ofstream out(filepath, std::ios::trunc);
+    if (!out) {
+        throw std::runtime_error("Failed to write file: " + filepath.string());
+    }
+    for (auto [class_name, info] : restore_infos) {
+        // class_name std::string
+        // info.box.x info.box.y info.box.w info.box.h
+        out << class_name << " " << info.box.x << " " << info.box.y << " " << info.box.w << " " << info.box.h << "\n";
+    }
+    //out << contents;
+    if (!out.good()) {
+        throw std::runtime_error("Error occurred while writing: " + filepath.string());
+    }
+}
+
+void update_restore_info_for(int id) {
+    WindowRestoreLocation info;
+    int mid = get_monitor(id);
+    if (mid != -1) {
+        Bounds cb = bounds_client(id);
+        Bounds cm = bounds_monitor(mid);
+        auto s = scale(mid);
+        info.box = {
+            cb.x / cm.w,
+            cb.y / cm.h,
+            cb.w / cm.w,
+            (cb.h + titlebar_h) / cm.h,
+        };
+        restore_infos[hypriso->class_name(id)] = info;
+        save_restore_infos(); // I believe it's okay to call this here because it only happens on resize end, and drag end
+    }
+}
+
 void second::begin() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-
-/*
-    std::thread volume_updates([]() {
-        TinyProcessLib::Process process1a("pactl subscribe", "", [](const char* bytes, size_t n) { 
-            notify(std::string(bytes, n)); 
-        });        
-    });
-    volume_updates.detach();
-
-    std::thread battery_updates([]() {
-        TinyProcessLib::Process process1a("upower --monitor", "", [](const char* bytes, size_t n) { 
-            notify(std::string(bytes, n)); 
-        });        
-    });
-    battery_updates.detach();
-
-  auto process4 = make_shared<Process>("sleep 4");
-  thread thread4([process4]() {
-    auto exit_status = process4->get_exit_status();
-    cout << "Example 4 process returned: " << exit_status << " (" << (exit_status == 0 ? "success" : "failure") << ")" << endl;
-  });
-  thread4.detach();
-  this_thread::sleep_for(chrono::seconds(2));
-  process4->kill();
-  this_thread::sleep_for(chrono::seconds(2));
-*/
-    
-
     on_any_container_close = any_container_closed;
     create_actual_root();
     
@@ -722,6 +839,8 @@ void second::begin() {
     hypriso->on_drag_or_resize_cancel_requested = on_drag_or_resize_cancel_requested;
     hypriso->on_config_reload = on_config_reload;
     hypriso->on_activated = on_activated;
+
+    load_restore_infos();
 
 	hypriso->create_callbacks();
 	hypriso->create_hooks();

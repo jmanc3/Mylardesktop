@@ -298,6 +298,7 @@ Bounds snap_position_to_bounds(int mon, SnapPosition pos);
 SnapPosition mouse_to_snap_position(int mon, int x, int y);
 bool double_clicked(Container *c, std::string needle);
 void consume_everything(Container *c);
+void update_restore_info_for(int id);
 
 namespace second {    
     void begin();

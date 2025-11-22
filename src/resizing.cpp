@@ -170,6 +170,7 @@ void resizing::end(int cid) {
     is_resizing = false;
     window_resizing = -1;
     update_cursor((int) RESIZE_TYPE::NONE);
+    update_restore_info_for(cid);
     //notify("stop resizing");
 }
 

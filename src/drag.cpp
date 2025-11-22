@@ -174,6 +174,9 @@ void drag::end(int cid) {
 
     if (auto c = get_cid_container(cid)) {
         *datum<bool>(c, "drag_from_titlebar") = false;
+        if (!(*datum<bool>(c, "snapped"))) {
+            update_restore_info_for(cid);
+        }
     }
 }
 

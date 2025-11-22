@@ -9,7 +9,7 @@
 
 static Timer* timer = nullptr;
 
-static float total_time = 160.0f;
+static float total_time = 170.0f;
 static float fade_time = 300.0f;
 static float pad = 10.0f;
 static float circumvent_time = 220.0f;
