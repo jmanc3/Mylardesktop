@@ -136,7 +136,14 @@ LayoutInfo position_tab_options(Container *parent, int max_row_width) {
 
 
 void alt_tab_parent_pre_layout(Container *actual_root, Container *c, const Bounds &b) {
-    auto root = get_rendering_root();
+    Container *root = nullptr;
+    auto creation_monitor = *datum<int>(c, "creation_monitor");
+    for (auto m : actual_monitors) {
+        if (*datum<int>(m, "cid") == creation_monitor) {
+            root = m;
+            break;
+        }
+    }
     if (!root) return;
     auto [rid, s, stage, active_id] = roots_info(actual_root, root);
     
@@ -194,9 +201,11 @@ void alt_tab_parent_pre_layout(Container *actual_root, Container *c, const Bound
 
 void fill_root(Container *root, Container *alt_tab_parent) {
     *datum<bool>(alt_tab_parent, "shown_yet") = false;
+    *datum<int>(alt_tab_parent, "creation_monitor") = hypriso->monitor_from_cursor();
     alt_tab_parent->custom_type = (int) TYPE::ALT_TAB;
     alt_tab_parent->type = ::vbox;
     alt_tab_parent->receive_events_even_if_obstructed = true;
+    alt_tab_parent->automatically_paint_children = false;
     alt_tab_parent->when_mouse_down = consume_event;
     alt_tab_parent->when_mouse_motion = consume_event;
     alt_tab_parent->when_drag = consume_event;
@@ -225,6 +234,9 @@ void fill_root(Container *root, Container *alt_tab_parent) {
         auto [rid, s, stage, active_id] = roots_info(actual_root, root);
         if (stage != (int) STAGE::RENDER_POST_WINDOWS)
             return;
+        if (rid != *datum<int>(c, "creation_monitor"))
+            return;
+        c->automatically_paint_children = true;
         renderfix
 
         bool any_subpart_damaged = false;
@@ -240,6 +252,9 @@ void fill_root(Container *root, Container *alt_tab_parent) {
         }
  
         rect(c->real_bounds, {1, 1, 1, .4}, 20);
+    };
+    alt_tab_parent->after_paint = [](Container *actual_root, Container *c) {
+        c->automatically_paint_children = false;
     };
 }
 

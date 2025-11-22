@@ -18,6 +18,7 @@
 #include "dock.h"
 #include "splash.h"
 #include "snap_preview.h"
+#include "popup.h"
 
 #include "process.hpp"
 #include <iterator>
@@ -299,6 +300,14 @@ static bool on_key_press(int id, int key, int state, bool update_mods) {
         }
         if (resizing::resizing()) {
             resizing::end(resizing::resizing_window());
+        }
+        if (alt_tab::showing()) {
+            alt_tab::close(false);
+        }
+        for (auto c : actual_root->children) {
+            if (c->custom_type == (int) TYPE::OUR_POPUP) {
+                popup::close(c->uuid);
+            }
         }
         META_PRESSED = false;
         zoom_factor = 1.0;
