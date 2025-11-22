@@ -118,7 +118,7 @@ void drag::snap_window(int snap_mon, int cid, int pos) {
         // perform unsnap
         *snapped = false; 
         auto p = *datum<Bounds>(c, "pre_snap_bounds");
-        auto mon = get_monitor(cid);
+        auto mon = snap_mon;
         auto bounds = bounds_reserved_monitor(mon);
         p.x = bounds.x + bounds.w * .5 - p.w * .5; 
         if (p.x < bounds.x)
