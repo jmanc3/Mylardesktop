@@ -2134,6 +2134,14 @@ int HyprIso::get_active_workspace(int monitor) {
     return -1;
 }
 
+void HyprIso::pin(int id, bool state) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            hw->w->m_pinned = state;
+        }
+    }
+}
+
 int HyprIso::get_workspace(int client) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
@@ -4970,14 +4978,6 @@ bool HyprIso::is_pinned(int id) {
         }
    }
    return false;
-}
-
-void pin(int id, bool state) {
-   for (auto hw : hyprwindows) {
-        if (hw->id == id) {
-            hw->w->m_pinned = state;
-        }
-   }
 }
 
 void updateWindow(CHyprDropShadowDecoration *ds, PHLWINDOW pWindow) {

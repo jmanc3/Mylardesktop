@@ -16,7 +16,6 @@ struct PopOption {
 };
 
 namespace popup {
-    void open(int id, int x, int y);
     void open(std::vector<PopOption> root, int x, int y);
     void close(std::string container_uuid);
 }

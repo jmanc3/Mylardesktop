@@ -89,6 +89,28 @@ void titlebar_pre_layout(Container* root, Container* self, const Bounds& bounds)
     self->children[3]->wanted_bounds.w = std::round(titlebar_h * titlebar_button_ratio());
 }
 
+void titlebar_right_click(int cid) {
+    auto m = mouse();
+    std::vector<PopOption> root;
+    {
+        PopOption pop;
+        if (hypriso->is_pinned(cid)) {
+            pop.text = "Unpin";
+        } else {
+            pop.text = "Pin";
+        }
+        pop.on_clicked = [cid]() {
+            if (hypriso->is_pinned(cid)) {
+                hypriso->pin(cid, false);
+            } else {
+                hypriso->pin(cid, true);
+            }
+        };
+        root.push_back(pop);
+    }
+    popup::open(root, m.x - 1, m.y - 1);
+}
+
 TextureInfo *get_cached_texture(Container *root_with_scale, Container *container_texture_saved_on, std::string needle, std::string font, std::string text, RGBA color, int wanted_h) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
@@ -343,8 +365,7 @@ void create_titlebar(Container *root, Container *parent) {
         auto cid = *datum<int>(client, "cid");
         
         if (c->state.mouse_button_pressed == BTN_RIGHT) {
-            auto m = mouse();
-            popup::open(cid, m.x - 1, m.y - 1);
+            titlebar_right_click(cid);
             c->when_mouse_down(root, c);
             return;
         }
