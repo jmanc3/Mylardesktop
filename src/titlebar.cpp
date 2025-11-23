@@ -97,7 +97,7 @@ void titlebar_right_click(int cid) {
         if (hypriso->is_pinned(cid)) {
             pop.icon_left = ":Papirus:checkbox-checked-symbolic";
         } else {
-            pop.icon_left = ":Papirus:checkbox-symbolic";
+            //pop.icon_left = ":Papirus:checkbox-symbolic";
         }
         pop.text = "Keep above others";
         pop.on_clicked = [cid]() {
@@ -114,7 +114,7 @@ void titlebar_right_click(int cid) {
         if (hypriso->is_fake_fullscreen(cid)) {
             pop.icon_left = ":Papirus:checkbox-checked-symbolic";
         } else {
-            pop.icon_left = ":Papirus:checkbox-symbolic";
+            //pop.icon_left = ":Papirus:checkbox-symbolic";
         }
         pop.text = "Fake fullscreen";   
         
@@ -130,11 +130,11 @@ void titlebar_right_click(int cid) {
     {
         PopOption pop;
         if (hypriso->has_decorations(cid)) {
-            pop.icon_left = ":Papirus:checkbox-symbolic";
+            //pop.icon_left = ":Papirus:checkbox-symbolic";
         } else {
             pop.icon_left = ":Papirus:checkbox-checked-symbolic";
         }
-        pop.text = "No titlebar";
+        pop.text = "Remove titlebar";
         
         pop.on_clicked = [cid]() {
             if (hypriso->has_decorations(cid)) {

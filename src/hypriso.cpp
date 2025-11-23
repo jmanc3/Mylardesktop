@@ -2143,11 +2143,32 @@ void HyprIso::pin(int id, bool state) {
 }
 
 bool HyprIso::is_fake_fullscreen(int id) {
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            auto w = hw->w;
+            if (w->m_fullscreenState.internal == 0 && w->m_fullscreenState.client == 2) {
+                return true;
+            }
+        }
+    }
+
     return false;
 }
 
 void HyprIso::fake_fullscreen(int id, bool state) {
-    
+    for (auto hw : hyprwindows) {
+        if (hw->id == id) {
+            hw->w->m_windowData.syncFullscreen = CWindowOverridableVar(false, PRIORITY_SET_PROP);
+            
+            if (state) {
+                g_pCompositor->setWindowFullscreenState(hw->w, SFullscreenState{.internal = (eFullscreenMode) 0, .client = (eFullscreenMode) 2});
+            } else {
+                g_pCompositor->setWindowFullscreenState(hw->w, SFullscreenState{.internal = (eFullscreenMode) 0, .client = (eFullscreenMode) 0});
+            }
+
+            hw->w->m_windowData.syncFullscreen = CWindowOverridableVar(hw->w->m_fullscreenState.internal == hw->w->m_fullscreenState.client, PRIORITY_SET_PROP);
+        }
+    }
 }
 
 
