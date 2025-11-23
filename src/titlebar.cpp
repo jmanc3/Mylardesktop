@@ -89,8 +89,6 @@ void titlebar_pre_layout(Container* root, Container* self, const Bounds& bounds)
     self->children[3]->wanted_bounds.w = std::round(titlebar_h * titlebar_button_ratio());
 }
 
-static std::vector<std::string> disabled_classes;
-
 void titlebar_right_click(int cid) {
     auto m = mouse();
     std::vector<PopOption> root;
@@ -108,6 +106,7 @@ void titlebar_right_click(int cid) {
             } else {
                 hypriso->pin(cid, true);
             }
+            update_restore_info_for(cid);
         };
         root.push_back(pop);
     }
@@ -126,6 +125,7 @@ void titlebar_right_click(int cid) {
             } else {
                 hypriso->fake_fullscreen(cid, true);
             }
+            update_restore_info_for(cid);
         };
         root.push_back(pop);
     }
@@ -140,20 +140,20 @@ void titlebar_right_click(int cid) {
 
         pop.on_clicked = [cid]() {
             auto id_class = hypriso->class_name(cid);
-            if (hypriso->has_decorations(cid)) {
-                disabled_classes.push_back(id_class);
-            } else {
-                // give decorations
-                for (int i = disabled_classes.size() - 1; i >= 0; i--) {
-                    if (disabled_classes[i] == id_class) {
-                        disabled_classes.erase(disabled_classes.begin() + i);
+            for (auto [class_n, info] : restore_infos) {
+                if (id_class == class_n) {
+                    if (hypriso->has_decorations(cid)) {
+                        info.remove_titlebar = true;
+                    } else {
+                        info.remove_titlebar = false;
                     }
                 }
             }
 
             later_immediate([cid](Timer*) {
                 hypriso->on_window_closed(cid);
-                hypriso->on_window_open(cid);
+                hypriso->on_window_open(cid);                
+                update_restore_info_for(cid);
             });
             
         };
@@ -182,7 +182,7 @@ void titlebar_right_click(int cid) {
     }
      
     //popup::open(root, m.x - (277 * .5), bounds_client(cid).y);
-    popup::open(root, m.x - 17, bounds_client(cid).y);
+    popup::open(root, m.x - 20, m.y + 1);
 }
 
 TextureInfo *get_cached_texture(Container *root_with_scale, Container *container_texture_saved_on, std::string needle, std::string font, std::string text, RGBA color, int wanted_h) {
@@ -536,11 +536,11 @@ void create_titlebar(Container *root, Container *parent) {
 }
 
 bool titlebar_disabled(int id) {
-    auto id_class = hypriso->class_name(id);
-    for (auto s : disabled_classes) {
-       if (s == id_class) {
-           return true;
-       }
+    auto cname = hypriso->class_name(id);
+    for (auto [class_n, info] : restore_infos) {
+        if (cname == class_n) {
+            return info.remove_titlebar;
+        }
     }
     return false;
 }
