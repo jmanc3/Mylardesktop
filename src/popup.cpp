@@ -26,9 +26,18 @@ struct PopOptionData : UserData {
 
 void popup::open(std::vector<PopOption> root, int x, int y) {
     static const float option_height = 24;
+    static const float seperator_size = 5;
     float s = scale(hypriso->monitor_from_cursor());
 
-    auto p = actual_root->child(::vbox, 277, root.size()  * ((option_height) * s));
+    float height = 0;
+    for (auto pop_option : root) {
+        if (pop_option.seperator) {
+            height += seperator_size;
+        } else {
+            height += option_height * s;
+        }
+    }
+    auto p = actual_root->child(::vbox, 277, height);
     consume_everything(p);
     p->receive_events_even_if_obstructed = true;
     p->custom_type = (int) TYPE::OUR_POPUP;
@@ -71,6 +80,25 @@ void popup::open(std::vector<PopOption> root, int x, int y) {
     //p->child(FILL_SPACE, 2 * s);
     for (auto pop_option : root) {
         auto option = p->child(FILL_SPACE, option_height * s);
+        if (pop_option.seperator) {
+            option->wanted_bounds.h = seperator_size;
+            option->when_paint = [](Container *actual_root, Container *c) {
+                auto root = get_rendering_root();
+                if (!root)
+                    return;
+                auto [rid, s, stage, active_id] = roots_info(actual_root, root);
+                if (stage == (int)STAGE::RENDER_POST_WINDOWS) {
+                    renderfix
+                    auto b = c->real_bounds;
+                    b.y += std::floor(b.h * .5);
+                    b.h = 1.0;
+                    b.x += 8 * s;
+                    b.w -= 16 * s;
+                    rect(b, {0, 0, 0, 0.3}, 0, 1 * s, 2.0, false);
+                }
+            };
+            continue;
+        }
         auto popdata = new PopOptionData;
         popdata->p = pop_option;
         option->user_data = popdata;
@@ -111,6 +139,7 @@ void popup::open(std::vector<PopOption> root, int x, int y) {
             if (pop_option.on_clicked) {
                 pop_option.on_clicked();
             }
+
             for (auto c : actual_root->children) {
                 if (c->custom_type == (int) TYPE::OUR_POPUP) {
                     popup::close(c->uuid);

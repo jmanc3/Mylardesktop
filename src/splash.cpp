@@ -6,10 +6,12 @@
 static bool showing = false;
 
 void splash::input() {
-    showing = false;
-    for (auto m : actual_monitors) {
-        hypriso->damage_entire(*datum<int>(m, "cid"));
+    if (showing) {
+        for (auto m : actual_monitors) {
+            hypriso->damage_entire(*datum<int>(m, "cid"));
+        }
     }
+    showing = false;
 }
 
 void splash::render(int id, int stage) {

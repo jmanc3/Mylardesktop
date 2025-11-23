@@ -95,12 +95,11 @@ void titlebar_right_click(int cid) {
     {
         PopOption pop;
         if (hypriso->is_pinned(cid)) {
-            pop.icon_left = ":Fluent:window-unpin";
-            pop.text = "Don't keep above";
+            pop.icon_left = ":Papirus:checkbox-checked-symbolic";
         } else {
-            pop.icon_left = ":Fluent:window-pin";
-            pop.text = "Keep above others";
+            pop.icon_left = ":Papirus:checkbox-symbolic";
         }
+        pop.text = "Keep above others";
         pop.on_clicked = [cid]() {
             if (hypriso->is_pinned(cid)) {
                 hypriso->pin(cid, false);
@@ -113,10 +112,12 @@ void titlebar_right_click(int cid) {
     {
         PopOption pop;
         if (hypriso->is_fake_fullscreen(cid)) {
-            pop.text = "Real fullscreen";
+            pop.icon_left = ":Papirus:checkbox-checked-symbolic";
         } else {
-            pop.text = "Fake fullscreen";
+            pop.icon_left = ":Papirus:checkbox-symbolic";
         }
+        pop.text = "Fake fullscreen";   
+        
         pop.on_clicked = [cid]() {
             if (hypriso->is_fake_fullscreen(cid)) {
                 hypriso->fake_fullscreen(cid, false);
@@ -129,10 +130,12 @@ void titlebar_right_click(int cid) {
     {
         PopOption pop;
         if (hypriso->has_decorations(cid)) {
-            pop.text = "Remove titlebar";
+            pop.icon_left = ":Papirus:checkbox-symbolic";
         } else {
-            pop.text = "Give titlebar";
+            pop.icon_left = ":Papirus:checkbox-checked-symbolic";
         }
+        pop.text = "No titlebar";
+        
         pop.on_clicked = [cid]() {
             if (hypriso->has_decorations(cid)) {
                 // take off decorations
@@ -142,8 +145,30 @@ void titlebar_right_click(int cid) {
         };
         root.push_back(pop);        
     }
-    
-    popup::open(root, m.x + 1, m.y + 1);
+    {
+        PopOption pop;
+        pop.seperator = true;
+        root.push_back(pop);        
+    }
+    {
+        PopOption pop;
+        pop.icon_left = ":Papirus:checkbox-checked-symbolic";
+        pop.text = "Remember size";
+        pop.on_clicked = [cid]() {
+        };
+        root.push_back(pop);        
+    }
+    {
+        PopOption pop;
+        pop.icon_left = ":Papirus:checkbox-checked-symbolic";
+        pop.text = "Remember workspace";
+        pop.on_clicked = [cid]() {
+        };
+        root.push_back(pop);        
+    }
+     
+    //popup::open(root, m.x - (277 * .5), bounds_client(cid).y);
+    popup::open(root, m.x - 17, bounds_client(cid).y);
 }
 
 TextureInfo *get_cached_texture(Container *root_with_scale, Container *container_texture_saved_on, std::string needle, std::string font, std::string text, RGBA color, int wanted_h) {

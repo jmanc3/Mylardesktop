@@ -5,6 +5,8 @@
 #include <functional> 
 
 struct PopOption {
+    bool seperator = false; // Is just a line
+    
     std::string text;
     std::string icon_left;
 
