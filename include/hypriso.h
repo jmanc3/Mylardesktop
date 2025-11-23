@@ -302,6 +302,8 @@ struct HyprIso {
     void set_zoom_factor(float amount);
     int parent(int id);
 
+    void logout();
+
     void set_reserved_edge(int side, int amount);
 
     void show_desktop();

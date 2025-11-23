@@ -5129,3 +5129,11 @@ void render_drop_shadow(int mon, float const& a, RGBA b, float ROUNDINGBASE, flo
     g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
 }
 
+
+void HyprIso::logout() {
+    if (g_pKeybindManager->m_dispatchers.contains("exit")) {
+       g_pKeybindManager->m_dispatchers["exit"]("");
+    } else {
+        notify("dispatch `exit` no longer exists, report this issue if encountered");
+    }
+}

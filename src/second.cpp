@@ -99,6 +99,33 @@ static bool on_mouse_move(int id, float x, float y) {
     return consumed;
 }
 
+static void create_root_popup() {
+    auto m = mouse();
+    std::vector<PopOption> root;
+    {
+        PopOption pop;
+        pop.text = "Configure Display Settings...";   
+        pop.on_clicked = []() {
+        };
+        root.push_back(pop);
+    }
+ 
+    PopOption pop;
+    pop.seperator = true;
+    root.push_back(pop);        
+
+    {
+        PopOption pop;
+        pop.text = "Log out";   
+        pop.on_clicked = []() {
+            hypriso->logout();
+        };
+        root.push_back(pop);
+    }
+     
+    popup::open(root, m.x - 20, m.y + 1);
+}
+
 static bool on_mouse_press(int id, int button, int state, float x, float y) {
     splash::input();
     second::layout_containers();
@@ -120,7 +147,9 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
            }
        }
     }
-
+    if (pierced.empty() && button == BTN_RIGHT) {
+        create_root_popup();
+    }
 
     bool consumed = false;
     if (drag::dragging() && !state) {
