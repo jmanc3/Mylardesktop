@@ -310,6 +310,9 @@ struct HyprIso {
 
     bool is_pinned(int id);
     void pin(int id, bool state);
+    
+    bool is_fake_fullscreen(int id);
+    void fake_fullscreen(int id, bool state);
 
     SurfacePassInfo pass_info(int cid);
 

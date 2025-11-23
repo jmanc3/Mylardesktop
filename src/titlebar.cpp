@@ -95,9 +95,11 @@ void titlebar_right_click(int cid) {
     {
         PopOption pop;
         if (hypriso->is_pinned(cid)) {
-            pop.text = "Unpin";
+            pop.icon_left = ":Fluent:window-unpin";
+            pop.text = "Don't keep above";
         } else {
-            pop.text = "Pin";
+            pop.icon_left = ":Fluent:window-pin";
+            pop.text = "Keep above others";
         }
         pop.on_clicked = [cid]() {
             if (hypriso->is_pinned(cid)) {
@@ -108,7 +110,40 @@ void titlebar_right_click(int cid) {
         };
         root.push_back(pop);
     }
-    popup::open(root, m.x - 1, m.y - 1);
+    {
+        PopOption pop;
+        if (hypriso->is_fake_fullscreen(cid)) {
+            pop.text = "Real fullscreen";
+        } else {
+            pop.text = "Fake fullscreen";
+        }
+        pop.on_clicked = [cid]() {
+            if (hypriso->is_fake_fullscreen(cid)) {
+                hypriso->fake_fullscreen(cid, false);
+            } else {
+                hypriso->fake_fullscreen(cid, true);
+            }
+        };
+        root.push_back(pop);
+    }
+    {
+        PopOption pop;
+        if (hypriso->has_decorations(cid)) {
+            pop.text = "Remove titlebar";
+        } else {
+            pop.text = "Give titlebar";
+        }
+        pop.on_clicked = [cid]() {
+            if (hypriso->has_decorations(cid)) {
+                // take off decorations
+            } else {
+                // give decorations
+            }
+        };
+        root.push_back(pop);        
+    }
+    
+    popup::open(root, m.x + 1, m.y + 1);
 }
 
 TextureInfo *get_cached_texture(Container *root_with_scale, Container *container_texture_saved_on, std::string needle, std::string font, std::string text, RGBA color, int wanted_h) {

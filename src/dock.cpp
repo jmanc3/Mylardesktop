@@ -275,7 +275,7 @@ static void watch_volume_level() {
         long current = get_current_time_in_ms();
         std::string text(bytes, n);
         bool contains = text.find("change") != std::string::npos;
-        if (current - last_time_volume_adjusted > 200 && contains) {
+        if (current - last_time_volume_adjusted > 400 && contains) {
             volume_level = get_volume_level();
             windowing::wake_up(mylar_window->raw_window);            
         }
@@ -306,6 +306,7 @@ static void set_volume(float amount) {
     static bool queued = false;
     static bool latest = amount;
     latest = amount;
+    //volume_level = (int) std::round(volume_level);
     if (queued)
         return;
     auto process = std::make_shared<TinyProcessLib::Process>(fz("pactl set-sink-volume @DEFAULT_SINK@ {}%", (int) std::round(volume_level)));

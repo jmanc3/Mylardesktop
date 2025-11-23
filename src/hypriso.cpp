@@ -2142,6 +2142,15 @@ void HyprIso::pin(int id, bool state) {
     }
 }
 
+bool HyprIso::is_fake_fullscreen(int id) {
+    return false;
+}
+
+void HyprIso::fake_fullscreen(int id, bool state) {
+    
+}
+
+
 int HyprIso::get_workspace(int client) {
 #ifdef TRACY_ENABLE
     ZoneScoped;

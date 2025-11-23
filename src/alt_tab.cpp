@@ -2,6 +2,7 @@
 #include "alt_tab.h"
 
 #include "second.h"
+#include "drag.h"
 
 #define LAST_TIME_ACTIVE "last_time_active"
 
@@ -264,6 +265,9 @@ void alt_tab::show() {
     //return;
     if (is_showing)
         return;
+    if (drag::dragging()) {
+        drag::end(drag::drag_window());
+    }
     show_time = get_current_time_in_ms();
     active_index = 0;
     is_showing = true;
