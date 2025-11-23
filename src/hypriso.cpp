@@ -2850,6 +2850,22 @@ Bounds HyprIso::min_size(int id) {
     return {20, 20, 20, 20};
 }
 
+void HyprIso::remove_decorations(int id) {
+    for (auto hyprwindow : hyprwindows) {
+        if (hyprwindow->id == id) {
+            if (auto w = hyprwindow->w.get()) {
+                for (auto& wd : w->m_windowDecorations) {
+                    if (wd->getDisplayName() == "MylarBar")  {
+                        HyprlandAPI::removeWindowDecoration(globals->api, wd.get());
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    
+}
+
 bool HyprIso::has_decorations(int id) {
 #ifdef TRACY_ENABLE
     ZoneScoped;

@@ -289,6 +289,28 @@ static void render_fix(Container *root, Container *c) {
     c->real_bounds.h = std::round(c->real_bounds.h);*/
 }
 
+struct WindowRestoreLocation {
+    Bounds box; // all values are 0-1 and supposed to be scaled to monitor
+
+    bool keep_above = false;
+    bool fake_fullscreen = false;
+    bool remove_titlebar = false;
+    
+    bool remember_size = true;
+    bool remember_workspace = true;
+
+    Bounds actual_size_on_monitor(Bounds m) {
+        Bounds b = {box.x * m.w, box.y * m.h, box.w * m.w, box.h * m.h};
+        if (b.w < 5)
+            b.w = 5;
+        if (b.h < 5)
+            b.h = 5;
+        return b;
+    }
+};
+
+extern std::unordered_map<std::string, WindowRestoreLocation> restore_infos;
+
 void log(const std::string& msg);
 
 Container *get_rendering_root();

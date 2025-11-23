@@ -89,6 +89,8 @@ void titlebar_pre_layout(Container* root, Container* self, const Bounds& bounds)
     self->children[3]->wanted_bounds.w = std::round(titlebar_h * titlebar_button_ratio());
 }
 
+static std::vector<std::string> disabled_classes;
+
 void titlebar_right_click(int cid) {
     auto m = mouse();
     std::vector<PopOption> root;
@@ -135,13 +137,25 @@ void titlebar_right_click(int cid) {
             pop.icon_left = ":Papirus:checkbox-checked-symbolic";
         }
         pop.text = "Remove titlebar";
-        
+
         pop.on_clicked = [cid]() {
+            auto id_class = hypriso->class_name(cid);
             if (hypriso->has_decorations(cid)) {
-                // take off decorations
+                disabled_classes.push_back(id_class);
             } else {
                 // give decorations
+                for (int i = disabled_classes.size() - 1; i >= 0; i--) {
+                    if (disabled_classes[i] == id_class) {
+                        disabled_classes.erase(disabled_classes.begin() + i);
+                    }
+                }
             }
+
+            later_immediate([cid](Timer*) {
+                hypriso->on_window_closed(cid);
+                hypriso->on_window_open(cid);
+            });
+            
         };
         root.push_back(pop);        
     }
@@ -521,11 +535,21 @@ void create_titlebar(Container *root, Container *parent) {
     close->when_mouse_up = consume_event;
 }
 
+bool titlebar_disabled(int id) {
+    auto id_class = hypriso->class_name(id);
+    for (auto s : disabled_classes) {
+       if (s == id_class) {
+           return true;
+       }
+    }
+    return false;
+}
+
 void titlebar::on_window_open(int id) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-     if (hypriso->wants_titlebar(id)) {
+     if (hypriso->wants_titlebar(id) && !titlebar_disabled(id)) {
         hypriso->reserve_titlebar(id, titlebar_h);
         
         if (auto c = get_cid_container(id)) {
@@ -538,7 +562,9 @@ void titlebar::on_window_open(int id) {
 }
 
 void titlebar::on_window_closed(int id) {
-    
+    if (hypriso->has_decorations(id)) {
+        hypriso->remove_decorations(id);
+    }
 }
 
 static void draw_text(std::string text, int x, int y) {

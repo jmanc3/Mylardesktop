@@ -263,6 +263,7 @@ struct HyprIso {
     bool is_x11(int id);
     bool is_fullscreen(int id);
     bool has_decorations(int id);
+    void remove_decorations(int id);
     
     void bring_to_front(int id, bool focus = true);
     void set_hidden(int id, bool state);

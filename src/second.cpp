@@ -40,27 +40,14 @@ static float zoom_factor = 1.0;
 static long zoom_nicely_ended_time = 0;
 static bool zoom_needs_speed_update = true;
 
+std::unordered_map<std::string, WindowRestoreLocation> restore_infos;
+
 std::unordered_map<std::string, Datas> datas;
 
 std::vector<Container *> actual_monitors; // actually just root of all
 Container *actual_root = new Container;
 
 void draw_text(std::string text, int x, int y);
-
-struct WindowRestoreLocation {
-    Bounds box; // all values are 0-1 and supposed to be scaled to monitor
-
-    Bounds actual_size_on_monitor(Bounds m) {
-        Bounds b = {box.x * m.w, box.y * m.h, box.w * m.w, box.h * m.h};
-        if (b.w < 5)
-            b.w = 5;
-        if (b.h < 5)
-            b.h = 5;
-        return b;
-    }
-};
-
-static std::unordered_map<std::string, WindowRestoreLocation> restore_infos;
 
 static void any_container_closed(Container *c) {
     remove_data(c->uuid); 
@@ -509,6 +496,8 @@ static void on_window_open(int id) {
 }
 
 static void on_window_closed(int id) {
+    hypriso->set_corner_rendering_mask_for_window(id, 0);
+    
     titlebar::on_window_closed(id);
     resizing::on_window_closed(id);
     alt_tab::on_window_closed(id);
