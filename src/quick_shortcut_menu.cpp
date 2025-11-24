@@ -20,6 +20,9 @@ struct KeySequence {
     std::string name;
     std::string command;
     std::vector<KeyPress> keys;
+
+    bool possible = false;
+    bool full_match = false;
 };
 
 static std::vector<KeySequence> sequences;
@@ -53,7 +56,7 @@ void open_quick_shortcut_menu() {
     static const float seperator_size = 5;
     float s = scale(hypriso->monitor_from_cursor());
     sequences.clear();
-    sequences.push_back({"k", "kate", "setsid kate", {{KEY_K, 1}, {KEY_K, 0}}});
+    sequences.push_back({"kk", "kate", "setsid kate", {{KEY_K, 1}, {KEY_K, 0}, {KEY_K, 1}, {KEY_K, 0}}});
     sequences.push_back({"y", "youtube", "setsid firefox https://www.youtube.com", {{KEY_Y, 1}, {KEY_Y, 0}}});
 
     float height = option_height * s * sequences.size();
@@ -66,13 +69,11 @@ void open_quick_shortcut_menu() {
     Bounds mb = bounds_monitor(hypriso->monitor_from_cursor());
     p->real_bounds = Bounds(mb.x + mb.w * .5 - p->wanted_bounds.w * .5, mb.h * .05, p->wanted_bounds.w, p->wanted_bounds.h);
     p->when_mouse_enters_container = paint {
-        //hypriso->all_lose_focus();
         setCursorImageUntilUnset("default");
         hypriso->send_false_position(-1, -1);
         consume_event(root, c);
     };
     p->when_mouse_leaves_container = paint {
-        //hypriso->all_gain_focus();
         unsetCursorImage(true);
         consume_event(root, c);
     };
@@ -103,11 +104,11 @@ void open_quick_shortcut_menu() {
             if (stage == (int)STAGE::RENDER_POST_WINDOWS) {
                 renderfix if (c->state.mouse_pressing) {
                     auto b = c->real_bounds;
-                    rect(b, {0, 0, 0, .2}, 0, 7 * s, 2.0, false);
+                    rect(b, {0, 0, 0, .2}, 0, 0.0, 2.0, false);
                 }
                 if (c->state.mouse_hovering) {
                     auto b = c->real_bounds;
-                    rect(b, {0, 0, 0, .1}, 0, 7 * s, 2.0f, false);
+                    rect(b, {0, 0, 0, .1}, 0, 0.0, 2.0f, false);
                 }
 
                 auto index = c->custom_type;
@@ -145,6 +146,8 @@ bool quick_shortcut_menu::on_key_press(int id, int key, int state, bool update_m
     static int keys_pressed_since_menu_opened = 0; // lets us know how many keys to check for sequence possibility
     
     keys.push_back({key, state});
+    if (keys.size() > 30)
+        keys.erase(keys.begin());
     bool nothing_held_down = balanced(keys);
 
     bool consume = false;
@@ -158,12 +161,48 @@ bool quick_shortcut_menu::on_key_press(int id, int key, int state, bool update_m
     if (menu_open) {
         keys_pressed_since_menu_opened++;
         // if no sequence left possible, simply close menu
-        bool available_sequence = true;
+        bool a_sequence_is_possible = false;
 
-        
+        for (auto &s : sequences) {
+            s.possible = true;
+            for (int i = 0; i < keys_pressed_since_menu_opened; i++) {
+                auto matching_key = keys[keys.size() - keys_pressed_since_menu_opened + i];
+                if (i < s.keys.size()) {
+                    if (s.keys[i].key != matching_key.key || s.keys[i].state != matching_key.state) {
+                        s.possible = false;
+                        goto out;
+                    }
+                } else {
+                    s.possible = false;
+                    goto out;
+                }
+            }
+            if (s.possible && s.keys.size() == keys_pressed_since_menu_opened)
+                s.full_match = true;
+            out:
+        }
 
-        if (!available_sequence)
+        int possible_count = 0;
+        for (auto &s : sequences)
+            if (s.possible)
+                possible_count++;
+
+        if (possible_count > 0)
+            a_sequence_is_possible = true;
+
+        if (possible_count == 1) { // if only one sequence possible, activate it if it's a full match
+            for (auto &s : sequences) {
+                if (s.possible && s.full_match) {
+                    launch_command(s.command);
+                    a_sequence_is_possible = false; // close menu
+                }
+            }
+        }
+
+        if (!a_sequence_is_possible) {
+            keys.clear();
             popup::close(c->uuid);
+        }
     } else {
         if (keys.size() >= 2 && nothing_held_down) {
             auto before = keys[keys.size() - 2];
@@ -177,6 +216,6 @@ bool quick_shortcut_menu::on_key_press(int id, int key, int state, bool update_m
         }
     }
 
-    return consume; // conumse
+    return consume; // conumse key event
 }
 
