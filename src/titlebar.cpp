@@ -461,6 +461,8 @@ void create_titlebar(Container *root, Container *parent) {
         //notify("title drag start");
         auto client = first_above_of(c, TYPE::CLIENT);
         auto cid = *datum<int>(client, "cid");
+        if (hypriso->is_fullscreen(cid))  
+            return;
         if (auto c = get_cid_container(cid)) {
             *datum<bool>(client, "drag_from_titlebar") = true;
         }
