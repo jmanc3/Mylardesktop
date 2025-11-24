@@ -2660,11 +2660,11 @@ void setCursorImageUntilUnset(std::string cursor) {
     Cursor::overrideController->setOverride(cursor, Cursor::CURSOR_OVERRIDE_SPECIAL_ACTION);
 }
 
-void unsetCursorImage() {
+void unsetCursorImage(bool force) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    if (hypriso->last_cursor_set == "none")
+    if (hypriso->last_cursor_set == "none" && !force)
         return;
     hypriso->last_cursor_set = "none";
     Cursor::overrideController->unsetOverride(Cursor::CURSOR_OVERRIDE_SPECIAL_ACTION);

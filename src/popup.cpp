@@ -44,10 +44,12 @@ void popup::open(std::vector<PopOption> root, int x, int y) {
     p->real_bounds = Bounds(x, y, p->wanted_bounds.w, p->wanted_bounds.h);
     p->when_mouse_enters_container = paint {
         //hypriso->all_lose_focus();
+        setCursorImageUntilUnset("default");
         consume_event(root, c);
     };
     p->when_mouse_leaves_container = paint {
         //hypriso->all_gain_focus();
+        unsetCursorImage(true);
         consume_event(root, c);
     };
     //p->wanted_pad = Bounds(7, 7, 7, 7);

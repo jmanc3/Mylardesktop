@@ -383,7 +383,7 @@ TextureInfo gen_texture(std::string path, float h);
 void draw_texture(TextureInfo info, int x, int y, float a = 1.0, float clip_w = 0.0);
 
 void setCursorImageUntilUnset(std::string cursor);
-void unsetCursorImage();
+void unsetCursorImage(bool force = false);
 
 int get_monitor(int client);
 
