@@ -297,7 +297,8 @@ struct HyprIso {
     void draw_raw_deco_thumbnail(int id, Bounds b, int rounding = 0, float roundingPower = 2.0f, int cornermask = 0);
     void draw_workspace(int mon, int id, Bounds b, int rounding = 0);
     void draw_wallpaper(int mon, Bounds b, int rounding = 0);
-    
+
+    void send_false_position(int x, int y);
 
     void set_zoom_factor(float amount);
     int parent(int id);

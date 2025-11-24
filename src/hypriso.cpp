@@ -5137,3 +5137,8 @@ void HyprIso::logout() {
         notify("dispatch `exit` no longer exists, report this issue if encountered");
     }
 }
+
+void HyprIso::send_false_position(int x, int y) {
+    g_pSeatManager->sendPointerMotion(Time::millis(Time::steadyNow()), {x, y});
+}
+

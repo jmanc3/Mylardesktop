@@ -45,6 +45,7 @@ void popup::open(std::vector<PopOption> root, int x, int y) {
     p->when_mouse_enters_container = paint {
         //hypriso->all_lose_focus();
         setCursorImageUntilUnset("default");
+        hypriso->send_false_position(-1, -1);
         consume_event(root, c);
     };
     p->when_mouse_leaves_container = paint {
