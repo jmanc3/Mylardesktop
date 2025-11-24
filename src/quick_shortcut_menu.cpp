@@ -6,12 +6,19 @@
 #include "defer.h"
 #include "popup.h"
 
+#include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <libevdev/libevdev.h>
 #include <linux/input-event-codes.h>
+#include <random>
+#include <xkbcommon/xkbcommon.h>
 #include <vector>
 #include <unordered_map>
+#include <fstream>
 
 struct KeyPress {
-    int key = 0;
+    uint32_t key = 0;
     int state = 0;
 };
 
@@ -51,15 +58,87 @@ bool balanced(const std::vector<KeyPress> &keys) {
     return balance.empty();
 }
 
+std::string default_sequences = R"end(
+name=edit
+visual=e
+keys=press 18 release 18
+command=kate ~/.config/mylar/quick_shortcuts.txt
+)end";
+
+void parse_sequences() {
+    sequences.clear();
+    const char* home = std::getenv("HOME");
+    if (!home) throw std::runtime_error("HOME environment variable not set");
+
+    std::filesystem::path filepath = std::filesystem::path(home) / ".config/mylar/quick_shortcuts.txt";
+    if (!std::filesystem::exists(filepath)) {
+        std::filesystem::create_directories(filepath.parent_path());
+        
+        std::ofstream out(filepath, std::ios::trunc);
+        out << default_sequences << std::endl;
+    }
+
+    if (std::filesystem::exists(filepath)) {
+        std::ifstream in(filepath);
+        std::string line;
+        KeySequence s;
+        while (std::getline(in, line)) {
+            if (line.empty()) // skip empty line
+                continue;
+            if (line[0] == '#') // skip comments
+                continue;
+            if (line.starts_with("name=")) {
+                if (!s.name.empty() && !s.command.empty()) {
+                    sequences.push_back(s);
+                }
+                s = KeySequence();
+                s.name = line.substr(strlen("name="));
+            }
+            if (line.starts_with("visual=")) {
+                s.representation = line.substr(strlen("visual="));
+            }
+            if (line.starts_with("keys=")) {
+                auto val = line.substr(strlen("keys="));
+                std::string token;
+                std::stringstream ss(val);
+                bool down = false;
+                while (std::getline(ss, token, ' ')) {
+                    if (token == "press") {
+                        down = true;
+                    } else if (token == "release") {
+                        down = false;
+                    } else {
+                        try {
+                            uint32_t num = std::atoi(token.c_str());
+                            s.keys.push_back({num, down});
+                        } catch (...) {
+                            
+                        }
+                    }
+                }
+            }
+            if (line.starts_with("command=")) {
+                s.command = line.substr(strlen("command="));
+            }
+        }
+        if (!s.name.empty() && !s.command.empty()) {
+            sequences.push_back(s);
+        }
+
+        //sequences.push_back({"kk", "kate", "setsid kate", {{KEY_K, 1}, {KEY_K, 0}, {KEY_K, 1}, {KEY_K, 0}}});
+        //sequences.push_back({"y", "youtube", "setsid firefox https://www.youtube.com", {{KEY_Y, 1}, {KEY_Y, 0}}});
+    }
+}
+
+static bool debugging_key_presses = false;
+
 void open_quick_shortcut_menu() {
     static const float option_height = 24;
     static const float seperator_size = 5;
     float s = scale(hypriso->monitor_from_cursor());
-    sequences.clear();
-    sequences.push_back({"kk", "kate", "setsid kate", {{KEY_K, 1}, {KEY_K, 0}, {KEY_K, 1}, {KEY_K, 0}}});
-    sequences.push_back({"y", "youtube", "setsid firefox https://www.youtube.com", {{KEY_Y, 1}, {KEY_Y, 0}}});
-
-    float height = option_height * s * sequences.size();
+    parse_sequences();
+    
+    float height = option_height * s * sequences.size() + (s * option_height * .8);
     auto p = actual_root->child(::vbox, 277, height);
     p->name = "quick_shortcut_menu";
     consume_everything(p);
@@ -102,7 +181,8 @@ void open_quick_shortcut_menu() {
             if (!root) return;
             auto [rid, s, stage, active_id] = roots_info(actual_root, root);
             if (stage == (int)STAGE::RENDER_POST_WINDOWS) {
-                renderfix if (c->state.mouse_pressing) {
+                renderfix 
+                if (c->state.mouse_pressing) {
                     auto b = c->real_bounds;
                     rect(b, {0, 0, 0, .2}, 0, 0.0, 2.0, false);
                 }
@@ -136,16 +216,53 @@ void open_quick_shortcut_menu() {
                 popup::close(above->uuid);
         };
     }
+    auto latest_key_press = p->child(FILL_SPACE, FILL_SPACE);
+    latest_key_press->when_paint = [](Container *actual_root, Container *c) {
+        auto root = get_rendering_root();
+        if (!root)
+            return;
+        auto [rid, s, stage, active_id] = roots_info(actual_root, root);
+        if (stage == (int)STAGE::RENDER_POST_WINDOWS) {
+            renderfix 
+            if (c->state.mouse_pressing) {
+                auto b = c->real_bounds;
+                rect(b, {0, 0, 0, .2}, 3, 7 * s, 2.0, false);
+            }
+            if (c->state.mouse_hovering) {
+                auto b = c->real_bounds;
+                rect(b, {0, 0, 0, .1}, 3,  7 * s, 2.0f, false);
+            }
 
+            std::string text = "Turn on key printing";
+            RGBA color = {.4, .4, .4, .9};
+            if (debugging_key_presses) {
+                text = "Turn off key printing";
+            }
+            auto info = gen_text_texture("Segoe UI Variable", text, 12 * s, color);
+            draw_texture(info, c->real_bounds.x - 7 * s + c->real_bounds.w - info.w, center_y(c, info.h));
+            free_text_texture(info.id);
+        }
+    };
+    latest_key_press->when_clicked = paint {
+        debugging_key_presses = !debugging_key_presses;
+        if (auto above = first_above_of(c, TYPE::OUR_POPUP))
+            popup::close(above->uuid);
+    };
+    
     for (auto m : actual_monitors)
         hypriso->damage_entire(*datum<int>(m, "cid"));
 }
 
 bool quick_shortcut_menu::on_key_press(int id, int key, int state, bool update_mods) {
+    if (debugging_key_presses)
+        notify(fz("{}", key));
+    //key = key + 8; // Because to xkbcommon it's +8 from libinput
+    //key = hypriso->keycode_to_keysym(key);
+    
     static std::vector<KeyPress> keys;
     static int keys_pressed_since_menu_opened = 0; // lets us know how many keys to check for sequence possibility
     
-    keys.push_back({key, state});
+    keys.push_back({(uint32_t) key, state});
     if (keys.size() > 30)
         keys.erase(keys.begin());
     bool nothing_held_down = balanced(keys);
@@ -190,15 +307,13 @@ bool quick_shortcut_menu::on_key_press(int id, int key, int state, bool update_m
         if (possible_count > 0)
             a_sequence_is_possible = true;
 
-        if (possible_count == 1) { // if only one sequence possible, activate it if it's a full match
-            for (auto &s : sequences) {
-                if (s.possible && s.full_match) {
-                    launch_command(s.command);
-                    a_sequence_is_possible = false; // close menu
-                }
+        for (auto &s : sequences) {
+            if (s.possible && s.full_match) {
+                launch_command(s.command);
+                a_sequence_is_possible = false; // close menu
             }
         }
-
+            
         if (!a_sequence_is_possible) {
             keys.clear();
             popup::close(c->uuid);

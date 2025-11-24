@@ -11,6 +11,7 @@
 
 #include <bits/types/idtype_t.h>
 #include <cstring>
+#include <xkbcommon/xkbcommon.h>
 
 #ifdef TRACY_ENABLE
 #include "tracy/Tracy.hpp"
@@ -5140,5 +5141,13 @@ void HyprIso::logout() {
 
 void HyprIso::send_false_position(int x, int y) {
     g_pSeatManager->sendPointerMotion(Time::millis(Time::steadyNow()), {x, y});
+}
+
+uint32_t HyprIso::keycode_to_keysym(int keycode) {
+    //const xkb_keysym_t keysym = xkb_state_key_get_one_sym(nullptr, keycode);
+    //const xkb_keysym_t internalKeysym = xkb_state_key_get_one_sym(pKeyboard->m_xkbState, KEYCODE);
+
+   return 0;
+    
 }
 

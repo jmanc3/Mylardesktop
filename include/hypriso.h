@@ -190,6 +190,8 @@ struct HyprIso {
     void create_hooks();
     void create_callbacks();
 
+    uint32_t keycode_to_keysym(int keycode);
+
     // So things can be cleaned
     void end(); 
     
