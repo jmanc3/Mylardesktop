@@ -237,6 +237,8 @@ struct Container {
     int                   mouse_initial_x = -1;
     int                   mouse_initial_y = -1;
 
+    bool first_paint = true;
+
     bool                  include_children_outside_parent_bounds = false; // for interaction purposes that is (fill_list_with_pierced)
 
     // State of the mouse used by application.cpp to determine when to call this

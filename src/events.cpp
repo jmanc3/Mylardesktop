@@ -470,6 +470,7 @@ void paint_outline(Container* root, Container* c) {
     if (c->after_paint) {
         c->after_paint(root, c);
     }
+    c->first_paint = false;
 }
 
 void paint_root(Container* c) {

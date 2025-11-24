@@ -19,6 +19,7 @@
 #include "splash.h"
 #include "snap_preview.h"
 #include "popup.h"
+#include "quick_shortcut_menu.h"
 
 #include "process.hpp"
 #include <cstdio>
@@ -275,6 +276,9 @@ static bool on_scrolled(int id, int source, int axis, int direction, double delt
 
 static bool on_key_press(int id, int key, int state, bool update_mods) {
     splash::input();
+    bool consume = quick_shortcut_menu::on_key_press(id, key, state, update_mods);
+    if (consume)
+        return consume;
     
     static bool alt_held = false;
     if (key == KEY_LEFTALT || key == KEY_RIGHTALT) {
@@ -1185,3 +1189,35 @@ void consume_everything(Container *c) {
         consume_event(actual_root, c);
     };
 }
+
+void launch_command(std::string command) {
+#ifdef TRACY_ENABLE
+    ZoneScoped;
+#endif
+    if (command.empty())
+        return;
+    pid_t pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "mylar: Could not fork\n");
+        return;
+    }
+    
+    if (pid == 0) {
+        char *dir = getenv("HOME");
+        if (dir) {
+            int ret = chdir(dir);
+            if (ret != 0) {
+                fprintf(stderr, "mylar: failed to chdir to %s\n", dir);
+            }
+        }
+        
+        execlp("sh", "sh", "-c", command.c_str(), NULL);
+        fprintf(stderr, "mylar: Failed to execute %s\n", command.c_str());
+        
+        _exit(1);
+    } else {
+        signal(SIGCHLD, SIG_IGN); // https://www.geeksforgeeks.org/zombie-processes-prevention/
+    }
+}
+
+
