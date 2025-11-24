@@ -125,6 +125,8 @@ void titlebar_right_click(int cid) {
             } else {
                 hypriso->fake_fullscreen(cid, true);
             }
+            auto b = bounds_client(cid);
+            hypriso->move_resize(cid, b.x, b.y, b.w, b.h);
             update_restore_info_for(cid);
         };
         root.push_back(pop);
@@ -439,7 +441,9 @@ void create_titlebar(Container *root, Container *parent) {
         auto cid = *datum<int>(client, "cid");
         
         if (c->state.mouse_button_pressed == BTN_RIGHT) {
-            titlebar_right_click(cid);
+            later_immediate([cid](Timer *) {
+                titlebar_right_click(cid);
+            });
             c->when_mouse_down(root, c);
             return;
         }

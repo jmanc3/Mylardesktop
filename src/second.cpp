@@ -456,9 +456,9 @@ void apply_restore_info(int id) {
     auto cname = hypriso->class_name(id);
     for (auto [class_n, info] : restore_infos) {
         if (cname == class_n) {
-            notify(fz("{} {} {}", cname, info.keep_above, info.fake_fullscreen));
-            hypriso->pin(id, info.keep_above);
-            hypriso->fake_fullscreen(id, info.fake_fullscreen);
+            //notify(fz("{} {} {}", cname, info.keep_above, info.fake_fullscreen));
+            //hypriso->pin(id, info.keep_above);
+            //hypriso->fake_fullscreen(id, info.fake_fullscreen);
 
             if (info.remember_size) {
                 // Skip restore info if class name is same as parent class name (dialogs)
