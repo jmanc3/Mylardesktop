@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
-#include <libevdev/libevdev.h>
 #include <linux/input-event-codes.h>
 #include <random>
 #include <xkbcommon/xkbcommon.h>
@@ -59,7 +58,7 @@ bool balanced(const std::vector<KeyPress> &keys) {
 }
 
 std::string default_sequences = R"end(
-name=edit
+name=~/.config/mylar/quick_shortcuts.txt
 visual=e
 keys=press 18 release 18
 command=kate ~/.config/mylar/quick_shortcuts.txt
@@ -138,7 +137,7 @@ void open_quick_shortcut_menu() {
     float s = scale(hypriso->monitor_from_cursor());
     parse_sequences();
     
-    float height = option_height * s * sequences.size() + (s * option_height * .8);
+    float height = option_height * s * sequences.size() + (s * option_height * .9);
     auto p = actual_root->child(::vbox, 277, height);
     p->name = "quick_shortcut_menu";
     consume_everything(p);
