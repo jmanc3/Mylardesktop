@@ -199,7 +199,7 @@ void open_quick_shortcut_menu() {
             }
         };
         option->when_clicked = paint {
-            if (c->state.mouse_button_pressed == BTN_LEFT)
+            if (c->state.mouse_button_pressed != BTN_LEFT)
                 return;
 
             auto index = c->custom_type;
@@ -243,7 +243,7 @@ void open_quick_shortcut_menu() {
         }
     };
     latest_key_press->when_clicked = paint {
-        if (c->state.mouse_button_pressed == BTN_LEFT)
+        if (c->state.mouse_button_pressed != BTN_LEFT)
             return;
 
         debugging_key_presses = !debugging_key_presses;

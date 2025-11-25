@@ -2157,15 +2157,18 @@ bool HyprIso::is_fake_fullscreen(int id) {
 void HyprIso::fake_fullscreen(int id, bool state) {
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
-            hw->w->m_windowData.syncFullscreen = CWindowOverridableVar(false, PRIORITY_SET_PROP);
+            hw->w->m_ruleApplicator->syncFullscreenOverride(Desktop::Types::COverridableVar(false, Desktop::Types::PRIORITY_SET_PROP));
+
+            //hw->w->m_windowData.syncFullscreen = CWindowOverridableVar(false, PRIORITY_SET_PROP);
             
             if (state) {
                 g_pCompositor->setWindowFullscreenState(hw->w, SFullscreenState{.internal = (eFullscreenMode) 0, .client = (eFullscreenMode) 2});
             } else {
                 g_pCompositor->setWindowFullscreenState(hw->w, SFullscreenState{.internal = (eFullscreenMode) 0, .client = (eFullscreenMode) 0});
             }
-
-            hw->w->m_windowData.syncFullscreen = CWindowOverridableVar(hw->w->m_fullscreenState.internal == hw->w->m_fullscreenState.client, PRIORITY_SET_PROP);
+            hw->w->m_ruleApplicator->syncFullscreenOverride(
+                Desktop::Types::COverridableVar(hw->w->m_fullscreenState.internal == hw->w->m_fullscreenState.client, Desktop::Types::PRIORITY_SET_PROP));
+            //hw->w->m_windowData.syncFullscreen = CWindowOverridableVar(hw->w->m_fullscreenState.internal == hw->w->m_fullscreenState.client, PRIORITY_SET_PROP);
         }
     }
 }
@@ -3251,7 +3254,7 @@ void renderWindow(PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp&
     const bool USE_WORKSPACE_FADE_ALPHA = pWindow->m_monitorMovedFrom != -1 && (!PWORKSPACE || !PWORKSPACE->isVisible());
 
     renderdata.surface   = pWindow->m_wlSurface->resource();
-    renderdata.dontRound = pWindow->isEffectiveInternalFSMode(FSMODE_FULLSCREEN) || pWindow->m_windowData.noRounding.valueOrDefault();
+    renderdata.dontRound = pWindow->isEffectiveInternalFSMode(FSMODE_FULLSCREEN);
     renderdata.fadeAlpha = pWindow->m_alpha->value() * (pWindow->m_pinned || USE_WORKSPACE_FADE_ALPHA ? 1.f : PWORKSPACE->m_alpha->value()) *
         (USE_WORKSPACE_FADE_ALPHA ? pWindow->m_movingToWorkspaceAlpha->value() : 1.F) * pWindow->m_movingFromWorkspaceAlpha->value();
     renderdata.alpha         = pWindow->m_activeInactiveAlpha->value();
@@ -3268,7 +3271,7 @@ void renderWindow(PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp&
     }
 
     // apply opaque
-    if (pWindow->m_windowData.opaque.valueOrDefault())
+    if (pWindow->m_ruleApplicator->opaque().valueOrDefault())
         renderdata.alpha = 1.f;
 
     renderdata.pWindow = pWindow;
@@ -3280,7 +3283,7 @@ void renderWindow(PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp&
 
     const auto fullAlpha = renderdata.alpha * renderdata.fadeAlpha;
 
-    if (*PDIMAROUND && pWindow->m_windowData.dimAround.valueOrDefault() && !g_pHyprRenderer->m_bRenderingSnapshot && mode != RENDER_PASS_POPUP) {
+    if (*PDIMAROUND && pWindow->m_ruleApplicator->dimAround().valueOrDefault() && !g_pHyprRenderer->m_bRenderingSnapshot && mode != RENDER_PASS_POPUP) {
         CBox                        monbox = {0, 0, g_pHyprOpenGL->m_renderData.pMonitor->m_transformedSize.x, g_pHyprOpenGL->m_renderData.pMonitor->m_transformedSize.y};
         CRectPassElement::SRectData data;
         data.color = CHyprColor(0, 0, 0, *PDIMAROUND * fullAlpha);
@@ -3328,7 +3331,7 @@ void renderWindow(PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp&
         }
 
         static auto PXWLUSENN = CConfigValue<Hyprlang::INT>("xwayland:use_nearest_neighbor");
-        if ((pWindow->m_isX11 && *PXWLUSENN) || pWindow->m_windowData.nearestNeighbor.valueOrDefault())
+        if ((pWindow->m_isX11 && *PXWLUSENN) || pWindow->m_ruleApplicator->nearestNeighbor().valueOrDefault())
             renderdata.useNearestNeighbor = true;
 
         if (pWindow->m_wlSurface->small() && !pWindow->m_wlSurface->m_fillIgnoreSmall && renderdata.blur) {
@@ -3348,6 +3351,12 @@ void renderWindow(PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp&
         renderdata.surfaceCounter = 0;
         pWindow->m_wlSurface->resource()->breadthfirst(
             [&renderdata, &pWindow](SP<CWLSurfaceResource> s, const Vector2D& offset, void* data) {
+                if (!s->m_current.texture)
+                    return;
+
+                if (s->m_current.size.x < 1 || s->m_current.size.y < 1)
+                    return;
+
                 renderdata.localPos    = offset;
                 renderdata.texture     = s->m_current.texture;
                 renderdata.surface     = s;
@@ -3400,7 +3409,7 @@ void renderWindow(PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp&
                 renderdata.discardOpacity = *PBLURIGNOREA;
             }
 
-            if (pWindow->m_windowData.nearestNeighbor.valueOrDefault())
+            if (pWindow->m_ruleApplicator->nearestNeighbor().valueOrDefault())
                 renderdata.useNearestNeighbor = true;
 
             renderdata.surfaceCounter = 0;
@@ -3421,6 +3430,12 @@ void renderWindow(PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp&
 
                     popup->m_wlSurface->resource()->breadthfirst(
                         [&renderdata](SP<CWLSurfaceResource> s, const Vector2D& offset, void* data) {
+                            if (!s->m_current.texture)
+                                return;
+
+                            if (s->m_current.size.x < 1 || s->m_current.size.y < 1)
+                                return;
+
                             renderdata.localPos    = offset;
                             renderdata.texture     = s->m_current.texture;
                             renderdata.surface     = s;
@@ -4005,7 +4020,7 @@ void HyprIso::add_float_rule() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    g_pConfigManager->handleWindowRule("windowrulev2", "float, class:.*");
+    g_pConfigManager->handleWindowrule("windowrulev2", "float, class:.*");
 }
 
 void HyprIso::overwrite_defaults() {
@@ -4094,6 +4109,7 @@ bool HyprIso::has_focus(int client) {
     return false;
 }
 
+/*
 PHLWINDOW vectorToWindowUnified(const Vector2D& pos, uint8_t properties, PHLWINDOW pIgnoreWindow) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
@@ -4112,7 +4128,7 @@ PHLWINDOW vectorToWindowUnified(const Vector2D& pos, uint8_t properties, PHLWIND
             if (ONLY_PRIORITY && !w->priorityFocus())
                 continue;
 
-            if (w->m_isFloating && w->m_isMapped && !w->isHidden() && !w->m_X11ShouldntFocus && w->m_pinned && !w->m_windowData.noFocus.valueOrDefault() && w != pIgnoreWindow) {
+            if (w->m_isFloating && w->m_isMapped && !w->isHidden() && !w->m_X11ShouldntFocus && w->m_pinned && !w->m_ruleApplicator->noFocus().valueOrDefault() && w != pIgnoreWindow) {
                 const auto BB  = w->getWindowBoxUnified(properties);
                 CBox       box = BB.copy().expand(!w->isX11OverrideRedirect() ? BORDER_GRAB_AREA : 0);
                 if (box.containsPoint(g_pPointerManager->position()))
@@ -4149,7 +4165,7 @@ PHLWINDOW vectorToWindowUnified(const Vector2D& pos, uint8_t properties, PHLWIND
                         continue;
                 }
 
-                if (w->m_isMapped && w->m_workspace->isVisible() && !w->isHidden() && !w->m_windowData.noFocus.valueOrDefault() &&
+                if (w->m_isMapped && w->m_workspace->isVisible() && !w->isHidden() && !w->m_ruleApplicator->noFocus().valueOrDefault() &&
 +                    w != pIgnoreWindow) {
                     // OR windows should add focus to parent
                     if (w->m_X11ShouldntFocus && !w->isX11OverrideRedirect())
@@ -4212,7 +4228,7 @@ PHLWINDOW vectorToWindowUnified(const Vector2D& pos, uint8_t properties, PHLWIND
                 continue;
 
             if (!w->m_isX11 && !w->m_isFloating && w->m_isMapped && w->workspaceID() == WSPID && !w->isHidden() && !w->m_X11ShouldntFocus &&
-                !w->m_windowData.noFocus.valueOrDefault() && w != pIgnoreWindow) {
+                !w->m_windowData->noFocus().valueOrDefault() && w != pIgnoreWindow) {
                 if (w->hasPopupAt(pos))
                     return w;
             }
@@ -4228,7 +4244,7 @@ PHLWINDOW vectorToWindowUnified(const Vector2D& pos, uint8_t properties, PHLWIND
             if (!w->m_workspace)
                 continue;
 
-            if (!w->m_isFloating && w->m_isMapped && w->workspaceID() == WSPID && !w->isHidden() && !w->m_X11ShouldntFocus && !w->m_windowData.noFocus.valueOrDefault() &&
+            if (!w->m_isFloating && w->m_isMapped && w->workspaceID() == WSPID && !w->isHidden() && !w->m_X11ShouldntFocus && !w->m_windowData().noFocus.valueOrDefault() &&
                 w != pIgnoreWindow) {
                 CBox box = (properties & USE_PROP_TILED) ? w->getWindowBoxUnified(properties) : CBox{w->m_position, w->m_size};
                 if (box.containsPoint(pos))
@@ -4252,7 +4268,6 @@ PHLWINDOW vectorToWindowUnified(const Vector2D& pos, uint8_t properties, PHLWIND
 
     return windowForWorkspace(false);
 }
-
 
 void mouseMoveUnified(uint32_t time, bool refocus, bool mouse, std::optional<Vector2D> overridePos) {
     assert(false && "Update to latest version 52");
@@ -4471,8 +4486,8 @@ void mouseMoveUnified(uint32_t time, bool refocus, bool mouse, std::optional<Vec
         }
 
         if (PWINDOWIDEAL &&
-            ((PWINDOWIDEAL->m_isFloating && (PWINDOWIDEAL->m_createdOverFullscreen || PWINDOWIDEAL->m_pinned)) /* floating over fullscreen or pinned */
-             || (PMONITOR->m_activeSpecialWorkspace == PWINDOWIDEAL->m_workspace) /* on an open special workspace */))
+            ((PWINDOWIDEAL->m_isFloating && (PWINDOWIDEAL->m_createdOverFullscreen || PWINDOWIDEAL->m_pinned))
+             || (PMONITOR->m_activeSpecialWorkspace == PWINDOWIDEAL->m_workspace)))
             pFoundWindow = PWINDOWIDEAL;
 
         if (!pFoundWindow->m_isX11) {
@@ -4676,7 +4691,7 @@ void mouseMoveUnified(uint32_t time, bool refocus, bool mouse, std::optional<Vec
                 } else
                     g_pCompositor->focusSurface(foundSurface, pFoundWindow);
             }
-            /*if (allowKeyboardRefocus && ((FOLLOWMOUSE != 3 && (*PMOUSEREFOCUS || m_lastMouseFocus.lock() != pFoundWindow)) || refocus)) {
+            if (allowKeyboardRefocus && ((FOLLOWMOUSE != 3 && (*PMOUSEREFOCUS || m_lastMouseFocus.lock() != pFoundWindow)) || refocus)) {
                 if (m_lastMouseFocus.lock() != pFoundWindow || g_pCompositor->m_lastWindow.lock() != pFoundWindow || g_pCompositor->m_lastFocus != foundSurface || refocus) {
                     m_lastMouseFocus = pFoundWindow;
 
@@ -4692,7 +4707,7 @@ void mouseMoveUnified(uint32_t time, bool refocus, bool mouse, std::optional<Vec
                     } else
                         g_pCompositor->focusSurface(foundSurface, pFoundWindow);
                 }
-            }*/
+            }
         }
 
         if (g_pSeatManager->m_state.keyboardFocus == nullptr)
@@ -4717,6 +4732,7 @@ void mouseMoveUnified(uint32_t time, bool refocus, bool mouse, std::optional<Vec
     g_pSeatManager->setPointerFocus(foundSurface, surfaceLocal);
     g_pSeatManager->sendPointerMotion(time, surfaceLocal);
 }
+*/
 
 void renderWorkspaceWindows(PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& time) {
 #ifdef TRACY_ENABLE
@@ -4811,20 +4827,20 @@ void hook_onRenderWorkspaceWindows(void* thisptr,  PHLMONITOR pMonitor, PHLWORKS
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    
+
     //auto chr = (CHyprRenderer *) thisptr;
     //(*(origRenderWorkspaceWindows)g_pOnRenderWorkspaceWindows->m_original)(chr, pMonitor, pWorkspace, time);
     renderWorkspaceWindows(pMonitor, pWorkspace, time);
 }
 
 inline CFunctionHook* g_pOnVectorToWindowUnified = nullptr;
-typedef void (*origVectorToWindowUnified)(CCompositor *, const Vector2D& pos, uint8_t properties, PHLWINDOW pIgnoreWindow);
+typedef PHLWINDOW (*origVectorToWindowUnified)(CCompositor *, const Vector2D& pos, uint8_t properties, PHLWINDOW pIgnoreWindow);
 PHLWINDOW hook_onVectorToWindowUnified(void* thisptr, const Vector2D& pos, uint8_t properties, PHLWINDOW pIgnoreWindow) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    
-    return vectorToWindowUnified(pos, properties, pIgnoreWindow);
+    return (*(origVectorToWindowUnified)g_pOnVectorToWindowUnified->m_original)((CCompositor *) thisptr, pos, properties, pIgnoreWindow);
+    //return vectorToWindowUnified(pos, properties, pIgnoreWindow);
 }
 
 inline CFunctionHook* g_pOnMouseMoveUnified = nullptr;
@@ -4833,8 +4849,9 @@ void hook_onMouseMoveUnified(void* thisptr, uint32_t time, bool refocus, bool mo
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    
-    mouseMoveUnified(time, refocus, mouse, overridePos);
+
+    (*(origMouseMoveUnifiedd)g_pOnMouseMoveUnified->m_original)((CInputManager *) thisptr, time, refocus, mouse, overridePos);
+    //mouseMoveUnified(time, refocus, mouse, overridePos);
 }
 
 void interleave_floating_and_tiled_windows() {
