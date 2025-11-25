@@ -212,12 +212,13 @@ void fill_root(Container *root, Container *alt_tab_parent) {
     alt_tab_parent->when_drag = consume_event;
     alt_tab_parent->when_mouse_up = consume_event;
     alt_tab_parent->when_mouse_enters_container = paint {
-        hypriso->all_lose_focus();
+        hypriso->send_false_position(-1, -1);
+        //hypriso->all_lose_focus();
         //notify("enteres");
         consume_event(root, c);
     };
     alt_tab_parent->when_mouse_leaves_container = paint {
-        hypriso->all_gain_focus();
+        //hypriso->all_gain_focus();
         //notify("leaves");
         consume_event(root, c);
     };
