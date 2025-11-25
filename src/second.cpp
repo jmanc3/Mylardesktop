@@ -541,6 +541,7 @@ static void on_window_open(int id) {
 
 static void on_window_closed(int id) {
     hypriso->set_corner_rendering_mask_for_window(id, 0);
+    clear_snap_groups(id);
     
     titlebar::on_window_closed(id);
     resizing::on_window_closed(id);

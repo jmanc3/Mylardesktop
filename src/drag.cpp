@@ -130,6 +130,7 @@ void drag::snap_window(int snap_mon, int cid, int pos) {
             p.y = bounds.y;
         hypriso->move_resize(cid, p.x, p.y, p.w, p.h, false);
         hypriso->should_round(cid, true);
+        clear_snap_groups(cid);
     } else {
         // perform snap
         *snapped = true; 
