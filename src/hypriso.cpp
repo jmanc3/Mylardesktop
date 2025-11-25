@@ -857,13 +857,13 @@ uint32_t hook_OnKDECSD(void* thisptr) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    notify(fz("hook"));
+    //notify(fz("hook"));
 
     auto ptr = (CServerDecorationKDE *) thisptr;
     for (auto hw : hyprwindows) {
         for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
             if (s->m_surf == hw->w->m_xdgSurface) {
-                notify(fz("hook_OnKDECSD {}", hypriso->class_name(hw->id)));
+                //notify(fz("hook_OnKDECSD {}", hypriso->class_name(hw->id)));
                 break;
             }
         }
@@ -880,13 +880,13 @@ uint32_t hook_OnKDERequestCSD(void* thisptr, uint32_t mode) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    notify("ehllo");
-    notify(fz("mode {}", mode));
+    //notify("ehllo");
+    //notify(fz("mode {}", mode));
     //recheck_csd_for_all_wayland_windows();
     for (auto hw : hyprwindows) {
         for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
             if (s->m_surf == hw->w->m_xdgSurface) {
-                notify(fz("hook_OnKDERequestCSD {} {}", hypriso->class_name(hw->id), mode));
+                //notify(fz("hook_OnKDERequestCSD {} {}", hypriso->class_name(hw->id), mode));
                 break;
             }
         }
@@ -901,13 +901,13 @@ uint32_t hook_OnKDEReleaseCSD(void* thisptr) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    notify(fz("released"));
+    //notify(fz("released"));
 
     //recheck_csd_for_all_wayland_windows();
     for (auto hw : hyprwindows) {
         for (const auto &s : NProtocols::serverDecorationKDE->m_decos) {
             if (s->m_surf == hw->w->m_xdgSurface) {
-                notify(fz("hook_OnKDEReleaseCSD {}", hypriso->class_name(hw->id)));
+                //notify(fz("hook_OnKDEReleaseCSD {}", hypriso->class_name(hw->id)));
                 break;
             }
         }
@@ -931,7 +931,7 @@ void detect_csd_request_change() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    notify("detect");
+    //notify("detect");
     // hook xdg and kde csd request mode, then set timeout for 25 ms, 5 times which checks and updates csd for current windows based on most recent requests
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "kdeDefaultModeCSD");
@@ -940,7 +940,6 @@ void detect_csd_request_change() {
     }
     {
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "kdeModeOnRequestCSD");
-        notify(METHODS[0].demangled);
         g_pOnKDERequestCSD = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_OnKDERequestCSD);
         g_pOnKDERequestCSD->hook();
     }
@@ -949,8 +948,7 @@ void detect_csd_request_change() {
         g_pOnKDEReleaseCSD = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_OnKDEReleaseCSD);
         g_pOnKDEReleaseCSD->hook();
     }
-    
-    
+
     /*{
         static const auto METHODS = HyprlandAPI::findFunctionsByName(globals->api, "xdgDefaultModeCSD");
         g_pOnXDGCSD = HyprlandAPI::createFunctionHook(globals->api, METHODS[0].address, (void*)&hook_OnXDGCSD);
@@ -5148,6 +5146,5 @@ uint32_t HyprIso::keycode_to_keysym(int keycode) {
     //const xkb_keysym_t internalKeysym = xkb_state_key_get_one_sym(pKeyboard->m_xkbState, KEYCODE);
 
    return 0;
-    
 }
 

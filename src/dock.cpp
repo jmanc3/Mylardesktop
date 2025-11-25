@@ -481,7 +481,6 @@ void dock_start() {
 
 void dock::start() {
     //return;
-    notify("dock start");
     std::thread t(dock_start);
     t.detach();
 }

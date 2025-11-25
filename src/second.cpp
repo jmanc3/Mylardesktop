@@ -464,37 +464,35 @@ void apply_restore_info(int id) {
             //hypriso->pin(id, info.keep_above);
             //hypriso->fake_fullscreen(id, info.fake_fullscreen);
 
-            if (info.remember_size) {
-                // Skip restore info if class name is same as parent class name (dialogs)
-                int parent = hypriso->parent(id);
-                if (parent != -1) {
-                    auto pname = hypriso->class_name(parent);
-                    if (pname == cname) {
-                        continue;
-                    }
+            // Skip restore info if class name is same as parent class name (dialogs)
+            int parent = hypriso->parent(id);
+            if (parent != -1) {
+                auto pname = hypriso->class_name(parent);
+                if (pname == cname) {
+                    continue;
                 }
-                
-                auto b = bounds_client(id);
-                auto m = bounds_monitor(monitor);
-                auto s = scale(monitor);
-                auto b2 = bounds_reserved_monitor(monitor);
-                b.w = b2.w * info.box.w;
-                b.h = b2.h * info.box.h;
-                if (b.w >= b2.w - 60 * s) {
-                    b.w = b2.w - 60 * s;
-                }
-                bool fix = false;
-                if (b.h >= b2.h - 60 * s) {
-                    b.h = b2.h - 60 * s;
-                    fix = true;
-                }
-                b.x = b2.x + b2.w * .5 - b.w * .5;
-                b.y = b2.y + b2.h * .5 - b.h * .5;
-                if (fix)
-                    b.y += (titlebar_h * s) * .5;
-
-                hypriso->move_resize(id, b.x, b.y, b.w, b.h);
             }
+            
+            auto b = bounds_client(id);
+            auto m = bounds_monitor(monitor);
+            auto s = scale(monitor);
+            auto b2 = bounds_reserved_monitor(monitor);
+            b.w = b2.w * info.box.w;
+            b.h = b2.h * info.box.h;
+            if (b.w >= b2.w - 60 * s) {
+                b.w = b2.w - 60 * s;
+            }
+            bool fix = false;
+            if (b.h >= b2.h - 60 * s) {
+                b.h = b2.h - 60 * s;
+                fix = true;
+            }
+            b.x = b2.x + b2.w * .5 - b.w * .5;
+            b.y = b2.y + b2.h * .5 - b.h * .5;
+            if (fix)
+                b.y += (titlebar_h * s) * .5;
+
+            hypriso->move_resize(id, b.x, b.y, b.w, b.h);
         }
     }
     fit_on_screen(id);
@@ -789,6 +787,7 @@ void load_restore_infos() {
     bool first_line = true;
     int file_version = 0; // original unversioned file
     while (std::getline(in, line)) {
+        defer(first_line = false);
         std::istringstream iss(line);
         std::string class_name;
         Bounds info;
@@ -799,7 +798,7 @@ void load_restore_infos() {
         bool remember_workspace = true;
 
         if (first_line && !line.empty()) {
-            if (line == "#version 1")
+            if (line.starts_with("#version 1"))
                 file_version = 1;
             if (file_version != 0)
                 continue;
@@ -811,7 +810,7 @@ void load_restore_infos() {
                 continue; // bad line — skip
         } 
         if (file_version == 1) { 
-            if (!(iss >> keep_above >> fake_fullscreen >> remove_titlebar >> remember_size >> remember_workspace))
+            if (!(iss >> class_name >> info.x >> info.y >> info.w >> info.h >> keep_above >> fake_fullscreen >> remove_titlebar >> remember_size >> remember_workspace))
                 continue; // bad line — skip
         }
 
@@ -823,8 +822,6 @@ void load_restore_infos() {
         restore.remember_size = remember_size;
         restore.remember_workspace = remember_workspace;
         restore_infos[class_name] = restore;
-        
-        first_line = false;
     }
 }
 
@@ -871,9 +868,9 @@ void update_restore_info_for(int id) {
             cb.w / cm.w,
             (cb.h + titlebar_h) / cm.h,
         };
-        info.keep_above = hypriso->is_pinned(id);
-        info.fake_fullscreen = hypriso->is_fake_fullscreen(id);
-        info.remove_titlebar = !hypriso->has_decorations(id);
+        //info.keep_above = hypriso->is_pinned(id);
+        //info.fake_fullscreen = hypriso->is_fake_fullscreen(id);
+        //info.remove_titlebar = !hypriso->has_decorations(id);
         restore_infos[hypriso->class_name(id)] = info;
         save_restore_infos(); // I believe it's okay to call this here because it only happens on resize end, and drag end
     }

@@ -375,7 +375,7 @@ static void handle_fractional_scale_preferred_scale(
     auto win = (wl_window *) data;
     win->current_fractional_scale = ((float) scale) / 120.0f;
     win->rw->dpi = win->current_fractional_scale;
-    notify(fz("{}", win->current_fractional_scale));
+    //notify(fz("{}", win->current_fractional_scale));
     if (win->layer_surface) {
         config_layer_shell(win, win->logical_width, win->logical_height);
     } else {
