@@ -36,6 +36,12 @@ static Bounds to_parent(Container *rendering_root, Container *c) {
     return pb; 
 };
 
+struct ClientInfo : UserData {
+    std::vector<int> grouped_with;
+};
+
+void clear_snap_groups(int id);
+
 static void render_fix(Container *root, Container *c);
 
 // We need to make unscaled coords, into the fully scaled coord via monitor scale
@@ -322,7 +328,10 @@ bool double_clicked(Container *c, std::string needle);
 void consume_everything(Container *c);
 void update_restore_info_for(int id);
 void launch_command(std::string command);
-
+void add_to_snap_group(int id, int other, const std::vector<int> &grouped);
+bool groupable(SnapPosition position, const std::vector<int> ids);
+bool groupable_types(SnapPosition a, SnapPosition b);
+    
 namespace second {    
     void begin();
     void end();

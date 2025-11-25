@@ -20,8 +20,9 @@ void alt_tab::on_window_open(int id) {
     });
 
     assert(c && "alt_tab::on_window_open assumes Container for id has already been created");
-    
-    *datum<long>(c, LAST_TIME_ACTIVE) = get_current_time_in_ms();
+
+    if (!get_data<long>(c->uuid, LAST_TIME_ACTIVE))
+        *datum<long>(c, LAST_TIME_ACTIVE) = 0;
 }
 
 void alt_tab::on_window_closed(int id) {
@@ -184,6 +185,29 @@ void alt_tab_parent_pre_layout(Container *actual_root, Container *c, const Bound
             }
         }
 
+        for (int index = 0; index < order.size(); index++) {
+            for (int i = c->children.size() - 1; i >= 0; i--) {
+                if (order[index] == (*datum<int>(c->children[i], "cid"))) {
+                    *datum<int>(c->children[i], "stacking_index") = index;
+                    *datum<long>(c->children[i], LAST_TIME_ACTIVE) = *datum<long>(get_cid_container(order[index]), LAST_TIME_ACTIVE);
+                }
+            }
+        }
+
+        // sort based on stacking order, but prefer recent activation time
+        std::sort(c->children.begin(), c->children.end(), [](Container* a, Container* b) { 
+            // not the cid_container so failing
+            auto a_active = *datum<long>(a, LAST_TIME_ACTIVE);
+            auto b_active = *datum<long>(b, LAST_TIME_ACTIVE);
+            if (a_active == b_active) {
+                auto a_index = *datum<int>(a, "stacking_index");
+                auto b_index = *datum<int>(b, "stacking_index");
+                return b_index < a_index;
+            } else {
+                return a_active > b_active;
+            }
+        });
+
         info = position_tab_options(c, root->real_bounds.w * .6); 
     }
 
@@ -324,8 +348,13 @@ void alt_tab::on_activated(int id) {
     Container *c = get_cid_container(id);
 
     assert(c && "alt_tab::on_activated assumes Container for id exists");    
-    
-    *datum<long>(c, LAST_TIME_ACTIVE) = get_current_time_in_ms();
+
+    for (auto g : ((ClientInfo *)c->user_data)->grouped_with) {
+        hypriso->bring_to_front(g, false);
+    }
+
+    auto current = get_current_time_in_ms();
+    *datum<long>(c, LAST_TIME_ACTIVE) = current;
 }
 
 bool alt_tab::showing() {

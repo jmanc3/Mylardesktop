@@ -514,6 +514,9 @@ static void on_window_open(int id) {
 
         *datum<int>(c, "cid") = id; 
         *datum<bool>(c, "snapped") = false; 
+
+        auto client_info = new ClientInfo;
+        c->user_data = client_info;
     }
     
     hypriso->set_corner_rendering_mask_for_window(id, 3);
@@ -1209,6 +1212,84 @@ void launch_command(std::string command) {
         _exit(1);
     } else {
         signal(SIGCHLD, SIG_IGN); // https://www.geeksforgeeks.org/zombie-processes-prevention/
+    }
+}
+
+void clear_snap_groups(int id) {
+    for (auto c : actual_root->children) {
+       if (c->custom_type == (int) TYPE::CLIENT) {
+           auto cdata = (ClientInfo *) c->user_data;
+           auto cid = *datum<int>(c, "cid");
+           // clear id client groups
+           if (cid == id)
+               cdata->grouped_with.clear();
+           
+           // clear id from other clients so they don't think that they are still grouped with id
+           for (int i = cdata->grouped_with.size() - 1; i >= 0; i--) {
+               if (cdata->grouped_with[i] == id) {
+                   cdata->grouped_with.erase(cdata->grouped_with.begin() + i);
+               } 
+           }
+       }
+    }
+}
+
+bool groupable_types(SnapPosition a, SnapPosition b) {
+    if (a == b)
+        return false;
+    if (a == SnapPosition::MAX || b == SnapPosition::MAX)
+        return false;
+    bool a_on_left = a == SnapPosition::LEFT || a == SnapPosition::TOP_LEFT || a == SnapPosition::BOTTOM_LEFT;
+    bool b_on_left = b == SnapPosition::LEFT || b == SnapPosition::TOP_LEFT || b == SnapPosition::BOTTOM_LEFT;
+    if (a_on_left != b_on_left) {
+        return true;
+    } else {
+        bool a_on_top = a == SnapPosition::TOP_LEFT || a == SnapPosition::TOP_RIGHT;
+        bool b_on_top = b == SnapPosition::TOP_LEFT || b == SnapPosition::TOP_RIGHT;
+        if (a == SnapPosition::LEFT || b == SnapPosition::RIGHT)
+            return false;
+        if (a_on_top != b_on_top) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool groupable(SnapPosition position, const std::vector<int> ids) {
+    std::vector<SnapPosition> positions;
+    for (auto id : ids)
+        if (auto client = get_cid_container(id))
+            positions.push_back((SnapPosition) (*datum<int>(client, "snap_type"))); 
+
+    // have to check in with group represented by b and see if all are mergable friendships
+    for (auto p : positions)
+        if (!groupable_types(position, p)) 
+            return false;
+
+    return true; 
+}
+
+void add_to_snap_group(int id, int other, const std::vector<int> &grouped) {
+    // go through all current groups of other, and add id to those as well
+    for (auto c : actual_root->children) {
+        if (c->custom_type == (int) TYPE::CLIENT) {
+            auto cdata = (ClientInfo *) c->user_data;
+            bool part_of_group = false;
+            auto cid = *datum<int>(c, "cid");
+            for (auto g : grouped)
+                if (g == cid)        
+                    part_of_group = true;
+            if (cid == other || part_of_group) {
+                cdata->grouped_with.push_back(id);
+            }
+            if (cid == id) {
+                cdata->grouped_with.push_back(other);
+                for (auto g : grouped) {
+                    cdata->grouped_with.push_back(g);
+                }
+            }
+        }
     }
 }
 

@@ -20,6 +20,7 @@ void drag::begin(int cid) {
     data = new DraggingData;
     data->cid = cid;
     data->mouse_start = mouse();
+    clear_snap_groups(cid); 
     snap_preview::on_drag_start(cid, data->mouse_start.x, data->mouse_start.y);
     auto c = get_cid_container(cid);
     if (*datum<bool>(c, "drag_from_titlebar")) {
@@ -175,8 +176,40 @@ void drag::end(int cid) {
 
     if (auto c = get_cid_container(cid)) {
         *datum<bool>(c, "drag_from_titlebar") = false;
-        if (!(*datum<bool>(c, "snapped"))) {
+        bool is_snapped = *datum<bool>(c, "snapped");
+        if (!(is_snapped)) {
             update_restore_info_for(cid);
+        } else {
+            bool create_snap_helper = true;
+            // attempt to merge
+            // find first top to bottom snapped client that is not self
+            // if not mergeble, don't do anything special
+            // if can be merged, then merge by adding to itself and other to each other groups
+            for (auto ch : actual_root->children) {
+                if (ch->custom_type == (int)TYPE::CLIENT) {
+                    auto other_cdata = (ClientInfo*)ch->user_data;
+                    auto othercid = *datum<int>(ch, "cid");
+                    if (othercid == cid)
+                        continue; // skip self
+                    auto other_client = get_cid_container(othercid);
+                    if (!(*datum<bool>(other_client, "snapped")))
+                        continue; // skip non snapped
+                    std::vector<int> ids;
+                    ids.push_back(othercid);
+                    for (auto grouped_id : other_cdata->grouped_with)
+                        ids.push_back(grouped_id);
+                    bool mergable = groupable(((SnapPosition)*datum<int>(c, "snap_type")), ids);
+                    if (mergable) {
+                        add_to_snap_group(cid, othercid, other_cdata->grouped_with);
+                        create_snap_helper = false;
+                    } else {
+                        // if first merge attempt fails, we don't seek deeper layers
+                        break;
+                    }
+                }
+            }
+
+            //snap_assist::create(cid);
         }
     }
 }
