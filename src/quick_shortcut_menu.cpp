@@ -86,16 +86,10 @@ void parse_sequences() {
                 continue;
             if (line[0] == '#') // skip comments
                 continue;
-            if (line.starts_with("name=")) {
-                if (!s.name.empty() && !s.command.empty()) {
-                    sequences.push_back(s);
-                }
-                s = KeySequence();
+            if (line.starts_with("name="))
                 s.name = line.substr(strlen("name="));
-            }
-            if (line.starts_with("visual=")) {
+            if (line.starts_with("visual="))
                 s.representation = line.substr(strlen("visual="));
-            }
             if (line.starts_with("keys=")) {
                 auto val = line.substr(strlen("keys="));
                 std::string token;
@@ -116,16 +110,15 @@ void parse_sequences() {
                     }
                 }
             }
-            if (line.starts_with("command=")) {
+            if (line.starts_with("command="))
                 s.command = line.substr(strlen("command="));
+            if (!s.name.empty() && !s.command.empty() && !s.keys.empty() && !s.representation.empty()) {
+                sequences.push_back(s);
+                s = KeySequence();
             }
         }
-        if (!s.name.empty() && !s.command.empty()) {
+        if (!s.name.empty() && !s.command.empty() && !s.keys.empty() && !s.representation.empty())
             sequences.push_back(s);
-        }
-
-        //sequences.push_back({"kk", "kate", "setsid kate", {{KEY_K, 1}, {KEY_K, 0}, {KEY_K, 1}, {KEY_K, 0}}});
-        //sequences.push_back({"y", "youtube", "setsid firefox https://www.youtube.com", {{KEY_Y, 1}, {KEY_Y, 0}}});
     }
 }
 
