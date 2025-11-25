@@ -42,6 +42,8 @@ static float zoom_factor = 1.0;
 static long zoom_nicely_ended_time = 0;
 static bool zoom_needs_speed_update = true;
 
+static bool mouse_down = false;
+
 std::unordered_map<std::string, WindowRestoreLocation> restore_infos;
 
 std::unordered_map<std::string, Datas> datas;
@@ -93,7 +95,7 @@ static bool on_mouse_move(int id, float x, float y) {
         }
     }
 
-    if (!consumed) {
+    if (!consumed && !mouse_down) {
         hotcorners::motion(id, x, y);
     }
 
@@ -128,6 +130,7 @@ static void create_root_popup() {
 }
 
 static bool on_mouse_press(int id, int button, int state, float x, float y) {
+    mouse_down = state;
     splash::input();
     second::layout_containers();
     
