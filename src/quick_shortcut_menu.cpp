@@ -199,6 +199,9 @@ void open_quick_shortcut_menu() {
             }
         };
         option->when_clicked = paint {
+            if (c->state.mouse_button_pressed == BTN_LEFT)
+                return;
+
             auto index = c->custom_type;
             for (int i = 0; i < sequences.size(); i++) {
                 if (i == index) {
@@ -240,6 +243,9 @@ void open_quick_shortcut_menu() {
         }
     };
     latest_key_press->when_clicked = paint {
+        if (c->state.mouse_button_pressed == BTN_LEFT)
+            return;
+
         debugging_key_presses = !debugging_key_presses;
         if (auto above = first_above_of(c, TYPE::OUR_POPUP))
             popup::close(above->uuid);
