@@ -22,7 +22,7 @@ void alt_tab::on_window_open(int id) {
     assert(c && "alt_tab::on_window_open assumes Container for id has already been created");
 
     if (!get_data<long>(c->uuid, LAST_TIME_ACTIVE))
-        *datum<long>(c, LAST_TIME_ACTIVE) = 0;
+        *datum<long>(c, LAST_TIME_ACTIVE) = get_current_time_in_ms();
 }
 
 void alt_tab::on_window_closed(int id) {
