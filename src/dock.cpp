@@ -5,6 +5,7 @@
 #include "client/raw_windowing.h"
 #include "client/windowing.h"
 #include "process.hpp"
+#include "hypriso.h"
 
 #include <cairo.h>
 #include "process.hpp"
@@ -137,7 +138,7 @@ static void paint_root(Container *root, Container *c) {
 }
 
 Bounds draw_text(cairo_t *cr, Container *c, std::string text, int size = 10, bool draw = true) {
-    auto layout = get_cached_pango_font(cr, "Segoe UI Variable", size, PANGO_WEIGHT_NORMAL, false);
+    auto layout = get_cached_pango_font(cr, mylar_font, size, PANGO_WEIGHT_NORMAL, false);
     //pango_layout_set_text(layout, "\uE7E7", strlen("\uE83F"));
     pango_layout_set_text(layout, text.data(), text.size());
     cairo_set_source_rgba(cr, 1, 1, 1, 1);

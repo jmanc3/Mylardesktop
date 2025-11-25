@@ -16,6 +16,7 @@
 #endif
 
 static int titlebar_h = 28;
+static std::string mylar_font = "Noto Sans";
 
 struct SurfacePassInfo {
     double pos_x;

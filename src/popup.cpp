@@ -4,6 +4,8 @@
 #include "second.h"
 #include "icons.h"
 
+#include <linux/input-event-codes.h>
+
 void popup::close(std::string uuid) {
     later_immediate([uuid](Timer *) {
         for (int i = 0; i < actual_root->children.size(); i++) {
@@ -45,6 +47,23 @@ void popup::open(std::vector<PopOption> root, int x, int y, int cid) {
     pud->cid = cid;
     p->user_data = pud;
     p->real_bounds = Bounds(x, y, p->wanted_bounds.w, p->wanted_bounds.h);
+    
+    { // keep on screen
+        auto mb = bounds_reserved_monitor(hypriso->monitor_from_cursor());
+        if (p->real_bounds.x + p->real_bounds.w > mb.x + mb.w) {
+            int overflow_x = (p->real_bounds.x + p->real_bounds.w) - (mb.x + mb.w);
+            p->real_bounds.x -= overflow_x;
+        }
+        if (p->real_bounds.y + p->real_bounds.h > mb.y + mb.h) {
+            int overflow_y = (p->real_bounds.y + p->real_bounds.h) - (mb.y + mb.h);
+            p->real_bounds.y -= overflow_y;
+        }
+        if (mb.y > p->real_bounds.y) {
+            int overflow_y = mb.y - p->real_bounds.y;
+            p->real_bounds.y += overflow_y;
+        }
+    }
+    
     p->when_mouse_enters_container = paint {
         //hypriso->all_lose_focus();
         setCursorImageUntilUnset("default");
@@ -114,12 +133,15 @@ void popup::open(std::vector<PopOption> root, int x, int y, int cid) {
             auto [rid, s, stage, active_id] = roots_info(actual_root, root);
             if (stage == (int) STAGE::RENDER_POST_WINDOWS) {
                 renderfix
-                if (c->state.mouse_pressing) {
-                    auto b = c->real_bounds;
-                    rect(b, {0, 0, 0, .2}, 0, 7 * s, 2.0, false);
-                } if (c->state.mouse_hovering) {
+                if (c->state.mouse_hovering) {
                     auto b = c->real_bounds;
                     rect(b, {0, 0, 0, .1}, 0, 7 * s, 2.0f, false);
+                }
+                if (c->state.mouse_button_pressed == BTN_LEFT) {
+                    if (c->state.mouse_pressing) {
+                        auto b = c->real_bounds;
+                        rect(b, {0, 0, 0, .2}, 0, 7 * s, 2.0, false);
+                    }
                 }
 
                 auto popdata = (PopOptionData*)c->user_data;
@@ -134,12 +156,14 @@ void popup::open(std::vector<PopOption> root, int x, int y, int cid) {
                     }
                 }
                 
-                auto info = gen_text_texture("Segoe UI Variable", pop_option.text, 14 * s, {0, 0, 0, 1});
+                auto info = gen_text_texture(mylar_font, pop_option.text, 14 * s, {0, 0, 0, 1});
                 draw_texture(info, c->real_bounds.x + 40 * s, center_y(c, info.h));
                 free_text_texture(info.id);
             }
         };
         option->when_clicked = paint {
+            if (c->state.mouse_button_pressed != BTN_LEFT)
+                return;
             auto popdata = (PopOptionData *) c->user_data;
             auto pop_option = popdata->p;
             if (pop_option.on_clicked) {

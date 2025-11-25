@@ -2880,8 +2880,8 @@ void on_window_open(int id) {
                             free_text_texture(titledata->main_unfocused.id);
                         }
 
-                        titledata->main_focused = gen_text_texture("Segoe UI Variable", text, titlebar_text_h * s, color_titlebar_text_focused());
-                        titledata->main_unfocused = gen_text_texture("Segoe UI Variable", text, titlebar_text_h * s, color_titlebar_text_unfocused());
+                        titledata->main_focused = gen_text_texture(mylar_font, text, titlebar_text_h * s, color_titlebar_text_focused());
+                        titledata->main_unfocused = gen_text_texture(mylar_font, text, titlebar_text_h * s, color_titlebar_text_unfocused());
                         titledata->cached_text = text;
                         titledata->focused_color = color_titlebar_focused();
                         titledata->unfocused_color = color_titlebar_unfocused();

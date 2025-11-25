@@ -148,7 +148,7 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
            }
        }
     }
-    if (pierced.empty() && button == BTN_RIGHT) {
+    if (pierced.empty() && button == BTN_RIGHT && state == 0) {
         create_root_popup();
     }
 
@@ -613,7 +613,7 @@ static void test_container(Container *m) {
         } else {
             rect(c->real_bounds, {1, 0, 1, 1});
         }
-        auto info = gen_text_texture("Segoe UI", fz("{} {}", c->real_bounds.x, c->real_bounds.y), 20, {1, 1, 1, 1});
+        auto info = gen_text_texture(mylar_font, fz("{} {}", c->real_bounds.x, c->real_bounds.y), 20, {1, 1, 1, 1});
         draw_texture(info, c->real_bounds.x, c->real_bounds.y);
         free_text_texture(info.id);
         c->real_bounds = b;

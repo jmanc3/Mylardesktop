@@ -58,7 +58,7 @@ bool balanced(const std::vector<KeyPress> &keys) {
 }
 
 std::string default_sequences = R"end(
-name=~/.config/mylar/quick_shortcuts.txt
+name=edit this menu
 visual=e
 keys=press 18 release 18
 command=xdg-open ~/.config/mylar/quick_shortcuts.txt
@@ -125,12 +125,12 @@ void parse_sequences() {
 static bool debugging_key_presses = false;
 
 void open_quick_shortcut_menu() {
-    static const float option_height = 24;
+    static const float option_height = 18;
     static const float seperator_size = 5;
     float s = scale(hypriso->monitor_from_cursor());
     parse_sequences();
     
-    float height = option_height * s * sequences.size() + (s * option_height * .9);
+    float height = option_height * s * sequences.size() + (s * option_height * .95);
     auto p = actual_root->child(::vbox, 277, height);
     p->name = "quick_shortcut_menu";
     consume_everything(p);
@@ -174,9 +174,11 @@ void open_quick_shortcut_menu() {
             auto [rid, s, stage, active_id] = roots_info(actual_root, root);
             if (stage == (int)STAGE::RENDER_POST_WINDOWS) {
                 renderfix 
-                if (c->state.mouse_pressing) {
-                    auto b = c->real_bounds;
-                    rect(b, {0, 0, 0, .2}, 0, 0.0, 2.0, false);
+                if (c->state.mouse_button_pressed == BTN_LEFT) {
+                    if (c->state.mouse_pressing) {
+                        auto b = c->real_bounds;
+                        rect(b, {0, 0, 0, .2}, 0, 0.0, 2.0, false);
+                    }
                 }
                 if (c->state.mouse_hovering) {
                     auto b = c->real_bounds;
@@ -191,7 +193,7 @@ void open_quick_shortcut_menu() {
                     }
                 }
                 
-                auto info = gen_text_texture("Segoe UI Variable", text, 14 * s, {0, 0, 0, 1});
+                auto info = gen_text_texture(mylar_font, text, 13 * s, {0, 0, 0, 1});
                 draw_texture(info, c->real_bounds.x + 14 * s, center_y(c, info.h));
                 free_text_texture(info.id);
             }
@@ -216,22 +218,24 @@ void open_quick_shortcut_menu() {
         auto [rid, s, stage, active_id] = roots_info(actual_root, root);
         if (stage == (int)STAGE::RENDER_POST_WINDOWS) {
             renderfix 
-            if (c->state.mouse_pressing) {
+            if (c->state.mouse_hovering) {
                 auto b = c->real_bounds;
                 rect(b, {0, 0, 0, .2}, 3, 7 * s, 2.0, false);
             }
-            if (c->state.mouse_hovering) {
-                auto b = c->real_bounds;
-                rect(b, {0, 0, 0, .1}, 3,  7 * s, 2.0f, false);
+            if (c->state.mouse_button_pressed == BTN_LEFT) {
+                if (c->state.mouse_pressing) {
+                    auto b = c->real_bounds;
+                    rect(b, {0, 0, 0, .1}, 3, 7 * s, 2.0f, false);
+                }
             }
 
-            std::string text = "Turn on key printing";
+            std::string text = "Turn on key printing...";
             RGBA color = {.4, .4, .4, .9};
             if (debugging_key_presses) {
                 text = "Turn off key printing";
             }
-            auto info = gen_text_texture("Segoe UI Variable", text, 12 * s, color);
-            draw_texture(info, c->real_bounds.x - 7 * s + c->real_bounds.w - info.w, center_y(c, info.h));
+            auto info = gen_text_texture(mylar_font, text, 12 * s, color);
+            draw_texture(info, c->real_bounds.x - 11 * s + c->real_bounds.w - info.w, center_y(c, info.h));
             free_text_texture(info.id);
         }
     };
