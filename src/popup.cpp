@@ -159,5 +159,8 @@ void popup::open(std::vector<PopOption> root, int x, int y, int cid) {
         auto m = mouse();
         hypriso->on_mouse_move(0, m.x, m.y);
     }
+
+    for (auto m : actual_monitors)
+        hypriso->damage_entire(*datum<int>(m, "cid"));
 }
 

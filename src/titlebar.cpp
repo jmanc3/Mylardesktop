@@ -184,7 +184,7 @@ void titlebar_right_click(int cid) {
     }
      
     //popup::open(root, m.x - (277 * .5), bounds_client(cid).y);
-    popup::open(root, m.x - 20, m.y + 1, cid);
+    popup::open(root, m.x - 1, m.y + 1, cid);
 }
 
 TextureInfo *get_cached_texture(Container *root_with_scale, Container *container_texture_saved_on, std::string needle, std::string font, std::string text, RGBA color, int wanted_h) {

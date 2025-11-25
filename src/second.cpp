@@ -124,7 +124,7 @@ static void create_root_popup() {
         root.push_back(pop);
     }
      
-    popup::open(root, m.x - 20, m.y + 1);
+    popup::open(root, m.x - 1, m.y + 1);
 }
 
 static bool on_mouse_press(int id, int button, int state, float x, float y) {
