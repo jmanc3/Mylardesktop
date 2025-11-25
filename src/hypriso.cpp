@@ -11,6 +11,7 @@
 
 #include <bits/types/idtype_t.h>
 #include <cstring>
+#include <wlr-layer-shell-unstable-v1.hpp>
 #include <xkbcommon/xkbcommon.h>
 
 #ifdef TRACY_ENABLE
@@ -1331,9 +1332,14 @@ static void on_open_layer(PHLLS l) {
         if (hl->l == l)
             return;
     }
+    if (l->m_layer == ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND) {
+        return;
+    }
     auto hl = new HyprLayer;
     hl->id = unique_id++;
+    notify(fz("{} {}", l->m_layer, hl->id));
     hl->l = l;
+    //log(fz("{} {} {} {} {} {}", l->m_position.x, l->m_position.y, l->m_realSize->goal().x, l->m_realSize->goal().y, l->m_realPosition->goal().x, l->m_realPosition->goal().y));
     hyprlayers.push_back(hl);
 
     if (hypriso->on_layer_open) {
@@ -4964,9 +4970,7 @@ Bounds bounds_layer(int wid) {
     for (auto hl : hyprlayers) {
         if (hl->id == wid) {
             if (auto w = hl->l.get()) {
-                log("found");
-                //return tobounds(CBox(w->m_realPosition->value().x, w->m_realPosition->value().y, w->m_realSize->value().x, w->m_realSize->value().y));
-                return tobounds(CBox(w->m_geometry.x, w->m_geometry.y, w->m_geometry.w, w->m_geometry.h));
+                return tobounds(CBox(w->m_realPosition->goal().x, w->m_realPosition->goal().y, w->m_realSize->goal().x, w->m_realSize->goal().y));
             }
         }
     }    

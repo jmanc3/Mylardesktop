@@ -562,10 +562,22 @@ static void on_window_closed(int id) {
 }
 
 static void on_layer_open(int id) {    
-    return;
+    //return;
     auto m = actual_root; 
     auto c = m->child(FILL_SPACE, FILL_SPACE);
     c->custom_type = (int) TYPE::LAYER;
+    c->when_paint = [](Container *actual_root, Container *c) {
+        return;
+        auto root = get_rendering_root();
+        if (!root)
+            return;
+        auto [rid, s, stage, active_id] = roots_info(actual_root, root);
+
+        if (stage == (int)STAGE::RENDER_POST_WINDOW) {
+            renderfix 
+            rect(c->real_bounds, {1, 0, 1, 1});
+        }
+    };
     *datum<int>(c, "cid") = id;
     log(fz("open layer {}", id));
 }
@@ -1069,14 +1081,13 @@ void second::layout_containers() {
         }
 
         if (c->custom_type == (int) TYPE::LAYER) {
+            // WOOPS background layer is a layer
             log("TODO: layer needs to be positioned based on above or below, and level in that stack");
             c->parent->children.insert(c->parent->children.begin(), c);
             auto id = *datum<int>(c, "cid");
-            log(fz("layout layer: {}", id));
-            c->real_bounds = bounds_layer(id);
-            
-            log(fz("{} {} {} {}", c->real_bounds.x, c->real_bounds.y, c->real_bounds.w, c->real_bounds.h));
-            
+            auto b = bounds_layer(id);
+            c->real_bounds = b;
+
             *datum<bool>(c, "touched") = true;
         }
     }
