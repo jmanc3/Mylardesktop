@@ -61,7 +61,7 @@ std::string default_sequences = R"end(
 name=~/.config/mylar/quick_shortcuts.txt
 visual=e
 keys=press 18 release 18
-command=kate ~/.config/mylar/quick_shortcuts.txt
+command=xdg-open ~/.config/mylar/quick_shortcuts.txt
 )end";
 
 void parse_sequences() {

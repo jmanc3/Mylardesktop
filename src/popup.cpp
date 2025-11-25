@@ -24,7 +24,7 @@ struct PopOptionData : UserData {
     PopOption p;
 };
 
-void popup::open(std::vector<PopOption> root, int x, int y) {
+void popup::open(std::vector<PopOption> root, int x, int y, int cid) {
     static const float option_height = 24;
     static const float seperator_size = 5;
     float s = scale(hypriso->monitor_from_cursor());
@@ -41,6 +41,9 @@ void popup::open(std::vector<PopOption> root, int x, int y) {
     consume_everything(p);
     p->receive_events_even_if_obstructed = true;
     p->custom_type = (int) TYPE::OUR_POPUP;
+    auto pud = new PopupUserData;
+    pud->cid = cid;
+    p->user_data = pud;
     p->real_bounds = Bounds(x, y, p->wanted_bounds.w, p->wanted_bounds.h);
     p->when_mouse_enters_container = paint {
         //hypriso->all_lose_focus();

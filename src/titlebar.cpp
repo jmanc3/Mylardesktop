@@ -184,7 +184,7 @@ void titlebar_right_click(int cid) {
     }
      
     //popup::open(root, m.x - (277 * .5), bounds_client(cid).y);
-    popup::open(root, m.x - 20, m.y + 1);
+    popup::open(root, m.x - 20, m.y + 1, cid);
 }
 
 TextureInfo *get_cached_texture(Container *root_with_scale, Container *container_texture_saved_on, std::string needle, std::string font, std::string text, RGBA color, int wanted_h) {
@@ -568,6 +568,14 @@ void titlebar::on_window_open(int id) {
 }
 
 void titlebar::on_window_closed(int id) {
+    for (auto c : actual_root->children) {
+        if (c->custom_type == (int) TYPE::OUR_POPUP) {
+            auto pud = (PopupUserData *) c->user_data;
+            if (pud->cid == id) {
+                popup::close(c->uuid);
+            }
+        }
+    }
     if (hypriso->has_decorations(id)) {
         hypriso->remove_decorations(id);
     }

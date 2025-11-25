@@ -539,18 +539,13 @@ static void on_window_closed(int id) {
     titlebar::on_window_closed(id);
     resizing::on_window_closed(id);
     alt_tab::on_window_closed(id);
-    //notify("close: " + std::to_string(id));
-    //notify("monitors: " + std::to_string(monitors.size()));
 
     {
         auto m = actual_root; 
-        //notify("ch: " + std::to_string(m->children.size()));
-        
+
         for (int i = m->children.size() - 1; i >= 0; i--) {
             auto cid = *datum<int>(m->children[i], "cid");
-            //notify("check: " + std::to_string(cid));
             if (cid == id) {
-                //notify("here");
                 delete m->children[i];
                 m->children.erase(m->children.begin() + i);
             }

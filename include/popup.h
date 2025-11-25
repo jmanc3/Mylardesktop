@@ -3,6 +3,11 @@
 #include <string> 
 #include <vector> 
 #include <functional> 
+#include "container.h"
+
+struct PopupUserData : UserData {
+    int cid = -1;
+};
 
 struct PopOption {
     bool seperator = false; // Is just a line
@@ -18,6 +23,6 @@ struct PopOption {
 };
 
 namespace popup {
-    void open(std::vector<PopOption> root, int x, int y);
+    void open(std::vector<PopOption> root, int x, int y, int cid = -1);
     void close(std::string container_uuid);
 }
