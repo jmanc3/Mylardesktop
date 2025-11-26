@@ -29,7 +29,8 @@ struct PopOptionData : UserData {
 void popup::open(std::vector<PopOption> root, int x, int y, int cid) {
     static const float option_height = 24;
     static const float seperator_size = 5;
-    float s = scale(hypriso->monitor_from_cursor());
+    auto mid = hypriso->monitor_from_cursor();
+    float s = scale(mid);
 
     float height = 0;
     for (auto pop_option : root) {
@@ -44,6 +45,7 @@ void popup::open(std::vector<PopOption> root, int x, int y, int cid) {
     p->receive_events_even_if_obstructed = true;
     p->custom_type = (int) TYPE::OUR_POPUP;
     auto pud = new PopupUserData;
+    pud->mid = mid;
     pud->cid = cid;
     p->user_data = pud;
     p->real_bounds = Bounds(x, y, p->wanted_bounds.w, p->wanted_bounds.h);
@@ -82,6 +84,7 @@ void popup::open(std::vector<PopOption> root, int x, int y, int cid) {
         auto [rid, s, stage, active_id] = roots_info(actual_root, root);
         if (stage == (int) STAGE::RENDER_POST_WINDOWS) {
             renderfix
+            auto pud = (PopupUserData *) c->user_data;
             auto b = c->real_bounds;
             render_drop_shadow(rid, 1.0, {0, 0, 0, .07}, 7 * s, 2.0f, b);
             rect(b, {1, 1, 1, .95}, 0, 7 * s);

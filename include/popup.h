@@ -7,6 +7,7 @@
 
 struct PopupUserData : UserData {
     int cid = -1;
+    int mid = -1;
 };
 
 struct PopOption {

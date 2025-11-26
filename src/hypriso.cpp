@@ -1338,7 +1338,7 @@ static void on_open_layer(PHLLS l) {
     }
     auto hl = new HyprLayer;
     hl->id = unique_id++;
-    notify(fz("{} {}", l->m_layer, hl->id));
+    //notify(fz("{} {}", l->m_layer, hl->id));
     hl->l = l;
     //log(fz("{} {} {} {} {} {}", l->m_position.x, l->m_position.y, l->m_realSize->goal().x, l->m_realSize->goal().y, l->m_realPosition->goal().x, l->m_realPosition->goal().y));
     hyprlayers.push_back(hl);

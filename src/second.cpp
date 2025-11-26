@@ -43,6 +43,7 @@ static long zoom_nicely_ended_time = 0;
 static bool zoom_needs_speed_update = true;
 
 static bool mouse_down = false;
+//static bool and_on_desktop = false;
 
 std::unordered_map<std::string, WindowRestoreLocation> restore_infos;
 
@@ -151,9 +152,11 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
            }
        }
     }
+    
     if (pierced.empty() && button == BTN_RIGHT && state == 0) {
-        create_root_popup();
+        //create_root_popup();
     }
+    //and_on_desktop = pierced.empty() && button == BTN_LEFT;
 
     bool consumed = false;
     if (drag::dragging() && !state) {
@@ -441,7 +444,7 @@ void paint_snap_preview(Container *actual_root, Container *c) {
     auto [rid, s, stage, active_id] = roots_info(actual_root, root);
     auto cid = *datum<int>(c, "cid");
 
-    if (active_id == cid && stage == (int)STAGE::RENDER_POST_WINDOW) {
+    if (active_id == cid && stage == (int)STAGE::RENDER_PRE_WINDOW) {
         renderfix 
         if (*datum<bool>(c, "snapped") && (*datum<int>(c, "snap_type") != (int)SnapPosition::MAX)) {
             auto b = c->real_bounds;
@@ -731,6 +734,7 @@ static void on_render(int id, int stage) {
             paint_outline(actual_root, actual_root);
         }
     }
+    
     if (stage == (int) STAGE::RENDER_LAST_MOMENT) {
         /*
         auto root = get_rendering_root();
@@ -777,6 +781,59 @@ static void on_config_reload() {
 
 static void create_actual_root() {
     *datum<long>(actual_root, "drag_end_time") = 0;
+    *datum<bool>(actual_root, "dragging") = false;
+
+    actual_root->when_drag_end_is_click = false;
+    actual_root->when_clicked = paint {
+        if (c->state.mouse_button_pressed == BTN_RIGHT) {
+            later_immediate([](Timer *) {
+                create_root_popup();
+            });
+        }
+    };
+    actual_root->when_drag_start = paint {
+        *datum<bool>(c, "dragging") = true;
+    };
+    actual_root->when_drag_end = paint {
+        *datum<bool>(c, "dragging") = false;
+    };
+    actual_root->when_paint = [](Container* actual_root, Container* c) {
+        auto root = get_rendering_root();
+        auto [rid, s, stage, active_id] = roots_info(actual_root, root);
+        auto dragging = *datum<bool>(c, "dragging");
+        if (stage == (int)STAGE::RENDER_POST_WALLPAPER && dragging && c->state.mouse_button_pressed == BTN_LEFT) {
+            auto x = actual_root->mouse_initial_x;
+            auto y = actual_root->mouse_initial_y;
+            auto xn = actual_root->mouse_current_x;
+            auto yn = actual_root->mouse_current_y;
+            if (x > xn) {
+                auto t = xn;
+                xn = x;
+                x = t;
+            }
+            if (y > yn) {
+                auto t = yn;
+                yn = y;
+                y = t;
+            }
+            auto w = xn - x;
+            auto h = yn - y;
+            auto b = Bounds(x, y, w, h);
+
+            auto d = b;
+            d.grow(10);
+            hypriso->damage_box(d);
+
+            auto mb = bounds_monitor(rid);
+            b.x -= mb.x;
+            b.y -= mb.y;
+            b.scale(s);
+            b.round();
+            render_drop_shadow(rid, 1.0, {0, 0, 0, .18}, std::round(3.0 * s), 2.0, b);
+            rect(b, {.98, .98, .98, .50f}, 0, std::round(3.0 * s), 2.0f, true, 0.1);
+            border(b, {.98, .98, .98, .8f}, 1.0f, 0, std::round(3.0 * s), 2.0f, false, 1.0);
+        }
+    };
 }
 
 void load_restore_infos() {
@@ -970,6 +1027,30 @@ void second::end() {
 void second::layout_containers() {
     if (actual_monitors.empty())
         return;
+
+    { // TODO: go through monitors and clac top left x top left y and br x y and set the actual_root real_bounds
+        int tlx = -1;
+        int tly = -1;
+        int brx = -1;
+        int bry = -1;
+        for (int i = 0; i < actual_monitors.size(); i++) {
+            auto mid = *datum<int>(actual_monitors[i], "cid");
+            auto b = bounds_monitor(mid);
+            if ((i == 0) || b.x < tlx)
+                tlx = b.x;
+            if ((i == 0) || b.y < tly)
+                tly = b.y;
+            if ((i == 0) || b.y + b.h > bry)
+                bry = b.y + b.h;
+            if ((i == 0) || b.x + b.w > brx)
+                brx = b.x + b.w;
+        }
+        auto w = brx - tlx;
+        auto h = bry - tly;
+        actual_root->wanted_bounds = Bounds(tlx, tly, w, h);
+        actual_root->real_bounds = actual_root->wanted_bounds;
+    }
+    
     std::vector<Container *> backup;
     {
         auto r = actual_root;

@@ -143,7 +143,7 @@ void drag::snap_window(int snap_mon, int cid, int pos) {
         }
         float scalar = hypriso->has_decorations(cid); // if it has a titlebar
         hypriso->move_resize(cid, p.x, p.y + titlebar_h * scalar, p.w, p.h - titlebar_h * scalar, false);
-        hypriso->should_round(cid, false);
+        hypriso->should_round(cid, false); 
     }
     hypriso->damage_entire(snap_mon);
 
@@ -207,6 +207,65 @@ void drag::end(int cid) {
                         // if first merge attempt fails, we don't seek deeper layers
                         break;
                     }
+                }
+            }
+
+            auto client = c;
+            {
+                float left_perc = .5;
+                float middle_perc = .5;
+                float right_perc = .5;
+                Bounds reserved = bounds_reserved_monitor(get_monitor(cid));
+
+                //auto gs = thin_groups(c->id);
+                auto info = (ClientInfo*)client->user_data;
+                for (auto g : info->grouped_with) {
+                    auto b = bounds_client(g);
+                    auto g_snap_type = *datum<int>(get_cid_container(g), "snap_type");
+                    if (g_snap_type == (int)SnapPosition::TOP_LEFT) {
+                        left_perc = (b.h + titlebar_h) / reserved.h;
+                        middle_perc = (b.w) / reserved.w;
+                    } else if (g_snap_type == (int)SnapPosition::TOP_RIGHT) {
+                        right_perc = (b.h + titlebar_h) / reserved.h;
+                        middle_perc = 1.0 - ((b.w) / reserved.w);
+                    } else if (g_snap_type == (int)SnapPosition::BOTTOM_LEFT) {
+                        left_perc = (b.y - titlebar_h) / reserved.h;
+                        middle_perc = (b.w) / reserved.w;
+                    } else if (g_snap_type == (int)SnapPosition::BOTTOM_RIGHT) {
+                        right_perc = (b.y - titlebar_h) / reserved.h;
+                        middle_perc = 1.0 - ((b.w) / reserved.w);
+                    } else if (g_snap_type == (int)SnapPosition::LEFT) {
+                        middle_perc = (b.w) / reserved.w;
+                    } else if (g_snap_type == (int)SnapPosition::RIGHT) {
+                        middle_perc = 1.0 - ((b.w) / reserved.w);
+                    }
+                }
+                if (left_perc == .5 && right_perc != .5) {
+                    left_perc = right_perc;
+                }
+                if (right_perc == .5 && left_perc != .5) {
+                    right_perc = left_perc;
+                }
+                auto r = reserved;
+                Bounds lt = Bounds(r.x, r.y, r.w * middle_perc, r.h * left_perc);
+                Bounds lb = Bounds(r.x, r.y + r.h * left_perc, r.w * middle_perc, r.h * (1 - left_perc));
+                Bounds rt = Bounds(r.x + r.w * middle_perc, r.y, r.w * (1 - middle_perc), r.h * right_perc);
+                Bounds rb = Bounds(r.x + r.w * middle_perc, r.y + r.h * right_perc, r.w * (1 - middle_perc), r.h * (1 - right_perc));
+
+                auto c_snap_type = pos;
+
+                if (c_snap_type == SnapPosition::LEFT) {
+                    hypriso->move_resize(cid, reserved.x, reserved.y + titlebar_h, reserved.w * middle_perc, reserved.h - titlebar_h, false);
+                } else if (c_snap_type == SnapPosition::RIGHT) {
+                    hypriso->move_resize(cid, reserved.x + reserved.w * middle_perc, reserved.y + titlebar_h, reserved.w * (1 - middle_perc), reserved.h - titlebar_h, false);
+                } else if (c_snap_type == SnapPosition::TOP_LEFT) {
+                    hypriso->move_resize(cid, lt.x, lt.y + titlebar_h, lt.w, lt.h - titlebar_h, false);
+                } else if (c_snap_type == SnapPosition::BOTTOM_LEFT) {
+                    hypriso->move_resize(cid, lb.x, lb.y + titlebar_h, lb.w, lb.h - titlebar_h, false);
+                } else if (c_snap_type == SnapPosition::TOP_RIGHT) {
+                    hypriso->move_resize(cid, rt.x, rt.y + titlebar_h, rt.w, rt.h - titlebar_h, false);
+                } else if (c_snap_type == SnapPosition::BOTTOM_RIGHT) {
+                    hypriso->move_resize(cid, rb.x, rb.y + titlebar_h, rb.w, rb.h - titlebar_h, false);
                 }
             }
 
