@@ -332,7 +332,7 @@ void create_resize_container_for_window(int id) {
         // no resizing when snapped (for now)
         if (auto container = get_cid_container(cid)) {
             if (*datum<bool>(container, "snapped")) {
-                return false;
+                //return false;
             }
         }
         float rounding = hypriso->get_rounding(cid);
