@@ -794,6 +794,9 @@ static void create_actual_root() {
     actual_root->when_drag_start = paint {
         *datum<bool>(c, "dragging") = true;
     };
+    actual_root->when_drag = [](Container *actual_root, Container *c) {
+        actual_root->consumed_event = true;
+    };
     actual_root->when_drag_end = paint {
         *datum<bool>(c, "dragging") = false;
     };
