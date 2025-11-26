@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <wayland-client-core.h>
 #include <wayland-client-protocol.h>
+#include <wayland-cursor.h>
 #include <wayland-server-core.h>
 #define _POSIX_C_SOURCE 200809L
 #include <poll.h>    // for POLLIN, POLLOUT, POLLERR, etc.
@@ -106,6 +107,10 @@ struct wl_window {
     wl_buffer *buffer = nullptr;
     bool busy = false;
     bool dropped_frame = false;
+
+    struct wl_cursor_theme *cursor_theme = nullptr;
+    struct wl_cursor *cursor = nullptr;
+    struct wl_surface *cursor_surface = nullptr;
 
     float current_fractional_scale = 1.0; // default value
 
@@ -375,6 +380,11 @@ static void handle_fractional_scale_preferred_scale(
     auto win = (wl_window *) data;
     win->current_fractional_scale = ((float) scale) / 120.0f;
     win->rw->dpi = win->current_fractional_scale;
+
+    win->cursor_theme = wl_cursor_theme_load(NULL, 24, win->ctx->shm); // shm = wl_shm*
+    win->cursor = wl_cursor_theme_get_cursor(win->cursor_theme, "left_ptr");
+    win->cursor_surface = wl_compositor_create_surface(win->ctx->compositor);
+
     //notify(fz("{}", win->current_fractional_scale));
     if (win->layer_surface) {
         config_layer_shell(win, win->logical_width, win->logical_height);
@@ -615,6 +625,15 @@ static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer,
             }
             if (w->on_render)
                 w->on_render(w);
+
+            {
+                struct wl_cursor_image* image = w->cursor->images[0];
+                //wl_surface_set_buffer_scale(w->cursor_surface, w->rw->dpi);
+                wl_surface_attach(w->cursor_surface, wl_cursor_image_get_buffer(image), 0, 0);
+                wl_pointer_set_cursor(ctx->pointer, serial, w->cursor_surface, image->hotspot_x, image->hotspot_y);
+                wl_surface_damage(w->cursor_surface, 0, 0, image->width, image->height);
+                wl_surface_commit(w->cursor_surface);
+            }
         }
     }
 }
@@ -1242,6 +1261,11 @@ RawWindow *windowing::open_window(RawApp *app, WindowType type, RawWindowSetting
             window->on_render(window);
         windows.push_back(window);        
     }
+    auto window = windows[windows.size() - 1];
+    
+    window->cursor_theme = wl_cursor_theme_load(NULL, 24, ctx->shm); // shm = wl_shm*
+    window->cursor = wl_cursor_theme_get_cursor(window->cursor_theme, "left_ptr");
+    window->cursor_surface = wl_compositor_create_surface(ctx->compositor);
 
     return rw;
 }

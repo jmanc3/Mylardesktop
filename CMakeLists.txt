@@ -40,6 +40,8 @@ pkg_check_modules(deps REQUIRED IMPORTED_TARGET
     libinput
     libudev
     wayland-server
+    wayland-client 
+    wayland-cursor
     xkbcommon
     cairo
 )
