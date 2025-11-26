@@ -46,6 +46,7 @@ extern "C" {
 #include "xdg-output-unstable-v1-client-protocol.h"
 #include "fractional-scale-v1-client-protocol.h"
 #include "wp-viewporter-client-protocol.h"
+#include "cursor-shape-v1-client-protocol.h"
 }
 
 #include <xkbcommon/xkbcommon.h>
@@ -80,6 +81,8 @@ struct wl_context {
     struct xkb_context *xkb_ctx = nullptr;
     struct wp_fractional_scale_manager_v1 *fractional_scale_manager = nullptr;
     struct wp_viewporter *viewporter = nullptr;
+    struct wp_cursor_shape_manager_v1 *shape_manager = nullptr;
+    struct wp_cursor_shape_device_v1 *shape_device = nullptr;
 
     //struct wl_output *output;
     uint32_t shm_format;
@@ -381,10 +384,6 @@ static void handle_fractional_scale_preferred_scale(
     win->current_fractional_scale = ((float) scale) / 120.0f;
     win->rw->dpi = win->current_fractional_scale;
 
-    win->cursor_theme = wl_cursor_theme_load(NULL, 24, win->ctx->shm); // shm = wl_shm*
-    win->cursor = wl_cursor_theme_get_cursor(win->cursor_theme, "left_ptr");
-    win->cursor_surface = wl_compositor_create_surface(win->ctx->compositor);
-
     //notify(fz("{}", win->current_fractional_scale));
     if (win->layer_surface) {
         config_layer_shell(win, win->logical_width, win->logical_height);
@@ -627,12 +626,7 @@ static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer,
                 w->on_render(w);
 
             {
-                struct wl_cursor_image* image = w->cursor->images[0];
-                //wl_surface_set_buffer_scale(w->cursor_surface, w->rw->dpi);
-                wl_surface_attach(w->cursor_surface, wl_cursor_image_get_buffer(image), 0, 0);
-                wl_pointer_set_cursor(ctx->pointer, serial, w->cursor_surface, image->hotspot_x, image->hotspot_y);
-                wl_surface_damage(w->cursor_surface, 0, 0, image->width, image->height);
-                wl_surface_commit(w->cursor_surface);
+                wp_cursor_shape_device_v1_set_shape(ctx->shape_device, serial, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT);
             }
         }
     }
@@ -913,6 +907,8 @@ static void seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t 
     if ((caps & WL_SEAT_CAPABILITY_POINTER) && !d->pointer) {
         d->pointer = wl_seat_get_pointer(seat);
         wl_pointer_add_listener(d->pointer, &pointer_listener, d);
+        if (d->shape_manager && d->pointer)
+            d->shape_device = wp_cursor_shape_manager_v1_get_pointer(d->shape_manager, d->pointer);
     } else if (!(caps & WL_SEAT_CAPABILITY_POINTER) && d->pointer) {
         wl_pointer_destroy(d->pointer);
         d->pointer = NULL;
@@ -968,6 +964,10 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
         d->fractional_scale_manager = (wp_fractional_scale_manager_v1 *) wl_registry_bind(registry, id, &wp_fractional_scale_manager_v1_interface, 1);
     } else if (strcmp(interface, wp_viewporter_interface.name) == 0) {
         d->viewporter = (wp_viewporter*) wl_registry_bind(registry, id, &wp_viewporter_interface, 1);
+    } else if (strcmp(interface, wp_cursor_shape_manager_v1_interface.name) == 0) {
+        d->shape_manager = (wp_cursor_shape_manager_v1 *) wl_registry_bind(registry, id, &wp_cursor_shape_manager_v1_interface, 1);
+        if (d->shape_manager && d->pointer)
+            d->shape_device = wp_cursor_shape_manager_v1_get_pointer(d->shape_manager, d->pointer);
     }
 }
 
@@ -1263,10 +1263,6 @@ RawWindow *windowing::open_window(RawApp *app, WindowType type, RawWindowSetting
     }
     auto window = windows[windows.size() - 1];
     
-    window->cursor_theme = wl_cursor_theme_load(NULL, 24, ctx->shm); // shm = wl_shm*
-    window->cursor = wl_cursor_theme_get_cursor(window->cursor_theme, "left_ptr");
-    window->cursor_surface = wl_compositor_create_surface(ctx->compositor);
-
     return rw;
 }
 
