@@ -20,6 +20,7 @@
 #include "snap_preview.h"
 #include "popup.h"
 #include "quick_shortcut_menu.h"
+#include "settings.h"
 
 #include "process.hpp"
 #include <cstdio>
@@ -110,6 +111,7 @@ static void create_root_popup() {
         PopOption pop;
         pop.text = "Configure Display Settings...";   
         pop.on_clicked = []() {
+            settings::start();
         };
         root.push_back(pop);
     }
@@ -1020,6 +1022,7 @@ void second::end() {
     save_restore_infos();
     hypriso->end();    
     dock::stop();
+    settings::stop();
     //stop_dock();
 
 //#ifdef TRACY_ENABLE
