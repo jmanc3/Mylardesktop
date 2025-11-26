@@ -73,6 +73,7 @@
 #include <hyprland/src/render/decorations/IHyprWindowDecoration.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
+#include <hyprland/src/desktop/state/FocusState.hpp>
 
 #include <hyprutils/utils/ScopeGuard.hpp>
 
@@ -1663,7 +1664,7 @@ void hook_onShadowRender(void* thisptr, PHLMONITOR pMonitor, float const& a) {
     int before = *PSHADOWSIZE;
     bool before_shadows = *PSHADOWS;
     if (auto w = ptr->m_window.lock()) {
-        bool has_focus = w == g_pCompositor->m_lastWindow;
+        bool has_focus = w == Desktop::focusState()->window();
         if (has_focus) {
             *PSHADOWSIZE.ptr() = (int) (before * 2.3);
         }
@@ -1828,9 +1829,9 @@ void shadow(Bounds box, RGBA color, float rounding, float roundingPower, float s
     ZoneScoped;
 #endif
  
-        if (g_pCompositor->m_lastWindow.get()) {
+        if (Desktop::focusState()->window().get()) {
             auto current = g_pHyprOpenGL->m_renderData.currentWindow;
-            g_pHyprOpenGL->m_renderData.currentWindow = g_pCompositor->m_lastWindow;
+            g_pHyprOpenGL->m_renderData.currentWindow = Desktop::focusState()->window();
             g_pHyprOpenGL->renderRoundedShadow(tocbox(box), rounding, roundingPower, size, CHyprColor(color.r, color.g, color.b, color.a), 1.0);
             g_pHyprOpenGL->m_renderData.currentWindow = current;
         }
@@ -2839,7 +2840,7 @@ void HyprIso::bring_to_front(int id, bool focus) {
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
             if (focus)
-                g_pCompositor->focusWindow(hw->w);
+                Desktop::focusState()->fullWindowFocus(hw->w);
             g_pCompositor->changeWindowZOrder(hw->w, true);
         }
     }
@@ -3941,8 +3942,8 @@ static void updateRelativeCursorCoords() {
     if (*PNOWARPS)
         return;
 
-    if (g_pCompositor->m_lastWindow)
-        g_pCompositor->m_lastWindow->m_relativeCursorCoordsOnLastWarp = g_pInputManager->getMouseCoordsInternal() - g_pCompositor->m_lastWindow->m_position;
+    if (Desktop::focusState()->window())
+        Desktop::focusState()->window()->m_relativeCursorCoordsOnLastWarp = g_pInputManager->getMouseCoordsInternal() - Desktop::focusState()->window()->m_position;
 }
 
 void HyprIso::move_to_workspace(int workspace) {
@@ -3991,7 +3992,7 @@ void HyprIso::move_to_workspace(int id, int workspace) {
         const auto FULLSCREENMODE = PWINDOW->m_fullscreenState.internal;
         g_pCompositor->moveWindowToWorkspaceSafe(PWINDOW, pWorkspace);
         pMonitor = pWorkspace->m_monitor.lock();
-        g_pCompositor->setActiveMonitor(pMonitor);
+        Desktop::focusState()->rawMonitorFocus(pMonitor);
         g_pCompositor->setWindowFullscreenInternal(PWINDOW, FULLSCREENMODE);
     } else {
         pWorkspace = g_pCompositor->createNewWorkspace(WORKSPACEID, PWINDOW->monitorID(), workspaceName, false);
@@ -4011,7 +4012,7 @@ void HyprIso::move_to_workspace(int id, int workspace) {
 
     pMonitor->changeWorkspace(pWorkspace);
 
-    g_pCompositor->focusWindow(PWINDOW);
+    Desktop::focusState()->fullWindowFocus(PWINDOW);
     PWINDOW->warpCursor();
 }
 
@@ -4109,7 +4110,7 @@ bool HyprIso::has_focus(int client) {
 #endif
     for (auto hw: hyprwindows) {
         if (hw->id == client) {
-            return hw->w == g_pCompositor->m_lastWindow;
+            return hw->w == Desktop::focusState()->window();
         }
     }
     return false;
@@ -4784,7 +4785,7 @@ void renderWorkspaceWindows(PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const 
             continue; // special on another monitor drawn elsewhere
 
         // last window drawn after others
-        if (w == g_pCompositor->m_lastWindow) {
+        if (w == Desktop::focusState()->window()) {
             lastWindow = w;
             continue;
         }
@@ -4907,9 +4908,9 @@ void HyprIso::all_lose_focus() {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    prev = g_pCompositor->m_lastWindow;
+    prev = Desktop::focusState()->window();
     g_pSeatManager->setPointerFocus(nullptr, {});
-    g_pCompositor->focusWindow(nullptr);
+    Desktop::focusState()->fullWindowFocus(nullptr);
 }
 
 void HyprIso::all_gain_focus() {
@@ -4918,7 +4919,7 @@ void HyprIso::all_gain_focus() {
 #endif
     if (auto p = prev.lock()) {
         //g_pSeatManager->setPointerFocus(p, {});
-        g_pCompositor->focusWindow(p);        
+        Desktop::focusState()->fullWindowFocus(p);        
     }
 }
 
