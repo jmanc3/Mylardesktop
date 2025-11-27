@@ -2582,7 +2582,7 @@ TextureInfo gen_texture(std::string path, float h) {
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    log("gen texture");
+    //log("gen texture");
     //notify("gen texture");
     auto tex = loadAsset(path, h);
     if (tex.get()) {
@@ -2604,7 +2604,7 @@ TextureInfo gen_text_texture(std::string font, std::string text, float h, RGBA c
 #ifdef TRACY_ENABLE
     ZoneScoped;
 #endif
-    log("gen text texture");
+    //log("gen text texture");
     //notify("gen text");
     auto tex = g_pHyprOpenGL->renderText(text, CHyprColor(color.r, color.g, color.b, color.a), h, false, font, 0);
     if (tex.get()) {

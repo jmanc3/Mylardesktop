@@ -128,7 +128,7 @@ static void create_root_popup() {
         };
         root.push_back(pop);
     }
-     
+
     popup::open(root, m.x - 1, m.y + 1);
 }
 
@@ -788,9 +788,7 @@ static void create_actual_root() {
     actual_root->when_drag_end_is_click = false;
     actual_root->when_clicked = paint {
         if (c->state.mouse_button_pressed == BTN_RIGHT) {
-            later_immediate([](Timer *) {
-                create_root_popup();
-            });
+            create_root_popup();
         }
     };
     actual_root->when_drag_start = paint {
@@ -1169,7 +1167,7 @@ void second::layout_containers() {
 
         if (c->custom_type == (int) TYPE::LAYER) {
             // WOOPS background layer is a layer
-            log("TODO: layer needs to be positioned based on above or below, and level in that stack");
+            //log("TODO: layer needs to be positioned based on above or below, and level in that stack");
             c->parent->children.insert(c->parent->children.begin(), c);
             auto id = *datum<int>(c, "cid");
             auto b = bounds_layer(id);

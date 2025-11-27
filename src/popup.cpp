@@ -77,6 +77,13 @@ void popup::open(std::vector<PopOption> root, int x, int y, int cid) {
         unsetCursorImage(true);
         consume_event(root, c);
     };
+    p->when_mouse_down = paint {
+        consume_event(root, c);
+    };
+    p->when_mouse_up = paint {
+        consume_event(root, c);
+    };
+
     //p->wanted_pad = Bounds(7, 7, 7, 7);
     p->when_paint = [](Container *actual_root, Container *c) {
         auto root = get_rendering_root();

@@ -1,10 +1,13 @@
 
 #include "events.h"
 #include "container.h"
+#include "second.h"
 #include "hypriso.h"
 #include <linux/input-event-codes.h>
 #include <algorithm>
 #include <wayland-server-protocol.h>
+
+#include "json.hpp"
 
 #ifdef TRACY_ENABLE
 #include "tracy/Tracy.hpp"
@@ -395,6 +398,7 @@ bool handle_mouse_button_release(Container* root, const Event& e) {
 
         // TODO: when_clicked could've delete'd 'c' so recheck for it
         c->state.mouse_pressing = false;
+        c->state.mouse_button_pressed = 0;
         c->state.mouse_dragging = false;
         c->state.mouse_hovering = false;
         c->state.concerned      = false;
@@ -405,24 +409,108 @@ bool handle_mouse_button_release(Container* root, const Event& e) {
     return false;
 }
 
+#include <fstream>
+#include <string>
+#include <mutex>
+
+void log_json(const std::string& msg) {
+    //return;
+    static bool firstCall = true;
+    static std::ofstream ofs;
+    static std::mutex writeMutex;
+    static long num = 0;
+
+    std::lock_guard<std::mutex> lock(writeMutex);
+
+    if (firstCall) {
+        ofs.open("/tmp/log.json", std::ios::out | std::ios::trunc);
+        firstCall = false;
+
+        // Replace "program" with something that displays a live-updating file.
+        // Example choices:
+        //   - `xterm -e "tail -f /tmp/log"`
+        //   - `gedit /tmp/log`
+        //   - `glow /tmp/log`
+        //std::thread t([]() {
+            //system("alacritty -e tail -f /tmp/log");
+        //});
+        //t.detach();
+    } else if (!ofs.is_open()) {
+        // If log is called after close, recover
+        ofs.open("/tmp/log.json", std::ios::out | std::ios::app);
+    }
+
+    ofs << msg << '\n';
+    ofs.flush(); // force write so GUI viewer always shows latest content
+}
+
+nlohmann::json output_container(Container *c) {
+    nlohmann::json data = nlohmann::json::object();
+
+    data["id"] = c->uuid;
+    data["x"] = c->real_bounds.x;
+    data["y"] = c->real_bounds.y;
+    data["w"] = c->real_bounds.w;
+    data["h"] = c->real_bounds.h;
+    data["active"] = c->active;
+    data["concerned"] = c->state.concerned;
+    data["exists"] = c->exists;
+    data["mouse_hovering"] = c->state.mouse_hovering;
+    data["mouse_pressing"] = c->state.mouse_pressing;
+    data["mouse_dragging"] = c->state.mouse_dragging;
+    data["mouse_button_pressed"] = c->state.mouse_button_pressed;
+    data["spacing"] = c->spacing;
+    data["scroll_h_real"] = c->scroll_h_real;
+    data["scroll_v_real"] = c->scroll_v_real;
+
+    // children
+    data["children"] = nlohmann::json::array();
+    data["children_count"] = c->children.size();
+
+    for (auto *child : c->children) {
+        data["children"].push_back(output_container(child));
+    }
+
+    return data;
+}
+
+void log_layout(Container *root) {
+#ifdef DEBUGCONTAINERS
+    auto j = output_container(root);
+    log_json(j.dump());
+#endif
+}
+
 void mouse_entered(Container* root, const Event& e) {
+    log(fz("mouse entered {} {}", e.x, e.y));
+    log_layout(root);
     handle_mouse_motion(root, e.x, e.y);
+    log_layout(root);
 }
 
 void mouse_left(Container* root, const Event& e) {
+    log(fz("mouse left {} {}", -1000, -1000));
+    log_layout(root);
     handle_mouse_motion(root, -1000, -1000);
+    log_layout(root);
 }
 
 void move_event(Container* root, const Event& e) {
+    log(fz("mouse motion {} {}", e.x, e.y));
+    log_layout(root);
     handle_mouse_motion(root, e.x, e.y);
+    log_layout(root);
 }
 
 void mouse_event(Container* root, const Event& e) {
+    log(fz("mouse event {} {} but:{} state:{} scroll:{}", e.x, e.y, e.button, e.state, e.scroll));
+    log_layout(root);
     if (e.state || e.scroll) {
         handle_mouse_button_press(root, e);
     } else {
         handle_mouse_button_release(root, e);
     }
+    log_layout(root);
 }
 
 void paint_outline(Container* root, Container* c) {
