@@ -482,7 +482,6 @@ void apply_restore_info(int id) {
             }
             
             auto b = bounds_client(id);
-            auto m = bounds_monitor(monitor);
             auto s = scale(monitor);
             auto b2 = bounds_reserved_monitor(monitor);
             b.w = b2.w * info.box.w;

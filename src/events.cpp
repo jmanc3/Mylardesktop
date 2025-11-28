@@ -444,8 +444,8 @@ void log_json(const std::string& msg) {
     ofs.flush(); // force write so GUI viewer always shows latest content
 }
 
-nlohmann::json output_container(Container *c) {
-    nlohmann::json data = nlohmann::json::object();
+nlohmann::ordered_json output_container(Container *c) {
+    nlohmann::ordered_json data = nlohmann::ordered_json::object();
 
     data["id"] = c->uuid;
     data["x"] = c->real_bounds.x;

@@ -145,12 +145,12 @@ void popup::open(std::vector<PopOption> root, int x, int y, int cid) {
                 renderfix
                 if (c->state.mouse_hovering) {
                     auto b = c->real_bounds;
-                    rect(b, {0, 0, 0, .1}, 0, 7 * s, 2.0f, false);
+                    rect(b, {0, 0, 0, .1}, 0, 0.0, 2.0f, false);
                 }
                 if (c->state.mouse_button_pressed == BTN_LEFT) {
                     if (c->state.mouse_pressing) {
                         auto b = c->real_bounds;
-                        rect(b, {0, 0, 0, .2}, 0, 7 * s, 2.0, false);
+                        rect(b, {0, 0, 0, .2}, 0, 0.0, 2.0, false);
                     }
                 }
 

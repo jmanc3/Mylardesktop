@@ -1099,6 +1099,72 @@ void detect_x11_move_resize_requests() {
     }
 }
 
+static Hyprlang::CParseResult configHandleGradientSet(const char* VALUE, void** data) {
+    std::string V = VALUE;
+
+    if (!*data)
+        *data = new CGradientValueData();
+
+    const auto DATA = sc<CGradientValueData*>(*data);
+
+    CVarList   varlist(V, 0, ' ');
+    DATA->m_colors.clear();
+
+    std::string parseError = "";
+
+    for (auto const& var : varlist) {
+        if (var.find("deg") != std::string::npos) {
+            // last arg
+            try {
+                DATA->m_angle = std::stoi(var.substr(0, var.find("deg"))) * (PI / 180.0); // radians
+            } catch (...) {
+                Debug::log(WARN, "Error parsing gradient {}", V);
+                parseError = "Error parsing gradient " + V;
+            }
+
+            break;
+        }
+
+        if (DATA->m_colors.size() >= 10) {
+            Debug::log(WARN, "Error parsing gradient {}: max colors is 10.", V);
+            parseError = "Error parsing gradient " + V + ": max colors is 10.";
+            break;
+        }
+
+        try {
+            const auto COL = configStringToInt(var);
+            if (!COL)
+                throw std::runtime_error(std::format("failed to parse {} as a color", var));
+            DATA->m_colors.emplace_back(COL.value());
+        } catch (std::exception& e) {
+            Debug::log(WARN, "Error parsing gradient {}", V);
+            parseError = "Error parsing gradient " + V + ": " + e.what();
+        }
+    }
+
+    if (DATA->m_colors.empty()) {
+        Debug::log(WARN, "Error parsing gradient {}", V);
+        if (parseError.empty())
+            parseError = "Error parsing gradient " + V + ": No colors?";
+
+        DATA->m_colors.emplace_back(0); // transparent
+    }
+
+    DATA->updateColorsOk();
+
+    Hyprlang::CParseResult result;
+    if (!parseError.empty())
+        result.setError(parseError.c_str());
+
+    return result;
+}
+
+static void configHandleGradientDestroy(void** data) {
+    if (*data)
+        delete sc<CGradientValueData*>(*data);
+}
+
+
 inline CFunctionHook* g_pRenderWindowHook = nullptr;
 typedef void (*origRenderWindowFunc)(void*, PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp& time, bool decorate, eRenderPassMode mode, bool ignorePosition, bool standalone);
 void hook_RenderWindow(void* thisptr, PHLWINDOW pWindow, PHLMONITOR pMonitor, const Time::steady_tp& time, bool decorate, eRenderPassMode mode, bool ignorePosition, bool standalone) {
@@ -1110,18 +1176,31 @@ void hook_RenderWindow(void* thisptr, PHLWINDOW pWindow, PHLMONITOR pMonitor, co
 
     Hyprlang::INT* border_size = nullptr;
     int initial_border_size = 0;
+
+    Hyprlang::CConfigCustomValueType* active_border = nullptr; 
+    Hyprlang::CConfigCustomValueType* initial_active_border;
     
     for (auto hw : hyprwindows) {
         if (hw->w == pWindow && hw->no_rounding) {
-            Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:rounding");
-            rounding_amount = (Hyprlang::INT*)val->dataPtr();
-            initial_value = *rounding_amount;
-            *rounding_amount = 0;
+            {
+                Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("decoration:rounding");
+                rounding_amount = (Hyprlang::INT*)val->dataPtr();
+                initial_value = *rounding_amount;
+                *rounding_amount = 0;
+            }
 
             Hyprlang::CConfigValue* val2 = g_pConfigManager->getHyprlangConfigValuePtr("general:border_size");
             border_size = (Hyprlang::INT*)val2->dataPtr();
             initial_border_size = *border_size;
             *border_size = 0;
+
+            /*if (hw->w->m_pinned) {
+                Hyprlang::CConfigValue* val = g_pConfigManager->getHyprlangConfigValuePtr("general:col.active_border");
+                active_border = (Hyprlang::CConfigCustomValueType*)val->dataPtr();
+                initial_active_border = active_border;
+                *active_border = Hyprlang::CConfigCustomValueType{&configHandleGradientSet, configHandleGradientDestroy, "0xffffffff"};
+            }*/
+
         }
     }
 
@@ -1129,6 +1208,9 @@ void hook_RenderWindow(void* thisptr, PHLWINDOW pWindow, PHLMONITOR pMonitor, co
     if (rounding_amount) {
         *rounding_amount = initial_value;
         *border_size = initial_border_size;
+        //if (active_border) {
+            //active_border = initial_active_border;
+        //}
     }
 }
 
@@ -1552,6 +1634,9 @@ void HyprIso::create_callbacks() {
                 hyprspaces.erase(hyprspaces.begin() + i);
             }
         }
+    });
+    static auto workspace = HyprlandAPI::registerCallbackDynamic(globals->api, "workspace", [](void* self, SCallbackInfo& info, std::any data) {
+        //notify("workspace");
     });
 
     static auto activeWindow = HyprlandAPI::registerCallbackDynamic(globals->api, "activeWindow", [](void* self, SCallbackInfo& info, std::any data) {

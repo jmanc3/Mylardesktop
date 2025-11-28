@@ -9,6 +9,7 @@
 
 #include <cairo.h>
 #include "process.hpp"
+#include <chrono>
 #include <thread>
 #include <memory>
 #include <pango/pangocairo.h>
@@ -305,12 +306,18 @@ static void set_brightness(float amount) {
 
 static void set_volume(float amount) {
     static bool queued = false;
-    static bool latest = amount;
+    static float latest = amount;
     latest = amount;
-    //volume_level = (int) std::round(volume_level);
     if (queued)
         return;
-    auto process = std::make_shared<TinyProcessLib::Process>(fz("pactl set-sink-volume @DEFAULT_SINK@ {}%", (int) std::round(volume_level)));
+    queued = true;
+    std::thread t([]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        auto process = std::make_shared<TinyProcessLib::Process>(fz("pactl set-sink-volume @DEFAULT_SINK@ {}%", (int) std::round(latest)));
+
+        queued = false;
+    });
+    t.detach();
 }
 
 static void fill_root(Container *root) {
