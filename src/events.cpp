@@ -132,6 +132,7 @@ void handle_mouse_motion(Container* root, int x, int y) {
     for (int i = 0; i < concerned.size(); i++) {
         auto c = concerned[i];
 
+        // TODO we need to remove from concered if not on top as well not just pierced
         bool in_pierced = false;
         for (int j = 0; j < pierced.size(); j++) {
             auto p = pierced[j];

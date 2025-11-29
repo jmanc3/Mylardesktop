@@ -150,17 +150,12 @@ static void buffer_release(void *data, struct wl_buffer *wl_buffer) {
     auto win = (wl_window *) data;
     win->busy = false;
     if (win->dropped_frame) {
-       win->dropped_frame = false;
-       for (auto w : windows) {
-           if (w->on_render) {
-               w->on_render(w);
-           }
-       }
+        win->dropped_frame = false;
+
+        if (win->on_render) {
+            win->on_render(win);
+        }
     }
-    
-    //notify("buffer release");
-    //struct Buffer *buf = data;
-    //buf->busy = false;
 }
 
 static const struct wl_buffer_listener buffer_listener = {

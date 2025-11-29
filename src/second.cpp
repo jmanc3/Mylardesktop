@@ -155,11 +155,6 @@ static bool on_mouse_press(int id, int button, int state, float x, float y) {
        }
     }
     
-    if (pierced.empty() && button == BTN_RIGHT && state == 0) {
-        //create_root_popup();
-    }
-    //and_on_desktop = pierced.empty() && button == BTN_LEFT;
-
     bool consumed = false;
     if (drag::dragging() && !state) {
         drag::end(drag::drag_window());
