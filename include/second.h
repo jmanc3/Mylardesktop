@@ -331,7 +331,16 @@ void launch_command(std::string command);
 void add_to_snap_group(int id, int other, const std::vector<int> &grouped);
 bool groupable(SnapPosition position, const std::vector<int> ids);
 bool groupable_types(SnapPosition a, SnapPosition b);
-    
+
+struct SnapLimits {
+    float left_middle = .5f;
+    float right_middle = .5f;
+    float middle_middle = .5f;
+};
+
+SnapLimits getSnapLimits(int monitor);
+Bounds snap_position_to_bounds(int mon, SnapPosition pos, SnapLimits limits);
+
 namespace second {    
     void begin();
     void end();

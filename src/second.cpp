@@ -344,6 +344,95 @@ static bool on_key_press(int id, int key, int state, bool update_mods) {
     return false;
 }
 
+SnapLimits getSnapLimits(int monitor) {
+    SnapLimits limits = {.5f, .5f, .5f};
+    
+    for (auto ch : actual_root->children) {
+        if (ch->custom_type == (int) TYPE::CLIENT) {
+            auto cid = *datum<int>(ch, "cid");
+            if (monitor != get_monitor(cid))
+                continue;
+            
+            auto snapped = *datum<bool>(ch, "snapped");
+            if (!snapped)
+                continue;
+
+            auto snap_type = *datum<int>(ch, "snap_type");
+            if (snap_type == (int) SnapPosition::MAX)
+                break; // if we find a max, no snap possability
+            
+            auto other_cdata = (ClientInfo*) ch->user_data; 
+
+            Bounds reserved = bounds_reserved_monitor(monitor);
+            std::vector<int> groups;
+            groups.push_back(cid);
+            for (auto g : other_cdata->grouped_with)
+                groups.push_back(g);
+            
+            for (auto g : groups) {
+                auto b = bounds_client(g);
+                auto g_snap_type = (SnapPosition) *datum<int>(get_cid_container(g), "snap_type");
+                if (g_snap_type == SnapPosition::TOP_LEFT) {
+                    limits.left_middle = (b.h + titlebar_h) / reserved.h;
+                    limits.middle_middle = (b.w) / reserved.w;
+                } else if (g_snap_type == SnapPosition::TOP_RIGHT) {
+                    limits.right_middle = (b.h + titlebar_h) / reserved.h;
+                    limits.middle_middle = 1.0 - ((b.w) / reserved.w);
+                } else if (g_snap_type == SnapPosition::BOTTOM_LEFT) {
+                    limits.left_middle = (b.y - titlebar_h) / reserved.h;
+                    limits.middle_middle = (b.w) / reserved.w;
+                } else if (g_snap_type == SnapPosition::BOTTOM_RIGHT) {
+                    limits.right_middle = (b.y - titlebar_h) / reserved.h;
+                    limits.middle_middle = 1.0 - ((b.w) / reserved.w);
+                } else if (g_snap_type == SnapPosition::LEFT) {
+                    limits.middle_middle = (b.w) / reserved.w;
+                } else if (g_snap_type == SnapPosition::RIGHT) {
+                    limits.middle_middle = 1.0 - ((b.w) / reserved.w);
+                }
+            }
+            if (limits.left_middle == .5 && limits.right_middle != .5)
+                limits.left_middle = limits.right_middle; 
+            if (limits.right_middle == .5 && limits.left_middle != .5)
+                limits.right_middle = limits.left_middle; 
+
+            break;
+         }
+    }
+
+    return limits;
+}
+
+Bounds snap_position_to_bounds_limited(int mon, SnapPosition pos) {
+    auto limits = getSnapLimits(mon);
+
+    Bounds screen = bounds_reserved_monitor(mon);
+
+    float x = screen.x;
+    float y = screen.y;
+    float w = screen.w;
+    float h = screen.h;
+
+    Bounds out = {x, y, w, h};
+
+    if (pos == SnapPosition::MAX) {
+        return {x, y, w, h};
+    } else if (pos == SnapPosition::LEFT) {
+        return {x, y, w * limits.middle_middle, h};
+    } else if (pos == SnapPosition::RIGHT) {
+        return {x + w * limits.middle_middle, y, w - (w * limits.middle_middle), h};
+    } else if (pos == SnapPosition::TOP_LEFT) {
+        return {x, y, w * limits.middle_middle, h * limits.left_middle};
+    } else if (pos == SnapPosition::TOP_RIGHT) {
+        return {x + w * limits.middle_middle, y, w - w * limits.middle_middle, h * limits.right_middle};
+    } else if (pos == SnapPosition::BOTTOM_LEFT) {
+        return {x, y + h * limits.left_middle, w * limits.middle_middle, h - h * limits.left_middle};
+    } else if (pos == SnapPosition::BOTTOM_RIGHT) {
+        return {x + w * limits.middle_middle, y + h * limits.right_middle, w - w * limits.middle_middle, h - h * limits.right_middle};
+    }
+
+    return out;
+}
+
 SnapPosition mouse_to_snap_position(int mon, int x, int y) {
     Bounds pos = bounds_reserved_monitor(mon);
 
@@ -386,6 +475,7 @@ SnapPosition mouse_to_snap_position(int mon, int x, int y) {
 }
 
 Bounds snap_position_to_bounds(int mon, SnapPosition pos) {
+    return snap_position_to_bounds_limited(mon, pos);
     Bounds screen = bounds_reserved_monitor(mon);
 
     float x = screen.x;
