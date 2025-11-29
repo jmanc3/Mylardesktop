@@ -1,24 +1,12 @@
 
 #include "container.h"
-// #include "application.h"
 
 #include <cassert>
 #include <cmath>
 #include <iostream>
 
-#include <fontconfig/fontconfig.h>
-#include <freetype/ftlcdfil.h>
-#include <freetype/ftsynth.h>
-#include <gdk-pixbuf/gdk-pixbuf.h>
-#include <glm/gtc/type_ptr.hpp>
-#include <hb-ft.h>
-#include <hb.h>
-#include <librsvg/rsvg.h>
 #include <random>
 #include <sstream>
-
-#include FT_GLYPH_H // This header provides functions like FT_GlyphSlot_Embolden.
-#include <codecvt>
 
 #ifdef TRACY_ENABLE
 #include <tracy/Tracy.hpp>

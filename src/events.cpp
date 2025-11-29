@@ -1,17 +1,22 @@
 
 #include "events.h"
+
 #include "container.h"
-#include "second.h"
-#include "hypriso.h"
-#include <linux/input-event-codes.h>
 #include <algorithm>
-#include <wayland-server-protocol.h>
+#include <format>
 
 #include "json.hpp"
 
 #ifdef TRACY_ENABLE
 #include "tracy/Tracy.hpp"
 #endif
+
+#define BTN_LEFT		0x110
+#define BTN_RIGHT		0x111
+#define BTN_MIDDLE		0x112
+
+void log(std::string) {}
+#define fz std::format
 
 void fill_list_with_concerned(std::vector<Container*>& containers, Container* parent) {
     if (parent->type == ::newscroll) {
