@@ -134,10 +134,18 @@ void handle_mouse_motion(Container* root, int x, int y) {
 
         // TODO we need to remove from concered if not on top as well not just pierced
         bool in_pierced = false;
+        bool top = false;
         for (int j = 0; j < pierced.size(); j++) {
             auto p = pierced[j];
             if (p == c) {
                 in_pierced = true;
+                if (c->receive_events_even_if_obstructed) {
+                    top = true;
+                } else if (c->receive_events_even_if_obstructed_by_one && j == 1) {
+                    top = true;
+                } else if (j == 0) {
+                    top = true;
+                }
                 break;
             }
         }
@@ -162,7 +170,7 @@ void handle_mouse_motion(Container* root, int x, int y) {
                     }
                 }
             }
-        } else if (in_pierced) {
+        } else if (in_pierced && top) {
             // handle when_mouse_motion
             if (c->when_mouse_motion) {
                 c->when_mouse_motion(root, c);
