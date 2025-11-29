@@ -59,6 +59,10 @@ static void any_container_closed(Container *c) {
     remove_data(c->uuid); 
 }
 
+static void set_exists(Container *c, bool state) {
+    c->exists = state; 
+}
+
 static bool on_mouse_move(int id, float x, float y) {
     second::layout_containers();
     auto mou = mouse();
@@ -1088,7 +1092,7 @@ void second::layout_containers() {
 
     for (auto c : actual_root->children) {
         auto cid = *datum<int>(c, "cid");
-        c->exists = hypriso->is_mapped(cid) && !hypriso->is_hidden(cid);
+        set_exists(c, hypriso->is_mapped(cid) && !hypriso->is_hidden(cid));
         
         if (c->exists) {
             auto b = bounds_client(cid);
@@ -1126,8 +1130,8 @@ void second::layout_containers() {
         }
         if (c->custom_type == (int) TYPE::CLIENT_RESIZE) {
             auto id = *datum<int>(c, "cid");
-            c->exists = hypriso->is_mapped(id) && !hypriso->is_hidden(id) && hypriso->resizable(id);
-            c->exists = c->exists && (hypriso->get_workspace(id) == hypriso->get_active_workspace(hypriso->monitor_from_cursor())); 
+            set_exists(c, hypriso->is_mapped(id) && !hypriso->is_hidden(id) && hypriso->resizable(id));
+            set_exists(c, (c->exists && (hypriso->get_workspace(id) == hypriso->get_active_workspace(hypriso->monitor_from_cursor())))); 
             
             for (int i = actual_root->children.size() - 1; i >= 0; i--) {
                 auto child = actual_root->children[i];

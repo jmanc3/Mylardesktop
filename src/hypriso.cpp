@@ -1637,6 +1637,11 @@ void HyprIso::create_callbacks() {
     });
     static auto workspace = HyprlandAPI::registerCallbackDynamic(globals->api, "workspace", [](void* self, SCallbackInfo& info, std::any data) {
         //notify("workspace");
+        if (hypriso->on_mouse_move) {
+            auto mouse = g_pInputManager->getMouseCoordsInternal();
+            auto m = g_pCompositor->getMonitorFromCursor();
+            hypriso->on_mouse_move(0, mouse.x * m->m_scale, mouse.y * m->m_scale);
+        }
     });
 
     static auto activeWindow = HyprlandAPI::registerCallbackDynamic(globals->api, "activeWindow", [](void* self, SCallbackInfo& info, std::any data) {

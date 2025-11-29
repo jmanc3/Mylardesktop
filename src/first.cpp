@@ -69,7 +69,7 @@ void new_test() {
 */
 
 #ifdef TRACY_ENABLE
-#include "/home/jmanc3/Mylardesktop/tracy/public/tracy/Tracy.hpp"
+#include "tracy/Tracy.hpp"
 #endif
 
 APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) { // When started as a plugin

@@ -27,7 +27,7 @@ void fill_list_with_concerned(std::vector<Container*>& containers, Container* pa
             fill_list_with_concerned(containers, child);
     }
 
-    if (parent->state.concerned && parent->exists) {
+    if (parent->state.concerned) {
         containers.push_back(parent);
     }
 }
@@ -110,8 +110,6 @@ void handle_mouse_motion(Container* root, int x, int y) {
     ZoneScoped;
 #endif
     // Disabled because of scrolls
-    if (false && root->previous_x == x && root->previous_y == y)
-        return;
     root->previous_x                  = root->mouse_current_x;
     root->previous_y                  = root->mouse_current_y;
     root->mouse_current_x             = x;
@@ -148,6 +146,10 @@ void handle_mouse_motion(Container* root, int x, int y) {
                 }
                 break;
             }
+        }
+        if (!c->exists) {
+            in_pierced = false;
+            top = false;
         }
 
         if (c->state.mouse_pressing || c->state.mouse_dragging) {
