@@ -2929,8 +2929,7 @@ void HyprIso::bring_to_front(int id, bool focus) {
 #endif
     for (auto hw : hyprwindows) {
         if (hw->id == id) {
-            if (focus)
-                Desktop::focusState()->fullWindowFocus(hw->w);
+            g_pKeybindManager->switchToWindow(hw->w, true);
             g_pCompositor->changeWindowZOrder(hw->w, true);
         }
     }
@@ -5258,5 +5257,9 @@ uint32_t HyprIso::keycode_to_keysym(int keycode) {
     //const xkb_keysym_t internalKeysym = xkb_state_key_get_one_sym(pKeyboard->m_xkbState, KEYCODE);
 
    return 0;
+}
+
+void HyprIso::simulateMouseMovement() {
+    g_pInputManager->simulateMouseMovement();
 }
 

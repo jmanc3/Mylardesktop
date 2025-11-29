@@ -329,6 +329,7 @@ void alt_tab::close(bool focus) {
                 request_damage(m, c);
                 delete c;
                 m->children.erase(m->children.begin() + i);
+                hypriso->simulateMouseMovement();
             }
         }
     }

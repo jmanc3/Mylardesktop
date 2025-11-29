@@ -330,6 +330,8 @@ struct HyprIso {
     void add_float_rule();
     void overwrite_defaults();
 
+    void simulateMouseMovement();
+
     bool clip = false;
     Bounds clipbox;
 };

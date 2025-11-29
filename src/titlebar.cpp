@@ -248,6 +248,7 @@ void paint_button(Container *actual_root, Container *c, std::string name, std::s
         renderfix
 
         auto b = c->real_bounds;
+        b.round();
         auto a = *datum<float>(client, "titlebar_alpha");
         
         auto focused = get_cached_texture(root, root, name + "_focused", "Segoe Fluent Icons",
@@ -411,6 +412,7 @@ void create_titlebar(Container *root, Container *parent) {
             titlebar_color.a *= a;
 
             auto bounds = c->real_bounds;
+            bounds.round();
             bool being_animated = hypriso->being_animated(cid);
             if (being_animated || (drag::dragging() && drag::drag_window() == cid) || (resizing::resizing() && resizing::resizing_window() == cid))
                 bounds.h += 1 * s;
