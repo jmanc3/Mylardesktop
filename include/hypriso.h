@@ -331,6 +331,7 @@ struct HyprIso {
     void overwrite_defaults();
 
     void simulateMouseMovement();
+    bool has_popup_at(int cid, Bounds b);
 
     bool clip = false;
     Bounds clipbox;

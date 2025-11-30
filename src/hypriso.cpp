@@ -5263,3 +5263,13 @@ void HyprIso::simulateMouseMovement() {
     g_pInputManager->simulateMouseMovement();
 }
 
+bool HyprIso::has_popup_at(int cid, Bounds b) {
+    for (auto h : hyprwindows) {
+        if (h->id == cid) {
+            return h->w->hasPopupAt({b.x, b.y});
+        }
+    }
+     
+    return false; 
+}
+

@@ -382,7 +382,7 @@ void create_resize_container_for_window(int id) {
             }
             //notify("here");
             //setCursorImageUntilUnset("grabbing");
-            return true;
+            return !hypriso->has_popup_at(cid, Bounds(x, y, x, y));
         }
         //unsetCursorImage();
         return false; 
