@@ -361,9 +361,6 @@ SnapLimits get_snap_limits(int monitor, SnapPosition wanted_pos) {
             if (snap_type == (int) SnapPosition::MAX)
                 break; // if we find a max, no snap possability
 
-            if (!groupable_types(wanted_pos, (SnapPosition) snap_type))
-                break;
-
             auto other_cdata = (ClientInfo*) ch->user_data; 
 
             Bounds reserved = bounds_reserved_monitor(monitor);
@@ -371,6 +368,9 @@ SnapLimits get_snap_limits(int monitor, SnapPosition wanted_pos) {
             groups.push_back(cid);
             for (auto g : other_cdata->grouped_with)
                 groups.push_back(g);
+
+            if (!groupable(wanted_pos, groups))
+                break;
             
             for (auto g : groups) {
                 auto b = bounds_client(g);

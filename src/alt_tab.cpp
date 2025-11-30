@@ -347,11 +347,16 @@ void alt_tab::move(int dir) {
 
 void alt_tab::on_activated(int id) {
     Container *c = get_cid_container(id);
+    if (*datum<bool>(c, "eat")) {
+        *datum<bool>(c, "eat") = false;
+        return;
+    }
 
     assert(c && "alt_tab::on_activated assumes Container for id exists");    
 
     for (auto g : ((ClientInfo *)c->user_data)->grouped_with) {
-        //hypriso->bring_to_front(g, false);
+        *datum<bool>(get_cid_container(id), "eat") = true;
+        hypriso->bring_to_front(g, false);
     }
 
     auto current = get_current_time_in_ms();
