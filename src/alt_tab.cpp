@@ -351,7 +351,7 @@ void alt_tab::on_activated(int id) {
     assert(c && "alt_tab::on_activated assumes Container for id exists");    
 
     for (auto g : ((ClientInfo *)c->user_data)->grouped_with) {
-        hypriso->bring_to_front(g, false);
+        //hypriso->bring_to_front(g, false);
     }
 
     auto current = get_current_time_in_ms();

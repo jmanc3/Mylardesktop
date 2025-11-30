@@ -344,7 +344,7 @@ static bool on_key_press(int id, int key, int state, bool update_mods) {
     return false;
 }
 
-SnapLimits getSnapLimits(int monitor) {
+SnapLimits get_snap_limits(int monitor, SnapPosition wanted_pos) {
     SnapLimits limits = {.5f, .5f, .5f};
     
     for (auto ch : actual_root->children) {
@@ -360,7 +360,10 @@ SnapLimits getSnapLimits(int monitor) {
             auto snap_type = *datum<int>(ch, "snap_type");
             if (snap_type == (int) SnapPosition::MAX)
                 break; // if we find a max, no snap possability
-            
+
+            if (!groupable_types(wanted_pos, (SnapPosition) snap_type))
+                break;
+
             auto other_cdata = (ClientInfo*) ch->user_data; 
 
             Bounds reserved = bounds_reserved_monitor(monitor);
@@ -402,9 +405,7 @@ SnapLimits getSnapLimits(int monitor) {
     return limits;
 }
 
-Bounds snap_position_to_bounds_limited(int mon, SnapPosition pos) {
-    auto limits = getSnapLimits(mon);
-
+Bounds snap_position_to_bounds_limited(int mon, SnapPosition pos, SnapLimits limits) {
     Bounds screen = bounds_reserved_monitor(mon);
 
     float x = screen.x;
@@ -475,34 +476,9 @@ SnapPosition mouse_to_snap_position(int mon, int x, int y) {
 }
 
 Bounds snap_position_to_bounds(int mon, SnapPosition pos) {
-    return snap_position_to_bounds_limited(mon, pos);
-    Bounds screen = bounds_reserved_monitor(mon);
-
-    float x = screen.x;
-    float y = screen.y;
-    float w = screen.w;
-    float h = screen.h;
-
-    Bounds out = {x, y, w, h};
-
-    if (pos == SnapPosition::MAX) {
-        return {x, y, w, h};
-        //return {x, y, w + 2, h};
-    } else if (pos == SnapPosition::LEFT) {
-        return {x, y, w * .5, h};
-    } else if (pos == SnapPosition::RIGHT) {
-        return {x + w * .5, y, w * .5, h};
-    } else if (pos == SnapPosition::TOP_LEFT) {
-        return {x, y, w * .5, h * .5};
-    } else if (pos == SnapPosition::TOP_RIGHT) {
-        return {x + w * .5, y, w * .5, h * .5};
-    } else if (pos == SnapPosition::BOTTOM_LEFT) {
-        return {x, y + h * .5, w * .5, h * .5};
-    } else if (pos == SnapPosition::BOTTOM_RIGHT) {
-        return {x + w * .5, y + h * .5, w * .5, h * .5};
-    }
-
-    return out;
+    auto limits = get_snap_limits(mon, pos);
+    
+    return snap_position_to_bounds_limited(mon, pos, limits);
 }
 
 SnapPosition opposite_snap_position(SnapPosition pos) {

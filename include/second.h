@@ -338,8 +338,8 @@ struct SnapLimits {
     float middle_middle = .5f;
 };
 
-SnapLimits getSnapLimits(int monitor);
-Bounds snap_position_to_bounds(int mon, SnapPosition pos, SnapLimits limits);
+SnapLimits get_snap_limits(int monitor);
+Bounds snap_position_to_bounds_limited(int mon, SnapPosition pos, SnapLimits limits);
 
 namespace second {    
     void begin();

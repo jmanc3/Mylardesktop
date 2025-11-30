@@ -158,10 +158,84 @@ void resize_client(int cid, int resize_type) {
     }
 }
 
+double percent_position_clamped(double start, double end, double point) {
+    double p = (point - start) / end;
+    if (p < 0.0) p = 0.0;
+    if (p > 1.0) p = 1.0;
+    return p;
+}
+
+SnapLimits calculate_limits(int monitor, int cid, int snap_type) {
+    Bounds r = bounds_reserved_monitor(monitor);
+    Bounds b = bounds_client(cid);
+    
+    SnapLimits limits = {.5f, .5f, .5f};
+    if (snap_type == (int)SnapPosition::LEFT) {
+        limits.middle_middle = percent_position_clamped(r.x, r.w, b.x + b.w);
+    } else if (snap_type == (int)SnapPosition::RIGHT) {
+        limits.middle_middle = percent_position_clamped(r.x, r.w, b.x);
+    } else if (snap_type == (int)SnapPosition::TOP_LEFT) {
+        limits.middle_middle = percent_position_clamped(r.x, r.w, b.x + b.w);
+        limits.left_middle = percent_position_clamped(r.y, r.h, b.y + b.h);
+    } else if (snap_type == (int)SnapPosition::BOTTOM_LEFT) {
+        limits.middle_middle = percent_position_clamped(r.x, r.w, b.x + b.w);
+        limits.left_middle = percent_position_clamped(r.y, r.h, b.y);
+    } else if (snap_type == (int)SnapPosition::TOP_RIGHT) {
+        limits.middle_middle = percent_position_clamped(r.x, r.w, b.x);
+        limits.right_middle = percent_position_clamped(r.y, r.h, b.y + b.h);
+    } else if (snap_type == (int)SnapPosition::BOTTOM_RIGHT) {
+        limits.middle_middle = percent_position_clamped(r.x, r.w, b.x);
+        limits.right_middle = percent_position_clamped(r.y, r.h, b.y);
+    }
+
+    return limits;
+}
+
+void adjust_grouped_with(int cid) {
+    if (auto c = get_cid_container(cid)) {
+        auto snap_against_type = *datum<int>(c, "snap_type");
+        auto monitor = get_monitor(cid);
+        SnapLimits main_limits = calculate_limits(monitor, cid, snap_against_type);
+        
+        auto info = (ClientInfo *) c->user_data;
+        for (auto gid : info->grouped_with) {            
+            auto other_pos = (SnapPosition) *datum<int>(get_cid_container(gid), "snap_type");
+            SnapLimits other_limits = calculate_limits(monitor, gid, (int) other_pos);
+
+            // merge main limits into other limits
+            if (snap_against_type == (int) SnapPosition::LEFT)  {
+                other_limits.middle_middle = main_limits.middle_middle;
+            } else if (snap_against_type == (int) SnapPosition::RIGHT) {
+                other_limits.middle_middle = main_limits.middle_middle;
+            } else if (snap_against_type == (int) SnapPosition::TOP_LEFT) {
+                other_limits.middle_middle = main_limits.middle_middle;
+                other_limits.left_middle = main_limits.left_middle;
+            } else if (snap_against_type == (int) SnapPosition::BOTTOM_LEFT) {
+                other_limits.middle_middle = main_limits.middle_middle;
+                other_limits.left_middle = main_limits.left_middle;
+            } else if (snap_against_type == (int) SnapPosition::TOP_RIGHT) {
+                other_limits.middle_middle = main_limits.middle_middle;
+                other_limits.right_middle = main_limits.right_middle;
+            } else if (snap_against_type == (int) SnapPosition::BOTTOM_RIGHT) {
+                other_limits.middle_middle = main_limits.middle_middle;
+                other_limits.right_middle = main_limits.right_middle;
+            }
+
+            auto b = snap_position_to_bounds_limited(monitor, other_pos, other_limits);
+            if (hypriso->has_decorations(gid)) {
+                hypriso->move_resize(gid, b.x, b.y + titlebar_h, b.w, b.h - titlebar_h);
+            } else {
+                hypriso->move_resize(gid, b.x, b.y, b.w, b.h);
+            }
+        }
+    }
+}
+
 void resizing::motion(int cid) {
     for (auto c : actual_root->children) {
         if (c->custom_type == (int) TYPE::CLIENT_RESIZE) {
             resize_client(cid, active_resize_type);
+            adjust_grouped_with(cid);
         }
     }
 }
@@ -260,52 +334,6 @@ void create_resize_container_for_window(int id) {
         } else if (left) {
             resize_type = (int) RESIZE_TYPE::LEFT;
         }
-
-        /*
-        auto rtype = resize_type;
-        // Don't allow every type of resize for snapped windows
-        if (client->snapped && client->snap_type == SnapPosition::MAX) {
-            client->resize_type = (int) RESIZE_TYPE::NONE;
-        }
-        if (client->snapped && client->snap_type == SnapPosition::LEFT) {
-            if (rtype != (int) RESIZE_TYPE::RIGHT) {
-                client->resize_type = (int) RESIZE_TYPE::NONE;
-            }
-        }
-        if (client->snapped && client->snap_type == SnapPosition::RIGHT) {
-            if (rtype != (int) RESIZE_TYPE::LEFT) {
-                client->resize_type = (int) RESIZE_TYPE::NONE;
-            }
-        }
-        if (client->snapped && client->snap_type == SnapPosition::TOP_RIGHT) {
-            auto valid = rtype == (int) RESIZE_TYPE::BOTTOM || 
-                         rtype == (int) RESIZE_TYPE::BOTTOM_LEFT || 
-                         rtype == (int) RESIZE_TYPE::LEFT;
-            if (!valid)
-                client->resize_type = (int) RESIZE_TYPE::NONE;
-        }
-        if (client->snapped && client->snap_type == SnapPosition::BOTTOM_RIGHT) {
-            auto valid = rtype == (int) RESIZE_TYPE::TOP || 
-                         rtype == (int) RESIZE_TYPE::TOP_LEFT || 
-                         rtype == (int) RESIZE_TYPE::LEFT;
-            if (!valid)
-                client->resize_type = (int) RESIZE_TYPE::NONE;
-        }
-        if (client->snapped && client->snap_type == SnapPosition::BOTTOM_LEFT) {
-            auto valid = rtype == (int) RESIZE_TYPE::TOP || 
-                         rtype == (int) RESIZE_TYPE::TOP_RIGHT || 
-                         rtype == (int) RESIZE_TYPE::RIGHT;
-            if (!valid)
-                client->resize_type = (int) RESIZE_TYPE::NONE;
-        }
-        if (client->snapped && client->snap_type == SnapPosition::TOP_LEFT) {
-            auto valid = rtype == (int) RESIZE_TYPE::BOTTOM || 
-                         rtype == (int) RESIZE_TYPE::BOTTOM_RIGHT || 
-                         rtype == (int) RESIZE_TYPE::RIGHT;
-            if (!valid)
-                client->resize_type = (int) RESIZE_TYPE::NONE;
-        }
-        */
 
         *datum<int>(c, "resize_type") = resize_type;
 
