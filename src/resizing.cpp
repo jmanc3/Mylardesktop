@@ -168,6 +168,10 @@ double percent_position_clamped(double start, double end, double point) {
 SnapLimits calculate_limits(int monitor, int cid, int snap_type) {
     Bounds r = bounds_reserved_monitor(monitor);
     Bounds b = bounds_client(cid);
+    if (hypriso->has_decorations(cid)) {
+        b.y -= titlebar_h;
+        b.h += titlebar_h;
+    }
     
     SnapLimits limits = {.5f, .5f, .5f};
     if (snap_type == (int)SnapPosition::LEFT) {
@@ -196,11 +200,15 @@ void adjust_grouped_with(int cid) {
         auto snap_against_type = *datum<int>(c, "snap_type");
         auto monitor = get_monitor(cid);
         SnapLimits main_limits = calculate_limits(monitor, cid, snap_against_type);
+
+        log(fz("{} l{} r{} m{}", hypriso->class_name(cid), main_limits.left_middle, main_limits.right_middle, main_limits.middle_middle));
         
         auto info = (ClientInfo *) c->user_data;
         for (auto gid : info->grouped_with) {            
             auto other_pos = (SnapPosition) *datum<int>(get_cid_container(gid), "snap_type");
             SnapLimits other_limits = calculate_limits(monitor, gid, (int) other_pos);
+            
+            //log(fz("{} l{} r{} m{}, {} {} {}", hypriso->class_name(gid), other_limits.left_middle, other_limits.right_middle, other_limits.middle_middle, main_limits.left_middle, main_limits.right_middle, main_limits.middle_middle));
 
             // merge main limits into other limits
             if (snap_against_type == (int) SnapPosition::LEFT)  {
@@ -222,6 +230,8 @@ void adjust_grouped_with(int cid) {
             }
 
             auto b = snap_position_to_bounds_limited(monitor, other_pos, other_limits);
+            hypriso->move_resize(gid, b.x, b.y, b.w, b.h);
+            
             if (hypriso->has_decorations(gid)) {
                 hypriso->move_resize(gid, b.x, b.y + titlebar_h, b.w, b.h - titlebar_h);
             } else {

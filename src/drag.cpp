@@ -272,8 +272,9 @@ void drag::end(int cid) {
             //snap_assist::create(cid);
         }
     }
-    if (hypriso->on_activated)
-        hypriso->on_activated(cid);
+    //if (hypriso->on_activated) {
+        //later(500, [cid](Timer *) { hypriso->on_activated(cid); });
+    //}
 }
 
 bool drag::dragging() {
